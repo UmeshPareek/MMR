@@ -146,22 +146,22 @@ export default function Payments() {
         <div className="card p-4 flex items-center gap-3">
           <CheckCircle2 size={20} className="text-income shrink-0" />
           <div>
-            <p className="text-surface-600 text-xs">Collected</p>
+            <p className="text-surface-500 text-xs">Collected</p>
             <p className="font-display font-bold text-income text-lg">{formatCurrency(monthStats.collected, true)}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
           <AlertCircle size={20} className="text-expense shrink-0" />
           <div>
-            <p className="text-surface-600 text-xs">Pending</p>
+            <p className="text-surface-500 text-xs">Pending</p>
             <p className="font-display font-bold text-expense text-lg">{formatCurrency(monthStats.pending, true)}</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <BarChart3 size={20} className="text-brand-400 shrink-0" />
+          <BarChart3 size={20} className="text-brand-500 shrink-0" />
           <div>
-            <p className="text-surface-600 text-xs">Tenants Paid</p>
-            <p className="font-display font-bold text-surface-100 text-lg">{monthStats.count} / {monthStats.total}</p>
+            <p className="text-surface-500 text-xs">Tenants Paid</p>
+            <p className="font-display font-bold text-surface-800 text-lg">{monthStats.count} / {monthStats.total}</p>
           </div>
         </div>
       </div>
@@ -208,11 +208,11 @@ export default function Payments() {
                   <tr key={p.id}>
                     <td className="text-surface-500 text-xs">{fmtDate(p.payment_date)}</td>
                     <td>
-                      <p className="text-surface-100 font-medium">{p.tenant?.full_name || '—'}</p>
-                      <p className="text-surface-600 text-xs">{p.tenant?.phone}</p>
+                      <p className="text-surface-800 font-medium">{p.tenant?.full_name || '—'}</p>
+                      <p className="text-surface-500 text-xs">{p.tenant?.phone}</p>
                     </td>
                     <td className="text-surface-400">{p.building?.name || '—'}</td>
-                    <td><span className="text-brand-400 font-mono text-sm">{p.flat?.door_number || '—'}</span></td>
+                    <td><span className="text-brand-500 font-mono text-sm">{p.flat?.door_number || '—'}</span></td>
                     <td className="text-surface-400">{fmtMonth(p.for_month)}</td>
                     <td><PaymentModeBadge mode={p.payment_mode} /></td>
                     <td className="font-mono text-xs text-surface-500">{p.transaction_ref || '—'}</td>
@@ -222,7 +222,7 @@ export default function Payments() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-surface-700">
+                <tr className="border-t border-surface-200">
                   <td colSpan="7" className="px-4 py-3 text-surface-400 text-sm font-medium">Total ({filtered.length} entries)</td>
                   <td className="px-4 py-3 text-right amount-positive font-bold">{formatCurrency(filtered.reduce((s, p) => s + p.amount, 0))}</td>
                   <td></td>
