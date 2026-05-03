@@ -3,193 +3,118 @@
 @tailwind utilities;
 
 @layer base {
-  * {
-    box-sizing: border-box;
-  }
+  *, *::before, *::after { box-sizing: border-box; }
 
   html {
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
   body {
-    @apply bg-surface-950 text-surface-100 font-sans;
-    background-image: radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.03) 0%, transparent 50%),
-                      radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
+    @apply bg-surface-50 text-surface-800 font-sans;
     min-height: 100vh;
   }
 
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-surface-900;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-surface-700 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-surface-600;
-  }
-
-  ::selection {
-    @apply bg-brand-500/30 text-brand-200;
-  }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-300 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-400; }
+  ::selection { @apply bg-brand-100 text-brand-800; }
 }
 
 @layer components {
-  /* ─── Card ─────────────────────────────────────────────── */
+
+  /* ─── Card ───────────────────────────────────────────── */
   .card {
-    @apply bg-surface-900/80 border border-surface-800/60 rounded-xl backdrop-blur-sm;
+    @apply bg-white border border-surface-200 rounded-lg shadow-card;
   }
-
   .card-hover {
-    @apply card transition-all duration-200 hover:border-surface-700 hover:shadow-card-hover cursor-pointer;
+    @apply card transition-all duration-200 hover:shadow-card-hover hover:border-surface-300 cursor-pointer;
   }
 
-  /* ─── Input ────────────────────────────────────────────── */
+  /* ─── Inputs ─────────────────────────────────────────── */
   .input {
-    @apply w-full bg-surface-800 border border-surface-700 text-surface-100 rounded-lg px-3 py-2.5 
-           text-sm placeholder-surface-500 
-           focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 
-           transition-colors duration-150;
+    @apply w-full bg-white border border-surface-300 text-surface-800 rounded-md px-3 py-2 text-sm
+           placeholder-surface-400 transition-colors duration-150
+           focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10;
   }
+  .select { @apply input appearance-none cursor-pointer; }
+  .label  { @apply block text-xs font-medium text-surface-500 mb-1.5; }
 
-  .select {
-    @apply input appearance-none cursor-pointer;
-  }
-
-  .label {
-    @apply block text-xs font-medium text-surface-400 mb-1.5 uppercase tracking-wider;
-  }
-
-  /* ─── Buttons ──────────────────────────────────────────── */
+  /* ─── Buttons ────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium 
-           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium
+           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
+  .btn-primary   { @apply btn bg-brand-600 hover:bg-brand-700 text-white; }
+  .btn-secondary { @apply btn bg-white hover:bg-surface-50 text-surface-700 border border-surface-300 hover:border-surface-400; }
+  .btn-danger    { @apply btn bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300; }
+  .btn-success   { @apply btn bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200; }
+  .btn-ghost     { @apply btn text-surface-500 hover:text-surface-800 hover:bg-surface-100; }
+  .btn-sm        { @apply px-3 py-1.5 text-xs; }
 
-  .btn-primary {
-    @apply btn bg-brand-500 hover:bg-brand-400 text-surface-950 font-semibold shadow-glow-amber hover:shadow-none;
-  }
-
-  .btn-secondary {
-    @apply btn bg-surface-800 hover:bg-surface-700 text-surface-200 border border-surface-700 hover:border-surface-600;
-  }
-
-  .btn-danger {
-    @apply btn bg-expense/10 hover:bg-expense/20 text-expense border border-expense/30;
-  }
-
-  .btn-success {
-    @apply btn bg-income/10 hover:bg-income/20 text-income border border-income/30;
-  }
-
-  .btn-ghost {
-    @apply btn text-surface-400 hover:text-surface-200 hover:bg-surface-800;
-  }
-
-  .btn-sm {
-    @apply px-3 py-1.5 text-xs;
-  }
-
-  /* ─── Badge ────────────────────────────────────────────── */
+  /* ─── Badge ──────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium;
   }
 
-  /* ─── Table ────────────────────────────────────────────── */
-  .table-container {
-    @apply w-full overflow-x-auto;
-  }
-
-  table.data-table {
-    @apply w-full text-sm;
-  }
+  /* ─── Table ──────────────────────────────────────────── */
+  table.data-table { @apply w-full text-sm; }
 
   table.data-table thead tr {
-    @apply border-b border-surface-800;
+    @apply bg-surface-50 border-b border-surface-200;
   }
-
   table.data-table thead th {
-    @apply px-4 py-3 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider;
+    @apply px-4 py-2.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wide;
   }
-
   table.data-table tbody tr {
-    @apply border-b border-surface-800/50 hover:bg-surface-800/30 transition-colors duration-100;
+    @apply border-b border-surface-100 hover:bg-surface-50 transition-colors duration-75;
   }
-
   table.data-table tbody td {
-    @apply px-4 py-3 text-surface-300;
+    @apply px-4 py-3 text-surface-700;
   }
 
-  /* ─── Stats Card ───────────────────────────────────────── */
-  .stat-card {
-    @apply card p-5 flex flex-col gap-2;
+  /* ─── Tab ────────────────────────────────────────────── */
+  .tab {
+    @apply px-4 py-2.5 text-sm font-medium text-surface-500 border-b-2 border-transparent
+           hover:text-surface-800 hover:border-surface-300 transition-colors duration-150 cursor-pointer whitespace-nowrap;
   }
+  .tab.active { @apply text-brand-700 border-brand-600; }
 
-  /* ─── Page Header ──────────────────────────────────────── */
-  .page-header {
-    @apply flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6;
-  }
-
-  .page-title {
-    @apply font-display text-2xl font-bold text-surface-50;
-  }
-
-  /* ─── Form Group ───────────────────────────────────────── */
-  .form-group {
-    @apply flex flex-col gap-1.5;
-  }
-
-  /* ─── Modal ────────────────────────────────────────────── */
+  /* ─── Modal ──────────────────────────────────────────── */
   .modal-overlay {
-    @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+    @apply fixed inset-0 bg-black/30 backdrop-blur-[2px] z-50 flex items-center justify-center p-4;
     animation: fadeIn 0.15s ease-out;
   }
-
   .modal-content {
-    @apply bg-surface-900 border border-surface-700 rounded-2xl shadow-card w-full;
+    @apply bg-white border border-surface-200 rounded-xl shadow-modal w-full;
     animation: slideUp 0.2s ease-out;
   }
 
-  /* ─── Tab ──────────────────────────────────────────────── */
-  .tab {
-    @apply px-4 py-2 text-sm font-medium text-surface-500 border-b-2 border-transparent 
-           hover:text-surface-300 transition-colors duration-150 cursor-pointer whitespace-nowrap;
-  }
+  /* ─── Form ───────────────────────────────────────────── */
+  .form-group { @apply flex flex-col gap-1.5; }
 
-  .tab.active {
-    @apply text-brand-400 border-brand-500;
-  }
+  /* ─── Skeleton ───────────────────────────────────────── */
+  .skeleton { @apply bg-surface-200 rounded animate-pulse; }
 
-  /* ─── Loading skeleton ─────────────────────────────────── */
-  .skeleton {
-    @apply bg-surface-800 rounded animate-pulse;
-  }
-
-  /* ─── Amount ───────────────────────────────────────────── */
-  .amount-positive {
-    @apply text-income font-semibold font-mono;
-  }
-
-  .amount-negative {
-    @apply text-expense font-semibold font-mono;
-  }
-
-  .amount-neutral {
-    @apply text-surface-200 font-semibold font-mono;
-  }
+  /* ─── Amount ─────────────────────────────────────────── */
+  .amount-positive { @apply text-emerald-700 font-semibold font-mono; }
+  .amount-negative { @apply text-red-600 font-semibold font-mono; }
+  .amount-neutral  { @apply text-surface-700 font-semibold font-mono; }
 }
 
-/* ─── Chart tooltip override ─────────────────────────────────────────────── */
-.recharts-tooltip-wrapper .recharts-default-tooltip {
-  background-color: #1e293b !important;
-  border: 1px solid #334155 !important;
+/* ─── Number formatting ──────────────────────────────────── */
+.font-mono, td.font-mono, [class*="font-mono"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Recharts ───────────────────────────────────────────── */
+.recharts-default-tooltip {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
   border-radius: 8px !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
+  font-size: 13px !important;
 }
