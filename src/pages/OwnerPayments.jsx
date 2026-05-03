@@ -120,7 +120,7 @@ export default function OwnerPayments() {
                 {payments.map(p => (
                   <tr key={p.id}>
                     <td className="text-surface-500 text-xs">{fmtDate(p.payment_date)}</td>
-                    <td className="text-surface-100 font-medium">{p.owner?.name || '—'}</td>
+                    <td className="text-surface-800 font-medium">{p.owner?.name || '—'}</td>
                     <td className="text-surface-400">{p.building?.name || '—'}</td>
                     <td><Badge variant={p.payment_type === 'rent' ? 'info' : 'brand'}>{p.payment_type.replace('_', ' ')}</Badge></td>
                     <td className="text-surface-500">{fmtMonth(p.for_month)}</td>
@@ -132,7 +132,7 @@ export default function OwnerPayments() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t border-surface-700">
+                <tr className="border-t border-surface-200">
                   <td colSpan="7" className="px-4 py-3 text-surface-400 text-sm font-medium">Total</td>
                   <td className="px-4 py-3 text-right amount-negative font-bold">{formatCurrency(total)}</td>
                   <td></td>
