@@ -120,7 +120,7 @@ export default function Expenses() {
             <SearchInput value={search} onChange={setSearch} placeholder="Search…" />
           </div>
           {/* Tab */}
-          <div className="flex border-b border-surface-800 mt-4 mb-4">
+          <div className="flex border-b border-surface-200 mt-4 mb-4">
             <button className={`tab ${tab === 'general' ? 'active' : ''}`} onClick={() => setTab('general')}>General Expenses ({expenses.length})</button>
             <button className={`tab ${tab === 'utility' ? 'active' : ''}`} onClick={() => setTab('utility')}>Utility Bills ({utilityBills.length})</button>
           </div>
@@ -137,14 +137,14 @@ export default function Expenses() {
                     <tr key={e.id}>
                       <td className="text-surface-500 text-xs">{fmtDate(e.expense_date)}</td>
                       <td><span className="text-xs">{EXPENSE_CATEGORIES.find(c => c.value === e.category)?.icon}</span> <Badge variant="default">{e.category}</Badge></td>
-                      <td><p className="text-surface-200">{e.description}</p>{e.vendor && <p className="text-surface-600 text-xs">{e.vendor}</p>}</td>
+                      <td><p className="text-surface-700">{e.description}</p>{e.vendor && <p className="text-surface-500 text-xs">{e.vendor}</p>}</td>
                       <td className="text-surface-500">{e.building?.name || 'General'}</td>
                       <td><PaymentModeBadge mode={e.payment_mode} /></td>
                       <td className="text-right amount-negative">{formatCurrency(e.amount)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr className="border-t border-surface-700"><td colSpan="5" className="px-4 py-3 text-surface-400 text-sm">Total</td><td className="px-4 py-3 text-right amount-negative font-bold">{formatCurrency(total)}</td></tr></tfoot>
+                <tfoot><tr className="border-t border-surface-200"><td colSpan="5" className="px-4 py-3 text-surface-400 text-sm">Total</td><td className="px-4 py-3 text-right amount-negative font-bold">{formatCurrency(total)}</td></tr></tfoot>
               </table>
             </div>
           ) : (
@@ -155,7 +155,7 @@ export default function Expenses() {
                   {filtered.map(e => (
                     <tr key={e.id}>
                       <td className="text-surface-500 text-xs">{fmtDate(e.payment_date)}</td>
-                      <td className="text-surface-200">{e.building?.name || '—'}</td>
+                      <td className="text-surface-700">{e.building?.name || '—'}</td>
                       <td><Badge variant={e.utility_type === 'electricity' ? 'warning' : 'info'}>{e.utility_type}</Badge></td>
                       <td className="font-mono text-xs text-surface-500">{e.bill_number || '—'}</td>
                       <td><PaymentModeBadge mode={e.payment_mode} /></td>
@@ -163,7 +163,7 @@ export default function Expenses() {
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr className="border-t border-surface-700"><td colSpan="5" className="px-4 py-3 text-surface-400 text-sm">Total</td><td className="px-4 py-3 text-right amount-negative font-bold">{formatCurrency(total)}</td></tr></tfoot>
+                <tfoot><tr className="border-t border-surface-200"><td colSpan="5" className="px-4 py-3 text-surface-400 text-sm">Total</td><td className="px-4 py-3 text-right amount-negative font-bold">{formatCurrency(total)}</td></tr></tfoot>
               </table>
             </div>
           )}
@@ -171,8 +171,8 @@ export default function Expenses() {
 
         {/* Category pie chart */}
         <div className="card p-5">
-          <h3 className="font-display font-semibold text-surface-100 mb-4">By Category</h3>
-          {chartData.length === 0 ? <p className="text-surface-600 text-sm text-center py-12">No data</p> : (
+          <h3 className="font-display font-semibold text-surface-800 mb-4">By Category</h3>
+          {chartData.length === 0 ? <p className="text-surface-500 text-sm text-center py-12">No data</p> : (
             <ResponsiveContainer width="100%" height={240}>
               <PieChart>
                 <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value">
