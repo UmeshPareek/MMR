@@ -1,0 +1,195 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-surface-950 text-surface-100 font-sans;
+    background-image: radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.03) 0%, transparent 50%),
+                      radial-gradient(circle at 80% 80%, rgba(16, 185, 129, 0.02) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-surface-900;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-700 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-600;
+  }
+
+  ::selection {
+    @apply bg-brand-500/30 text-brand-200;
+  }
+}
+
+@layer components {
+  /* ─── Card ─────────────────────────────────────────────── */
+  .card {
+    @apply bg-surface-900/80 border border-surface-800/60 rounded-xl backdrop-blur-sm;
+  }
+
+  .card-hover {
+    @apply card transition-all duration-200 hover:border-surface-700 hover:shadow-card-hover cursor-pointer;
+  }
+
+  /* ─── Input ────────────────────────────────────────────── */
+  .input {
+    @apply w-full bg-surface-800 border border-surface-700 text-surface-100 rounded-lg px-3 py-2.5 
+           text-sm placeholder-surface-500 
+           focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 
+           transition-colors duration-150;
+  }
+
+  .select {
+    @apply input appearance-none cursor-pointer;
+  }
+
+  .label {
+    @apply block text-xs font-medium text-surface-400 mb-1.5 uppercase tracking-wider;
+  }
+
+  /* ─── Buttons ──────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium 
+           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-500 hover:bg-brand-400 text-surface-950 font-semibold shadow-glow-amber hover:shadow-none;
+  }
+
+  .btn-secondary {
+    @apply btn bg-surface-800 hover:bg-surface-700 text-surface-200 border border-surface-700 hover:border-surface-600;
+  }
+
+  .btn-danger {
+    @apply btn bg-expense/10 hover:bg-expense/20 text-expense border border-expense/30;
+  }
+
+  .btn-success {
+    @apply btn bg-income/10 hover:bg-income/20 text-income border border-income/30;
+  }
+
+  .btn-ghost {
+    @apply btn text-surface-400 hover:text-surface-200 hover:bg-surface-800;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  /* ─── Badge ────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  /* ─── Table ────────────────────────────────────────────── */
+  .table-container {
+    @apply w-full overflow-x-auto;
+  }
+
+  table.data-table {
+    @apply w-full text-sm;
+  }
+
+  table.data-table thead tr {
+    @apply border-b border-surface-800;
+  }
+
+  table.data-table thead th {
+    @apply px-4 py-3 text-left text-xs font-semibold text-surface-500 uppercase tracking-wider;
+  }
+
+  table.data-table tbody tr {
+    @apply border-b border-surface-800/50 hover:bg-surface-800/30 transition-colors duration-100;
+  }
+
+  table.data-table tbody td {
+    @apply px-4 py-3 text-surface-300;
+  }
+
+  /* ─── Stats Card ───────────────────────────────────────── */
+  .stat-card {
+    @apply card p-5 flex flex-col gap-2;
+  }
+
+  /* ─── Page Header ──────────────────────────────────────── */
+  .page-header {
+    @apply flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6;
+  }
+
+  .page-title {
+    @apply font-display text-2xl font-bold text-surface-50;
+  }
+
+  /* ─── Form Group ───────────────────────────────────────── */
+  .form-group {
+    @apply flex flex-col gap-1.5;
+  }
+
+  /* ─── Modal ────────────────────────────────────────────── */
+  .modal-overlay {
+    @apply fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .modal-content {
+    @apply bg-surface-900 border border-surface-700 rounded-2xl shadow-card w-full;
+    animation: slideUp 0.2s ease-out;
+  }
+
+  /* ─── Tab ──────────────────────────────────────────────── */
+  .tab {
+    @apply px-4 py-2 text-sm font-medium text-surface-500 border-b-2 border-transparent 
+           hover:text-surface-300 transition-colors duration-150 cursor-pointer whitespace-nowrap;
+  }
+
+  .tab.active {
+    @apply text-brand-400 border-brand-500;
+  }
+
+  /* ─── Loading skeleton ─────────────────────────────────── */
+  .skeleton {
+    @apply bg-surface-800 rounded animate-pulse;
+  }
+
+  /* ─── Amount ───────────────────────────────────────────── */
+  .amount-positive {
+    @apply text-income font-semibold font-mono;
+  }
+
+  .amount-negative {
+    @apply text-expense font-semibold font-mono;
+  }
+
+  .amount-neutral {
+    @apply text-surface-200 font-semibold font-mono;
+  }
+}
+
+/* ─── Chart tooltip override ─────────────────────────────────────────────── */
+.recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  border-radius: 8px !important;
+}
