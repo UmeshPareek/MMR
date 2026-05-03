@@ -9,14 +9,14 @@ import {
 } from 'lucide-react';
 
 const ROLES = [
-  { value: 'super_admin', label: 'Super Admin', desc: 'Full access including Audit', color: 'text-brand-400' },
+  { value: 'super_admin', label: 'Super Admin', desc: 'Full access including Audit', color: 'text-brand-500' },
   { value: 'admin', label: 'Admin', desc: 'All features except Audit', color: 'text-blue-400' },
   { value: 'team', label: 'Team', desc: 'Data entry only', color: 'text-green-400' },
 ];
 
 function RoleBadge({ role }) {
   const map = {
-    super_admin: 'bg-brand-400/20 text-brand-400 border border-brand-400/30',
+    super_admin: 'bg-brand-500/20 text-brand-500 border border-brand-500/30',
     admin: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
     team: 'bg-green-500/20 text-green-400 border border-green-500/30',
   };
@@ -152,14 +152,14 @@ export default function Settings() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-display font-bold text-surface-50 flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-brand-400" /> Settings
+        <h1 className="text-2xl font-display font-bold text-surface-900 flex items-center gap-2">
+          <SettingsIcon className="w-6 h-6 text-brand-500" /> Settings
         </h1>
         <p className="text-surface-400 text-sm mt-0.5">Manage users, roles and your account</p>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-surface-700">
+      <div className="flex gap-1 border-b border-surface-200">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`tab flex items-center gap-2 ${activeTab === t.id ? 'active' : ''}`}>
@@ -187,9 +187,9 @@ export default function Settings() {
 
           {/* Add User Form */}
           {showAddUser && (
-            <div className="card p-5 border border-brand-400/30">
-              <h3 className="font-semibold text-surface-100 mb-4 flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-brand-400" /> New Team Member
+            <div className="card p-5 border border-brand-500/30">
+              <h3 className="font-semibold text-surface-800 mb-4 flex items-center gap-2">
+                <UserPlus className="w-4 h-4 text-brand-500" /> New Team Member
               </h3>
               <form onSubmit={handleAddUser} className="grid sm:grid-cols-2 gap-4">
                 <div>
@@ -238,7 +238,7 @@ export default function Settings() {
           {/* Users List */}
           {loading ? (
             <div className="flex justify-center py-8">
-              <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
             <div className="card overflow-hidden">
@@ -256,13 +256,13 @@ export default function Settings() {
                     <tr key={u.id} className={!u.is_active ? 'opacity-40' : ''}>
                       <td>
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-brand-400/20 flex items-center justify-center text-brand-400 font-bold text-xs flex-shrink-0">
+                          <div className="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xs flex-shrink-0">
                             {initials(u.full_name || u.email)}
                           </div>
                           <div>
-                            <div className="font-medium text-surface-100 flex items-center gap-2">
+                            <div className="font-medium text-surface-800 flex items-center gap-2">
                               {u.full_name || '—'}
-                              {u.id === profile?.id && <span className="badge bg-brand-400/10 text-brand-400 text-xs">You</span>}
+                              {u.id === profile?.id && <span className="badge bg-brand-500/10 text-brand-500 text-xs">You</span>}
                             </div>
                             <div className="text-xs text-surface-500">{u.email}</div>
                           </div>
@@ -294,7 +294,7 @@ export default function Settings() {
                           {u.id !== profile?.id && (
                             <div className="flex items-center gap-2">
                               <button onClick={() => { setEditingId(u.id); setEditRole(u.role); }}
-                                className="btn-ghost p-1.5 text-surface-400 hover:text-brand-400" title="Change role">
+                                className="btn-ghost p-1.5 text-surface-400 hover:text-brand-500" title="Change role">
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
                               <button onClick={() => handleToggleActive(u)}
@@ -316,7 +316,7 @@ export default function Settings() {
           {/* Role Legend */}
           <div className="card p-4">
             <h4 className="text-sm font-semibold text-surface-300 mb-3 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-brand-400" /> Role Permissions
+              <Shield className="w-4 h-4 text-brand-500" /> Role Permissions
             </h4>
             <div className="space-y-2">
               {ROLES.map(r => (
@@ -335,11 +335,11 @@ export default function Settings() {
         <div className="max-w-md">
           <div className="card p-6">
             <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-brand-400/20 flex items-center justify-center text-brand-400 font-bold text-xl">
+              <div className="w-16 h-16 rounded-2xl bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xl">
                 {initials(profile?.full_name || profile?.email || 'U')}
               </div>
               <div>
-                <p className="font-semibold text-surface-100">{profile?.full_name}</p>
+                <p className="font-semibold text-surface-800">{profile?.full_name}</p>
                 <p className="text-sm text-surface-400">{profile?.email}</p>
                 <div className="mt-1"><RoleBadge role={profile?.role} /></div>
               </div>
@@ -366,7 +366,7 @@ export default function Settings() {
       {activeTab === 'security' && (
         <div className="max-w-md">
           <div className="card p-6 space-y-4">
-            <h3 className="font-semibold text-surface-200">Change Password</h3>
+            <h3 className="font-semibold text-surface-700">Change Password</h3>
             <form onSubmit={handleChangePwd} className="space-y-4">
               <div>
                 <label className="label">New Password</label>
