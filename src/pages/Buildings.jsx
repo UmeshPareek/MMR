@@ -153,32 +153,32 @@ export default function Buildings() {
             <div key={building.id} className="card overflow-hidden">
               {/* Building Header */}
               <div
-                className="flex items-center gap-4 p-4 cursor-pointer hover:bg-surface-800/30 transition-colors"
+                className="flex items-center gap-4 p-4 cursor-pointer hover:bg-surface-100 transition-colors"
                 onClick={() => toggleBuilding(building.id)}
               >
                 <div className="w-10 h-10 bg-brand-500/15 rounded-xl flex items-center justify-center shrink-0">
-                  <Building2 size={18} className="text-brand-400" />
+                  <Building2 size={18} className="text-brand-500" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-surface-100 text-base">{building.name}</h3>
+                    <h3 className="font-semibold text-surface-800 text-base">{building.name}</h3>
                     {building.area && <Badge variant="default">{building.area}</Badge>}
                   </div>
                   <p className="text-surface-500 text-sm truncate">{building.address}</p>
                 </div>
                 <div className="hidden md:flex items-center gap-6 text-sm">
                   <div className="text-center">
-                    <p className="text-surface-600 text-xs">Owner Rent</p>
-                    <p className="text-surface-200 font-semibold">{formatCurrency(building.monthly_rent_to_owner)}</p>
+                    <p className="text-surface-500 text-xs">Owner Rent</p>
+                    <p className="text-surface-700 font-semibold">{formatCurrency(building.monthly_rent_to_owner)}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-surface-600 text-xs">Total Flats</p>
-                    <p className="text-surface-200 font-semibold">{building.total_flats}</p>
+                    <p className="text-surface-500 text-xs">Total Flats</p>
+                    <p className="text-surface-700 font-semibold">{building.total_flats}</p>
                   </div>
                   {building.owner && (
                     <div className="text-center">
-                      <p className="text-surface-600 text-xs">Owner</p>
-                      <p className="text-surface-200 font-semibold">{building.owner.name}</p>
+                      <p className="text-surface-500 text-xs">Owner</p>
+                      <p className="text-surface-700 font-semibold">{building.owner.name}</p>
                     </div>
                   )}
                 </div>
@@ -191,8 +191,8 @@ export default function Buildings() {
 
               {/* Flats List */}
               {expandedBuilding === building.id && (
-                <div className="border-t border-surface-800 animate-fade-in">
-                  <div className="flex items-center justify-between px-4 py-3 bg-surface-800/30">
+                <div className="border-t border-surface-200 animate-fade-in">
+                  <div className="flex items-center justify-between px-4 py-3 bg-surface-100">
                     <p className="text-surface-400 text-sm font-medium">Flats in {building.name}</p>
                     <button className="btn-secondary btn-sm" onClick={() => openAddFlat(building.id)}>
                       <Plus size={13} /> Add Flat
@@ -202,7 +202,7 @@ export default function Buildings() {
                     {!flats[building.id] ? (
                       <div className="py-8 flex justify-center"><Spinner /></div>
                     ) : flats[building.id].length === 0 ? (
-                      <div className="py-8 text-center text-surface-600 text-sm">No flats added yet</div>
+                      <div className="py-8 text-center text-surface-500 text-sm">No flats added yet</div>
                     ) : (
                       <table className="data-table">
                         <thead>
@@ -222,7 +222,7 @@ export default function Buildings() {
                             const st = FLAT_STATUSES[flat.status]
                             return (
                               <tr key={flat.id}>
-                                <td className="font-semibold text-surface-100">{flat.door_number}</td>
+                                <td className="font-semibold text-surface-800">{flat.door_number}</td>
                                 <td>{flat.floor_number ?? '—'}</td>
                                 <td>{flat.flat_type || '—'}</td>
                                 <td className="amount-neutral">{formatCurrency(flat.monthly_rent)}</td>
@@ -232,7 +232,7 @@ export default function Buildings() {
                                     {st?.label || flat.status}
                                   </span>
                                 </td>
-                                <td>{flat.tenant?.full_name || <span className="text-surface-600">Vacant</span>}</td>
+                                <td>{flat.tenant?.full_name || <span className="text-surface-500">Vacant</span>}</td>
                                 <td>
                                   <button className="btn-ghost btn-sm" onClick={() => openEditFlat(flat)}><Edit2 size={13} /></button>
                                 </td>
