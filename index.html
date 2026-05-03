@@ -1,120 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-@layer base {
-  *, *::before, *::after { box-sizing: border-box; }
-
-  html {
-    scroll-behavior: smooth;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-  }
-
-  body {
-    @apply bg-surface-50 text-surface-800 font-sans;
-    min-height: 100vh;
-  }
-
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-surface-300 rounded-full; }
-  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-400; }
-  ::selection { @apply bg-brand-100 text-brand-800; }
-}
-
-@layer components {
-
-  /* ─── Card ───────────────────────────────────────────── */
-  .card {
-    @apply bg-white border border-surface-200 rounded-lg shadow-card;
-  }
-  .card-hover {
-    @apply card transition-all duration-200 hover:shadow-card-hover hover:border-surface-300 cursor-pointer;
-  }
-
-  /* ─── Inputs ─────────────────────────────────────────── */
-  .input {
-    @apply w-full bg-white border border-surface-300 text-surface-800 rounded-md px-3 py-2 text-sm
-           placeholder-surface-400 transition-colors duration-150
-           focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/10;
-  }
-  .select { @apply input appearance-none cursor-pointer; }
-  .label  { @apply block text-xs font-medium text-surface-500 mb-1.5; }
-
-  /* ─── Buttons ────────────────────────────────────────── */
-  .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md text-sm font-medium
-           transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed select-none;
-  }
-  .btn-primary   { @apply btn bg-brand-600 hover:bg-brand-700 text-white; }
-  .btn-secondary { @apply btn bg-white hover:bg-surface-50 text-surface-700 border border-surface-300 hover:border-surface-400; }
-  .btn-danger    { @apply btn bg-white hover:bg-red-50 text-red-600 border border-red-200 hover:border-red-300; }
-  .btn-success   { @apply btn bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200; }
-  .btn-ghost     { @apply btn text-surface-500 hover:text-surface-800 hover:bg-surface-100; }
-  .btn-sm        { @apply px-3 py-1.5 text-xs; }
-
-  /* ─── Badge ──────────────────────────────────────────── */
-  .badge {
-    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium;
-  }
-
-  /* ─── Table ──────────────────────────────────────────── */
-  table.data-table { @apply w-full text-sm; }
-
-  table.data-table thead tr {
-    @apply bg-surface-50 border-b border-surface-200;
-  }
-  table.data-table thead th {
-    @apply px-4 py-2.5 text-left text-xs font-semibold text-surface-500 uppercase tracking-wide;
-  }
-  table.data-table tbody tr {
-    @apply border-b border-surface-100 hover:bg-surface-50 transition-colors duration-75;
-  }
-  table.data-table tbody td {
-    @apply px-4 py-3 text-surface-700;
-  }
-
-  /* ─── Tab ────────────────────────────────────────────── */
-  .tab {
-    @apply px-4 py-2.5 text-sm font-medium text-surface-500 border-b-2 border-transparent
-           hover:text-surface-800 hover:border-surface-300 transition-colors duration-150 cursor-pointer whitespace-nowrap;
-  }
-  .tab.active { @apply text-brand-700 border-brand-600; }
-
-  /* ─── Modal ──────────────────────────────────────────── */
-  .modal-overlay {
-    @apply fixed inset-0 bg-black/30 backdrop-blur-[2px] z-50 flex items-center justify-center p-4;
-    animation: fadeIn 0.15s ease-out;
-  }
-  .modal-content {
-    @apply bg-white border border-surface-200 rounded-xl shadow-modal w-full;
-    animation: slideUp 0.2s ease-out;
-  }
-
-  /* ─── Form ───────────────────────────────────────────── */
-  .form-group { @apply flex flex-col gap-1.5; }
-
-  /* ─── Skeleton ───────────────────────────────────────── */
-  .skeleton { @apply bg-surface-200 rounded animate-pulse; }
-
-  /* ─── Amount ─────────────────────────────────────────── */
-  .amount-positive { @apply text-emerald-700 font-semibold font-mono; }
-  .amount-negative { @apply text-red-600 font-semibold font-mono; }
-  .amount-neutral  { @apply text-surface-700 font-semibold font-mono; }
-}
-
-/* ─── Number formatting ──────────────────────────────────── */
-.font-mono, td.font-mono, [class*="font-mono"] {
-  font-variant-numeric: tabular-nums;
-}
-
-/* ─── Recharts ───────────────────────────────────────────── */
-.recharts-default-tooltip {
-  background: #ffffff !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 8px !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
-  font-size: 13px !important;
-}
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MMR – Manage My Rent | Rent N Stay</title>
+    <meta name="description" content="Property Cash Flow Management System for Rent N Stay" />
+    <meta name="theme-color" content="#0d9488" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Syne:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
