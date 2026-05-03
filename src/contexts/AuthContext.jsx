@@ -8,9 +8,24 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  async function fetchProfile(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      if (!error && data) setProfile(data)
+      else setProfile(null)
+    } catch (e) {
+      setProfile(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    // Safety timeout — never stay loading more than 5 seconds
-    const timeout = setTimeout(() => setLoading(false), 5000)
+    const timeout = setTimeout(() => setLoading(false), 8000)
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
@@ -18,14 +33,11 @@ export function AuthProvider({ children }) {
       else setLoading(false)
     })
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        setProfile(prev => {
-          if (prev?.id === session.user.id) return prev
-          fetchProfile(session.user.id)
-          return prev
-        })
+        // Always fetch fresh on any auth event
+        fetchProfile(session.user.id)
       } else {
         setProfile(null)
         setLoading(false)
@@ -38,30 +50,17 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-  async function fetchProfile(userId) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-      if (!error) setProfile(data)
-    } catch (e) {
-      console.error('Profile fetch error:', e)
-    } finally {
-      setLoading(false)
-    }
-  }
-
   const signIn = async (email, password) => {
+    setLoading(true)
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) setLoading(false)
     return { data, error }
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    setUser(null)
     setProfile(null)
+    setUser(null)
+    await supabase.auth.signOut()
   }
 
   const isSuperAdmin = profile?.role === 'super_admin'
