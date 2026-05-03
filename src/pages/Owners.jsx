@@ -71,9 +71,9 @@ export default function Owners() {
             <div key={o.id} className="card p-5 space-y-3">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center text-brand-400 font-semibold text-sm">{o.name.charAt(0).toUpperCase()}</div>
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/15 flex items-center justify-center text-brand-500 font-semibold text-sm">{o.name.charAt(0).toUpperCase()}</div>
                   <div>
-                    <p className="font-semibold text-surface-100">{o.name}</p>
+                    <p className="font-semibold text-surface-800">{o.name}</p>
                     <p className="text-surface-500 text-xs">{o.buildings?.[0]?.count || 0} building(s)</p>
                   </div>
                 </div>
@@ -85,7 +85,7 @@ export default function Owners() {
               {o.phone && <div className="flex items-center gap-2 text-sm text-surface-400"><Phone size={13} />{o.phone}</div>}
               {o.email && <div className="flex items-center gap-2 text-sm text-surface-400"><Mail size={13} />{o.email}</div>}
               {o.bank_name && (
-                <div className="text-xs text-surface-600 bg-surface-800 rounded-lg px-3 py-2">
+                <div className="text-xs text-surface-500 bg-surface-100 rounded-lg px-3 py-2">
                   Bank: {o.bank_name} · {o.bank_account ? `••••${o.bank_account.slice(-4)}` : '—'}
                 </div>
               )}
