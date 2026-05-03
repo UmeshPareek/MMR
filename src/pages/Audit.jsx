@@ -33,7 +33,7 @@ export default function Audit() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="card p-8 text-center max-w-sm">
           <ShieldAlert className="w-12 h-12 text-expense-400 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-surface-100 mb-2">Access Restricted</h2>
+          <h2 className="text-lg font-semibold text-surface-800 mb-2">Access Restricted</h2>
           <p className="text-surface-400 text-sm">The Audit module is only available to Super Admin.</p>
         </div>
       </div>
@@ -357,8 +357,8 @@ export default function Audit() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-surface-50 flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-brand-400" /> Audit
+          <h1 className="text-2xl font-display font-bold text-surface-900 flex items-center gap-2">
+            <ShieldAlert className="w-6 h-6 text-brand-500" /> Audit
           </h1>
           <p className="text-surface-400 text-sm mt-0.5">Bank statement reconciliation & anomaly detection</p>
         </div>
@@ -381,7 +381,7 @@ export default function Audit() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <div className="card p-4">
             <p className="text-xs text-surface-400 mb-1">Transactions</p>
-            <p className="text-2xl font-display font-bold text-surface-50">{stats.txCount}</p>
+            <p className="text-2xl font-display font-bold text-surface-900">{stats.txCount}</p>
           </div>
           <div className="card p-4">
             <p className="text-xs text-surface-400 mb-1 flex items-center gap-1">
@@ -410,7 +410,7 @@ export default function Audit() {
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-surface-700">
+      <div className="flex gap-1 border-b border-surface-200">
         {tabs.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)}
             className={`tab flex items-center gap-2 ${activeTab === t.id ? 'active' : ''}`}>
@@ -424,13 +424,13 @@ export default function Audit() {
         <div className="space-y-6">
           <div
             onClick={() => fileRef.current?.click()}
-            className="card border-2 border-dashed border-surface-600 hover:border-brand-400 transition-colors p-12 text-center cursor-pointer group"
+            className="card border-2 border-dashed border-surface-600 hover:border-brand-500 transition-colors p-12 text-center cursor-pointer group"
           >
             <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
-            <div className="w-16 h-16 rounded-2xl bg-brand-400/10 flex items-center justify-center mx-auto mb-4 group-hover:bg-brand-400/20 transition-colors">
-              {uploading ? <Spinner size="lg" /> : <FileSpreadsheet className="w-8 h-8 text-brand-400" />}
+            <div className="w-16 h-16 rounded-2xl bg-brand-500/10 flex items-center justify-center mx-auto mb-4 group-hover:bg-brand-500/20 transition-colors">
+              {uploading ? <Spinner size="lg" /> : <FileSpreadsheet className="w-8 h-8 text-brand-500" />}
             </div>
-            <h3 className="text-lg font-semibold text-surface-100 mb-2">
+            <h3 className="text-lg font-semibold text-surface-800 mb-2">
               {uploading ? 'Parsing…' : 'Upload Bank Statement'}
             </h3>
             <p className="text-surface-400 text-sm mb-4">
@@ -441,7 +441,7 @@ export default function Audit() {
           </div>
 
           <div className="card p-5">
-            <h3 className="font-semibold text-surface-200 mb-3 flex items-center gap-2">
+            <h3 className="font-semibold text-surface-700 mb-3 flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-400" /> What gets flagged
             </h3>
             <div className="grid sm:grid-cols-2 gap-3">
@@ -474,7 +474,7 @@ export default function Audit() {
               title="No statement uploaded" description="Upload a bank statement to view transactions" />
           ) : (
             <>
-              <div className="p-4 border-b border-surface-700 flex items-center justify-between">
+              <div className="p-4 border-b border-surface-200 flex items-center justify-between">
                 <span className="text-sm text-surface-400">{statements.length} transactions parsed</span>
                 {!analyzing && (
                   <button onClick={runAnalysis} className="btn-primary text-xs flex items-center gap-1.5">
@@ -484,7 +484,7 @@ export default function Audit() {
               </div>
               <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
                 <table className="data-table">
-                  <thead className="sticky top-0 bg-surface-800">
+                  <thead className="sticky top-0 bg-surface-100">
                     <tr>
                       <th>#</th>
                       <th>Date</th>
@@ -497,7 +497,7 @@ export default function Audit() {
                   <tbody>
                     {statements.map((r, i) => (
                       <tr key={i}>
-                        <td className="text-surface-600 font-mono text-xs">{r.row}</td>
+                        <td className="text-surface-500 font-mono text-xs">{r.row}</td>
                         <td className="text-xs">{r.date}</td>
                         <td className="max-w-xs truncate text-sm">{r.description}</td>
                         <td className="text-right font-mono text-expense-400">
@@ -525,7 +525,7 @@ export default function Audit() {
           {flags.length === 0 ? (
             <div className="card p-12 text-center">
               <CheckCircle2 className="w-12 h-12 text-income-400 mx-auto mb-3" />
-              <h3 className="text-lg font-semibold text-surface-100 mb-2">
+              <h3 className="text-lg font-semibold text-surface-800 mb-2">
                 {statements.length ? 'No flags raised' : 'Run analysis first'}
               </h3>
               <p className="text-surface-400 text-sm">
@@ -542,7 +542,7 @@ export default function Audit() {
                 if (!sevFlags.length) return null;
                 return (
                   <div key={sev} className="card overflow-hidden">
-                    <div className="p-4 border-b border-surface-700 flex items-center gap-2">
+                    <div className="p-4 border-b border-surface-200 flex items-center gap-2">
                       <span className={`badge ${FLAG_SEVERITY[sev].cls}`}>
                         {FLAG_SEVERITY[sev].label} Severity
                       </span>
@@ -559,11 +559,11 @@ export default function Audit() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-semibold text-surface-100 text-sm">{f.type}</span>
+                              <span className="font-semibold text-surface-800 text-sm">{f.type}</span>
                               <span className="text-xs text-surface-500">Row {f.row}</span>
                               {f.date && <span className="text-xs text-surface-500">{f.date}</span>}
                               {f.amount > 0 && (
-                                <span className="font-mono text-sm text-brand-400">{formatCurrency(f.amount)}</span>
+                                <span className="font-mono text-sm text-brand-500">{formatCurrency(f.amount)}</span>
                               )}
                             </div>
                             {f.description && (
