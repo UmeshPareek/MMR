@@ -56,7 +56,7 @@ export default function Reports() {
       const { data } = await supabase
         .from('rent_collections')
         .select('amount')
-        .eq('month', m);
+        .eq('for_month', m);
       const total = (data || []).reduce((s, r) => s + Number(r.amount), 0);
       rows.push({ month: m.slice(0, 7), amount: total });
     }
@@ -84,7 +84,7 @@ export default function Reports() {
       let rcQuery = supabase
         .from('rent_collections')
         .select('*, flat:flats(id), tenant:tenants(name)')
-        .eq('month', selectedMonth);
+        .eq('for_month', selectedMonth);
 
       if (selectedBuilding !== 'all') {
         const flatIds = (flats || []).map(f => f.id);
