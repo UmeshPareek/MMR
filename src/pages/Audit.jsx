@@ -28,7 +28,7 @@ export default function Audit() {
   const [activeTab, setActiveTab] = useState('upload');
   const [filename, setFilename] = useState('');
 
-  if (!isSuperAdmin()) {
+  if (!isSuperAdmin) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="card p-8 text-center max-w-sm">
