@@ -29,7 +29,7 @@ export default function Reports() {
     try {
       let q = supabase
         .from('flats')
-        .select('id, door_no, floor, monthly_rent, building_id, buildings(name, location)')
+        .select('id, door_no, floor, monthly_rent, building_id, buildings(name)')
         .eq('status', 'occupied');
       if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
       const { data: flats, error: flatErr } = await q;
@@ -69,7 +69,7 @@ export default function Reports() {
         if (paid >= expected && expected > 0) status = 'paid';
         else if (paid > 0) status = 'partial';
         const bName = flat.buildings ? String(flat.buildings.name || '') : '—';
-        const bLoc = flat.buildings ? String(flat.buildings.location || '') : '';
+        const bLoc = flat.buildings ? '' : '';
         return {
           id: String(flat.id),
           building: bName,
