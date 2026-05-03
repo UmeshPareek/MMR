@@ -29,7 +29,7 @@ export default function Reports() {
     try {
       let q = supabase
         .from('flats')
-        .select('id, door_no, floor, monthly_rent, building_id, buildings(name)')
+        .select('id, door_number, floor_number, monthly_rent, building_id, buildings(name)')
         .eq('status', 'occupied');
       if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
       const { data: flats, error: flatErr } = await q;
@@ -74,8 +74,8 @@ export default function Reports() {
           id: String(flat.id),
           building: bName,
           location: bLoc,
-          doorNo: String(flat.door_no || '—'),
-          tenant: tenant ? String(tenant.name || '—') : '—',
+          doorNo: String(flat.door_number || '—'),
+          tenant: tenant ? String(tenant.full_name || '—') : '—',
           phone: tenant ? String(tenant.phone || '') : '',
           expected,
           paid,
