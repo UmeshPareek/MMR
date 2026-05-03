@@ -122,7 +122,7 @@ export default function Reports() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-display font-bold text-surface-50">Reports</h1>
+          <h1 className="text-2xl font-display font-bold text-surface-900">Reports</h1>
           <p className="text-surface-400 text-sm mt-0.5">Building-wise rent collection status</p>
         </div>
         <button onClick={handleExport} className="btn-primary flex items-center gap-2 self-start">
@@ -152,8 +152,8 @@ export default function Reports() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card p-4">
-          <div className="flex items-center gap-2 mb-2"><Building2 className="w-4 h-4 text-brand-400" /><span className="text-xs text-surface-400">Total Flats</span></div>
-          <p className="text-2xl font-display font-bold text-surface-50">{rows.length}</p>
+          <div className="flex items-center gap-2 mb-2"><Building2 className="w-4 h-4 text-brand-500" /><span className="text-xs text-surface-400">Total Flats</span></div>
+          <p className="text-2xl font-display font-bold text-surface-900">{rows.length}</p>
         </div>
         <div className="card p-4">
           <div className="flex items-center gap-2 mb-2"><CheckCircle2 className="w-4 h-4 text-green-400" /><span className="text-xs text-surface-400">Fully Paid</span></div>
@@ -172,7 +172,7 @@ export default function Reports() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="card p-4">
           <p className="text-xs text-surface-400 mb-1">Expected</p>
-          <p className="text-xl font-display font-bold text-surface-50">{formatCurrency(totalExpected)}</p>
+          <p className="text-xl font-display font-bold text-surface-900">{formatCurrency(totalExpected)}</p>
         </div>
         <div className="card p-4">
           <p className="text-xs text-surface-400 mb-1">Collected</p>
@@ -180,9 +180,9 @@ export default function Reports() {
         </div>
         <div className="card p-4">
           <p className="text-xs text-surface-400 mb-1">Collection Rate</p>
-          <p className="text-xl font-display font-bold text-brand-400">{collRate}%</p>
+          <p className="text-xl font-display font-bold text-brand-500">{collRate}%</p>
           <div className="mt-2 h-1.5 bg-surface-700 rounded-full overflow-hidden">
-            <div className="h-full bg-brand-400 rounded-full" style={{ width: collRate + '%' }} />
+            <div className="h-full bg-brand-500 rounded-full" style={{ width: collRate + '%' }} />
           </div>
         </div>
       </div>
@@ -195,19 +195,19 @@ export default function Reports() {
       )}
 
       <div className="card overflow-hidden">
-        <div className="p-4 border-b border-surface-700 flex items-center justify-between">
-          <h3 className="font-semibold text-surface-200">Flat-wise Rent Status</h3>
+        <div className="p-4 border-b border-surface-200 flex items-center justify-between">
+          <h3 className="font-semibold text-surface-700">Flat-wise Rent Status</h3>
           <span className="text-xs text-surface-500">{rows.length} flats · {selectedMonth}</span>
         </div>
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <div className="w-8 h-8 border-2 border-brand-400 border-t-transparent rounded-full animate-spin" />
+            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : rows.length === 0 && !error ? (
           <div className="text-center py-16">
-            <Building2 className="w-10 h-10 text-surface-600 mx-auto mb-3" />
+            <Building2 className="w-10 h-10 text-surface-500 mx-auto mb-3" />
             <p className="text-surface-400 text-sm">No occupied flats found for this period</p>
-            <p className="text-surface-600 text-xs mt-1">Add buildings, flats and tenants first</p>
+            <p className="text-surface-500 text-xs mt-1">Add buildings, flats and tenants first</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -228,12 +228,12 @@ export default function Reports() {
                 {rows.map(row => (
                   <tr key={row.id}>
                     <td>
-                      <div className="font-medium text-surface-200">{row.building}</div>
+                      <div className="font-medium text-surface-700">{row.building}</div>
                       {row.location ? <div className="text-xs text-surface-500">{row.location}</div> : null}
                     </td>
                     <td className="font-mono text-sm">{row.doorNo}</td>
                     <td>
-                      <div className="text-surface-200">{row.tenant}</div>
+                      <div className="text-surface-700">{row.tenant}</div>
                       {row.phone ? <div className="text-xs text-surface-500">{row.phone}</div> : null}
                     </td>
                     <td className="text-right font-mono">{formatCurrency(row.expected)}</td>
