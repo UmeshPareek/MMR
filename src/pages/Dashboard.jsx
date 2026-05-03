@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtMonth, lastNMonths, currentMonth } from '@/utils/helpers'
 import { StatCard, Spinner, Badge } from '@/components/ui'
 import { Building2, Users, TrendingUp, TrendingDown, AlertCircle, CreditCard, CheckCircle2 } from 'lucide-react'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, endOfMonth } from 'date-fns'
 
 const CHART_COLORS = {
   income: '#10b981',
@@ -65,7 +65,7 @@ export default function Dashboard() {
       supabase.from('buildings').select('*', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active'),
       supabase.from('rent_collections').select('amount').eq('for_month', thisMonth),
-      supabase.from('expenses').select('amount').gte('expense_date', `${thisMonth}-01`).lte('expense_date', `${thisMonth}-31`),
+      supabase.from('expenses').select('amount').gte('expense_date', `${thisMonth}-01`).lte('expense_date', format(endOfMonth(parseISO(`${thisMonth}-01`)), 'yyyy-MM-dd')),
       supabase.from('utility_bills').select('amount').eq('for_month', thisMonth),
       supabase.from('owner_payments').select('amount').eq('for_month', thisMonth),
       supabase.from('flats').select('*', { count: 'exact', head: true }).eq('status', 'vacant'),
@@ -94,7 +94,7 @@ export default function Dashboard() {
     for (const m of months) {
       const [{ data: rc }, { data: exp }, { data: ub }, { data: op }] = await Promise.all([
         supabase.from('rent_collections').select('amount').eq('for_month', m),
-        supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', `${m}-31`),
+        supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
         supabase.from('utility_bills').select('amount').eq('for_month', m),
         supabase.from('owner_payments').select('amount').eq('for_month', m),
       ])
