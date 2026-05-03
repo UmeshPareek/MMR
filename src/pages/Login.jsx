@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
-import { Spinner } from '@/components/ui'
 import toast from 'react-hot-toast'
 
 export default function Login() {
@@ -20,79 +19,79 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background: 'radial-gradient(ellipse at 30% 30%, rgba(245,158,11,0.06) 0%, transparent 60%), radial-gradient(ellipse at 70% 70%, rgba(16,185,129,0.04) 0%, transparent 60%), #080d1a'
-      }}
-    >
-      {/* Background dots */}
-      <div className="absolute inset-0 bg-dot-pattern bg-dot-md opacity-40 pointer-events-none" />
+    <div className="min-h-screen flex bg-white">
 
-      <div className="relative w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-500 rounded-2xl shadow-glow-amber mb-4">
-            <span className="font-display font-bold text-surface-950 text-3xl">M</span>
+      {/* Left panel */}
+      <div className="hidden lg:flex w-[420px] flex-shrink-0 bg-brand-700 flex-col justify-between p-10">
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 bg-white/20 rounded-md flex items-center justify-center">
+            <span className="font-display font-bold text-white text-xs">M</span>
           </div>
-          <h1 className="font-display font-bold text-surface-50 text-3xl">Manage My Rent</h1>
-          <p className="text-surface-500 text-sm mt-1">Rent N Stay · Property Cash Flow</p>
+          <span className="font-display font-bold text-white text-sm">Manage My Rent</span>
         </div>
 
-        {/* Form */}
-        <div className="card p-8">
-          <h2 className="font-display font-semibold text-surface-200 text-lg mb-6">Sign in to continue</h2>
+        <div>
+          <p className="text-brand-200 text-xs font-medium uppercase tracking-widest mb-4">Rent N Stay</p>
+          <h2 className="text-white font-display font-bold text-3xl leading-snug mb-3">
+            Your property<br />cash flow,<br />under control.
+          </h2>
+          <p className="text-brand-200 text-sm leading-relaxed">
+            Track rent collections, owner payments, expenses, staff salaries — all in one place.
+          </p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="form-group">
+        <p className="text-brand-300 text-xs">MMR v1.0 · © {new Date().getFullYear()} Rent N Stay</p>
+      </div>
+
+      {/* Right panel */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        <div className="w-full max-w-sm">
+
+          {/* Mobile brand */}
+          <div className="flex items-center gap-2.5 mb-8 lg:hidden">
+            <div className="w-7 h-7 bg-brand-600 rounded-md flex items-center justify-center">
+              <span className="font-display font-bold text-white text-xs">M</span>
+            </div>
+            <span className="font-display font-bold text-surface-900 text-sm">Manage My Rent</span>
+          </div>
+
+          <div className="mb-8">
+            <h1 className="font-display font-bold text-surface-900 text-2xl mb-1">Sign in</h1>
+            <p className="text-surface-500 text-sm">Access restricted to Rent N Stay team.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
               <label className="label">Email address</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@rentnstay.com"
-                className="input"
-                autoComplete="email"
-                required
-              />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                placeholder="you@rentnstay.in" className="input" autoComplete="email" required />
             </div>
 
-            <div className="form-group">
+            <div>
               <label className="label">Password</label>
               <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
+                <input type={showPass ? 'text' : 'password'} value={password}
                   onChange={e => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="input pr-12"
-                  autoComplete="current-password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 text-xs"
-                >
+                  placeholder="••••••••" className="input pr-14"
+                  autoComplete="current-password" required />
+                <button type="button" onClick={() => setShowPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-surface-400 hover:text-surface-600 font-medium">
                   {showPass ? 'Hide' : 'Show'}
                 </button>
               </div>
             </div>
 
-            <button type="submit" className="btn-primary w-full" disabled={loading}>
-              {loading ? <Spinner size={18} /> : 'Sign In'}
+            <button type="submit" disabled={loading}
+              className="w-full btn-primary py-2.5 mt-2 justify-center">
+              {loading
+                ? <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Signing in…
+                  </span>
+                : 'Sign in'}
             </button>
           </form>
-
-          <div className="mt-6 pt-5 border-t border-surface-800">
-            <p className="text-surface-600 text-xs text-center">
-              Access restricted to authorised Rent N Stay personnel only.
-            </p>
-          </div>
         </div>
-
-        <p className="text-center text-surface-700 text-xs mt-6">
-          MMR v1.0 · © {new Date().getFullYear()} Rent N Stay
-        </p>
       </div>
     </div>
   )
