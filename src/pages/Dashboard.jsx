@@ -18,7 +18,7 @@ const CHART_COLORS = {
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-surface-800 border border-surface-700 rounded-lg px-4 py-3 text-sm">
+    <div className="bg-surface-100 border border-surface-200 rounded-lg px-4 py-3 text-sm">
       <p className="text-surface-400 mb-2 font-medium">{label}</p>
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2">
@@ -176,7 +176,7 @@ export default function Dashboard() {
         {/* Cash Flow Chart */}
         <div className="card p-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-5">
-            <h3 className="font-display font-semibold text-surface-100">6-Month Cash Flow</h3>
+            <h3 className="font-display font-semibold text-surface-800">6-Month Cash Flow</h3>
             <div className="flex items-center gap-4 text-xs text-surface-500">
               <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-full bg-income inline-block" /> Income</span>
               <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-full bg-expense inline-block" /> Expense</span>
@@ -209,9 +209,9 @@ export default function Dashboard() {
 
         {/* Payment Mode Pie */}
         <div className="card p-5">
-          <h3 className="font-display font-semibold text-surface-100 mb-5">Collections by Mode</h3>
+          <h3 className="font-display font-semibold text-surface-800 mb-5">Collections by Mode</h3>
           {loading || paymentModeData.length === 0 ? (
-            <div className="h-52 flex items-center justify-center text-surface-600 text-sm">No data yet</div>
+            <div className="h-52 flex items-center justify-center text-surface-500 text-sm">No data yet</div>
           ) : (
             <ResponsiveContainer width="100%" height={210}>
               <PieChart>
@@ -231,8 +231,8 @@ export default function Dashboard() {
       {/* Recent Payments */}
       <div className="card p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-display font-semibold text-surface-100">Recent Rent Collections</h3>
-          <a href="/payments" className="text-brand-400 hover:text-brand-300 text-xs font-medium">View all →</a>
+          <h3 className="font-display font-semibold text-surface-800">Recent Rent Collections</h3>
+          <a href="/payments" className="text-brand-500 hover:text-brand-300 text-xs font-medium">View all →</a>
         </div>
         <div className="table-container">
           {loading ? (
@@ -240,7 +240,7 @@ export default function Dashboard() {
               {[...Array(4)].map((_, i) => <div key={i} className="skeleton h-10 rounded" />)}
             </div>
           ) : recentPayments.length === 0 ? (
-            <p className="text-surface-600 text-sm py-8 text-center">No collections recorded yet</p>
+            <p className="text-surface-500 text-sm py-8 text-center">No collections recorded yet</p>
           ) : (
             <table className="data-table">
               <thead>
@@ -257,7 +257,7 @@ export default function Dashboard() {
               <tbody>
                 {recentPayments.map(p => (
                   <tr key={p.id}>
-                    <td className="text-surface-200 font-medium">{p.tenant?.full_name || '—'}</td>
+                    <td className="text-surface-700 font-medium">{p.tenant?.full_name || '—'}</td>
                     <td>{p.flat?.door_number || '—'}</td>
                     <td>{p.building?.name || '—'}</td>
                     <td>{fmtMonth(p.for_month)}</td>
