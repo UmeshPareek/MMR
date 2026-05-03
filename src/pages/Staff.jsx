@@ -129,7 +129,7 @@ export default function Staff() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-surface-800">
+      <div className="flex border-b border-surface-200">
         {[['staff', 'Staff Members'], ['salaries', 'Salary Records'], ['advances', 'Advances']].map(([key, label]) => (
           <button key={key} className={`tab ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
         ))}
@@ -144,22 +144,22 @@ export default function Staff() {
               <div key={s.id} className="card p-5 space-y-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-semibold ${s.status === 'active' ? 'bg-income/15 text-income' : 'bg-surface-800 text-surface-500'}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-semibold ${s.status === 'active' ? 'bg-income/15 text-income' : 'bg-surface-100 text-surface-500'}`}>
                       {s.full_name.charAt(0).toUpperCase()}
                     </div>
                     <div>
-                      <p className="font-semibold text-surface-100">{s.full_name}</p>
+                      <p className="font-semibold text-surface-800">{s.full_name}</p>
                       <p className="text-surface-500 text-xs">{s.role || 'Staff'}</p>
                     </div>
                   </div>
                   <button className="btn-ghost btn-sm" onClick={() => openEditStaff(s)}><Edit2 size={13} /></button>
                 </div>
                 {s.phone && <p className="text-surface-500 text-sm">{s.phone}</p>}
-                {s.building && <p className="text-surface-600 text-xs">📍 {s.building.name}</p>}
+                {s.building && <p className="text-surface-500 text-xs">📍 {s.building.name}</p>}
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-surface-600 text-xs">Monthly Salary</p>
-                    <p className="text-surface-100 font-semibold font-mono">{formatCurrency(s.monthly_salary)}</p>
+                    <p className="text-surface-500 text-xs">Monthly Salary</p>
+                    <p className="text-surface-800 font-semibold font-mono">{formatCurrency(s.monthly_salary)}</p>
                   </div>
                   <Badge variant={s.status === 'active' ? 'success' : 'default'}>{s.status}</Badge>
                 </div>
@@ -184,7 +184,7 @@ export default function Staff() {
                 <tbody>
                   {salaries.map(s => (
                     <tr key={s.id}>
-                      <td className="text-surface-100 font-medium">{s.staff?.full_name || '—'}</td>
+                      <td className="text-surface-800 font-medium">{s.staff?.full_name || '—'}</td>
                       <td className="text-surface-500">{s.staff?.role || '—'}</td>
                       <td>{fmtMonth(s.for_month)}</td>
                       <td className="font-mono">{formatCurrency(s.gross_salary)}</td>
@@ -204,7 +204,7 @@ export default function Staff() {
 
       {tab === 'advances' && (
         <div className="card overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-surface-800">
+          <div className="flex items-center justify-between p-4 border-b border-surface-200">
             <p className="text-surface-300 text-sm font-medium">Advance Payments to Staff</p>
             <button className="btn-secondary btn-sm" onClick={() => { setAdvanceForm({ staff_id: '', amount: '', payment_mode: 'cash', advance_date: new Date().toISOString().split('T')[0], reason: '', notes: '' }); setAdvanceModal(true) }}>+ New Advance</button>
           </div>
@@ -217,7 +217,7 @@ export default function Staff() {
                 <tbody>
                   {advances.map(a => (
                     <tr key={a.id}>
-                      <td className="text-surface-100 font-medium">{a.staff?.full_name || '—'}</td>
+                      <td className="text-surface-800 font-medium">{a.staff?.full_name || '—'}</td>
                       <td className="text-surface-500 text-xs">{fmtDate(a.advance_date)}</td>
                       <td className="text-surface-400">{a.reason || '—'}</td>
                       <td><Badge variant="warning">{a.payment_mode}</Badge></td>
@@ -319,7 +319,7 @@ export default function Staff() {
               <input type="number" className="input" value={salaryForm.other_deduction} onChange={e => setSalaryForm(p => ({ ...p, other_deduction: e.target.value }))} />
             </div>
           </div>
-          <div className="p-4 bg-surface-800 rounded-xl border border-surface-700">
+          <div className="p-4 bg-surface-100 rounded-xl border border-surface-200">
             <p className="text-surface-400 text-sm">Net Payable</p>
             <p className="font-display font-bold text-income text-2xl">{formatCurrency(updateNetSalary(salaryForm))}</p>
           </div>
