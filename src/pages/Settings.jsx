@@ -41,7 +41,7 @@ export default function Settings() {
   const [showPass, setShowPass] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (isSuperAdmin() || isAdmin()) fetchUsers(); }, []);
+  useEffect(() => { if (isSuperAdmin || isAdmin) fetchUsers(); }, []);
 
   async function fetchUsers() {
     setLoading(true);
@@ -157,7 +157,7 @@ export default function Settings() {
   }
 
   const tabs = [
-    ...(isSuperAdmin() || isAdmin() ? [{ id: 'users', label: 'User Management', icon: Users }] : []),
+    ...(isSuperAdmin || isAdmin ? [{ id: 'users', label: 'User Management', icon: Users }] : []),
     { id: 'profile', label: 'My Profile', icon: User },
     { id: 'security', label: 'Security', icon: Key },
   ];
@@ -190,7 +190,7 @@ export default function Settings() {
               <button onClick={fetchUsers} className="btn-ghost flex items-center gap-1.5 text-sm">
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh
               </button>
-              {isSuperAdmin() && (
+              {isSuperAdmin && (
                 <button onClick={() => setShowInvite(true)} className="btn-primary flex items-center gap-2">
                   <UserPlus className="w-4 h-4" /> Add User
                 </button>
@@ -224,7 +224,7 @@ export default function Settings() {
                     </div>
                     <p className="text-xs text-surface-500 mt-0.5 truncate">{u.email}</p>
                   </div>
-                  {isSuperAdmin() && u.id !== profile?.id && (
+                  {isSuperAdmin && u.id !== profile?.id && (
                     <div className="flex gap-2 flex-shrink-0">
                       <button onClick={() => openEdit(u)}
                         className="btn-ghost p-2 text-surface-400 hover:text-brand-400">
