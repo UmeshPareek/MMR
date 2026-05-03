@@ -141,7 +141,7 @@ export default function Tenants() {
               <tbody>
                 {filtered.map(t => (
                   <tr key={t.id}>
-                    <td className="font-semibold text-surface-100">{t.full_name}</td>
+                    <td className="font-semibold text-surface-800">{t.full_name}</td>
                     <td className="font-mono text-sm">{t.phone}</td>
                     <td>{t.building?.name || '—'}</td>
                     <td>{t.flat?.door_number || '—'}</td>
@@ -165,7 +165,7 @@ export default function Tenants() {
 
       <Modal open={modal} onClose={() => setModal(false)} title={editTenant ? 'Edit Tenant' : 'Add Tenant'} size="xl">
         <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="form-group sm:col-span-2 border-b border-surface-800 pb-4 mb-1">
+          <div className="form-group sm:col-span-2 border-b border-surface-200 pb-4 mb-1">
             <p className="text-xs text-surface-500 uppercase tracking-wider font-semibold">Personal Details</p>
           </div>
           <div className="form-group">
@@ -200,7 +200,7 @@ export default function Tenants() {
             <input className="input" value={form.emergency_phone} onChange={e => setForm(p => ({ ...p, emergency_phone: e.target.value }))} />
           </div>
 
-          <div className="form-group sm:col-span-2 border-b border-t border-surface-800 py-4 mt-1 mb-1">
+          <div className="form-group sm:col-span-2 border-b border-t border-surface-200 py-4 mt-1 mb-1">
             <p className="text-xs text-surface-500 uppercase tracking-wider font-semibold">Property & Rent Details</p>
           </div>
           <div className="form-group">
