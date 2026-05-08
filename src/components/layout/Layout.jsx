@@ -7,6 +7,11 @@ const TITLES = {
   '/': 'Dashboard', '/buildings': 'Buildings & Flats', '/owners': 'Building Owners',
   '/tenants': 'Tenants', '/payments': 'Rent Collection', '/owner-payments': 'Owner Payments',
   '/expenses': 'Expenses', '/staff': 'Staff & Salary', '/reports': 'Reports',
+  '/daily-collection': 'Collection Tracker',
+  '/utility-bills': 'Utility Bills',
+  '/security-deposits': 'Security Deposits',
+  '/dashboard': 'Dashboard',
+  '/security-deposits': 'Security Deposits',
   '/audit': 'Audit', '/settings': 'Settings',
 }
 
