@@ -27,11 +27,21 @@ export default function UtilityBills() {
     try {
       let q = supabase
         .from('flats')
-        .select('id, door_number, monthly_rent, building_id, buildings(name), tenants!flats_current_tenant_id_fkey(full_name)')
+        .select('id, door_number, monthly_rent, building_id, buildings(name)')
         .eq('status', 'occupied');
       if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
       const { data: flatData, error } = await q;
       if (error) throw error;
+
+      // Fetch active tenants separately
+      const flatIds2 = (flatData || []).map(f => f.id);
+      const { data: tenantData } = flatIds2.length
+        ? await supabase.from('tenants').select('id, full_name, flat_id').eq('status', 'active').in('flat_id', flatIds2)
+        : { data: [] };
+      const tenantByFlat = {};
+      (tenantData || []).forEach(t => { tenantByFlat[t.flat_id] = t; });
+      // Attach tenant to each flat
+      flatData && flatData.forEach(f => { f._tenant = tenantByFlat[f.id] || null; });
 
       const flatIds = (flatData || []).map(f => f.id);
       let existingEntries = {};
@@ -213,7 +223,7 @@ export default function UtilityBills() {
                     <tr key={flat.id} className={e.saved ? 'bg-emerald-50/30' : ''}>
                       <td className="text-xs text-surface-500">{flat.buildings?.name || '—'}</td>
                       <td className="font-mono font-medium text-surface-800">{flat.door_number}</td>
-                      <td className="text-surface-600 text-sm">{flat.tenants?.full_name || '—'}</td>
+                      <td className="text-surface-600 text-sm">{flat._tenant?.full_name || '—'}</td>
                       <td>
                         <div className="relative">
                           <Zap className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-yellow-400" />
