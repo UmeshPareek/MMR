@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, FLAT_STATUSES } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
-import { Building2, Plus, ChevronDown, ChevronRight, Edit2, Trash2, Home } from 'lucide-react'
+import { Building2, Plus, ChevronDown, ChevronRight, Edit2, Trash2, Home, Upload, Download, Lock, AlertTriangle, ExternalLink } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
 const FLAT_STATUS_OPTIONS = ['occupied', 'vacant', 'maintenance']
 
 export default function Buildings() {
-  const { profile } = useAuth()
+  const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const bulkRef = useRef()
+  const navigate = useNavigate()
   const [buildings, setBuildings] = useState([])
   const [owners, setOwners] = useState([])
   const [loading, setLoading] = useState(true)
@@ -22,6 +26,8 @@ export default function Buildings() {
   const [flatModal, setFlatModal] = useState({ open: false, buildingId: null })
   const [editBuilding, setEditBuilding] = useState(null)
   const [editFlat, setEditFlat] = useState(null)
+  const [bulkPreview, setBulkPreview] = useState(null)
+  const [bulkUploading, setBulkUploading] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [saving, setSaving] = useState(false)
 
@@ -104,6 +110,20 @@ export default function Buildings() {
 
   async function saveFlat() {
     if (!fForm.door_number || !fForm.monthly_rent) return toast.error('Door number and rent are required')
+    // Rent change requires admin permission
+    if (editFlat && parseFloat(fForm.monthly_rent) !== parseFloat(editFlat.monthly_rent)) {
+      if (!isAdmin && !isSuperAdmin) {
+        return toast.error('Only admin can change rent amount. Contact your admin.')
+      }
+      // Log the change
+      await supabase.from('rent_change_log').insert({
+        flat_id: editFlat.id,
+        old_rent: editFlat.monthly_rent,
+        new_rent: parseFloat(fForm.monthly_rent),
+        reason: fForm.notes || 'Rent updated',
+        changed_by: profile?.id,
+      })
+    }
     setSaving(true)
     const payload = { ...fForm, building_id: flatModal.buildingId, monthly_rent: parseFloat(fForm.monthly_rent) || 0, area_sqft: parseFloat(fForm.area_sqft) || null, floor_number: parseInt(fForm.floor_number) || null }
 
@@ -124,6 +144,97 @@ export default function Buildings() {
     toast.success('Building removed')
     setDeleteConfirm(null)
     loadBuildings()
+  }
+
+
+  function downloadBulkTemplate() {
+    const ws = XLSX.utils.json_to_sheet([
+      { building_name: 'Green Valley', building_address: '12 MG Road, Bangalore', area: 'Koramangala', door_number: 'A-101', floor_number: 1, flat_type: '1BHK', monthly_rent: 12000, status: 'vacant' },
+      { building_name: 'Green Valley', building_address: '12 MG Road, Bangalore', area: 'Koramangala', door_number: 'A-102', floor_number: 1, flat_type: '2BHK', monthly_rent: 18000, status: 'vacant' },
+    ])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Buildings & Flats')
+    XLSX.writeFile(wb, 'MMR_Bulk_Upload_Template.xlsx')
+    toast.success('Template downloaded')
+  }
+
+  async function handleBulkFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
+        if (!rows.length) return toast.error('No data found in file')
+        // Validate
+        const errors = []
+        rows.forEach((r, i) => {
+          if (!r.building_name) errors.push(`Row ${i+2}: building_name required`)
+          if (!r.door_number) errors.push(`Row ${i+2}: door_number required`)
+          if (!r.monthly_rent || isNaN(Number(r.monthly_rent))) errors.push(`Row ${i+2}: valid monthly_rent required`)
+        })
+        if (errors.length) { toast.error(errors.slice(0,3).join(' | ')); return }
+        setBulkPreview(rows)
+      }
+      reader.readAsBinaryString(file)
+    } catch (e) {
+      toast.error('Failed to parse file: ' + e.message)
+    }
+    bulkRef.current.value = ''
+  }
+
+  async function confirmBulkUpload() {
+    if (!bulkPreview?.length) return
+    setBulkUploading(true)
+    try {
+      // Group by building name
+      const buildingMap = {}
+      bulkPreview.forEach(r => {
+        const key = r.building_name.trim()
+        if (!buildingMap[key]) buildingMap[key] = { address: r.building_address || '', area: r.area || '', flats: [] }
+        buildingMap[key].flats.push(r)
+      })
+
+      let buildingsCreated = 0, flatsCreated = 0
+      for (const [name, bData] of Object.entries(buildingMap)) {
+        // Upsert building
+        let buildingId
+        const existing = buildings.find(b => b.name.toLowerCase() === name.toLowerCase())
+        if (existing) {
+          buildingId = existing.id
+        } else {
+          const { data: nb, error } = await supabase.from('buildings')
+            .insert({ name, address: bData.address, area: bData.area, city: 'Bangalore', created_by: profile?.id })
+            .select().single()
+          if (error) throw error
+          buildingId = nb.id
+          buildingsCreated++
+        }
+
+        // Insert flats
+        const flatPayloads = bData.flats.map(r => ({
+          building_id: buildingId,
+          door_number: String(r.door_number),
+          floor_number: parseInt(r.floor_number) || null,
+          flat_type: r.flat_type || null,
+          monthly_rent: parseFloat(r.monthly_rent) || 0,
+          status: r.status || 'vacant',
+        }))
+        const { error: fe } = await supabase.from('flats').insert(flatPayloads)
+        if (fe) throw fe
+        flatsCreated += flatPayloads.length
+      }
+
+      toast.success(`Uploaded: ${buildingsCreated} buildings, ${flatsCreated} flats`)
+      setBulkPreview(null)
+      loadBuildings()
+    } catch (e) {
+      toast.error('Upload failed: ' + e.message)
+    } finally {
+      setBulkUploading(false)
+    }
   }
 
   const filtered = buildings.filter(b => b.name.toLowerCase().includes(search.toLowerCase()) || b.address.toLowerCase().includes(search.toLowerCase()))
@@ -335,7 +446,24 @@ export default function Buildings() {
           </div>
           <div className="form-group">
             <label className="label">Monthly Rent (₹) *</label>
-            <input type="number" className="input" value={fForm.monthly_rent} onChange={e => setFFform(p => ({ ...p, monthly_rent: e.target.value }))} placeholder="0" />
+            <div className="relative">
+              <input type="number" className={`input ${editFlat && !isAdmin && !isSuperAdmin ? 'opacity-60 cursor-not-allowed' : ''}`} 
+                value={fForm.monthly_rent} 
+                onChange={e => setFFform(p => ({ ...p, monthly_rent: e.target.value }))} 
+                placeholder="0"
+                readOnly={editFlat && !isAdmin && !isSuperAdmin}
+              />
+              {editFlat && !isAdmin && !isSuperAdmin && (
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                  <Lock className="w-3.5 h-3.5 text-surface-400" />
+                </div>
+              )}
+            </div>
+            {editFlat && !isAdmin && !isSuperAdmin && (
+              <p className="text-xs text-amber-600 flex items-center gap-1 mt-1">
+                <AlertTriangle className="w-3 h-3" /> Contact admin to change rent
+              </p>
+            )}
           </div>
           <div className="form-group">
             <label className="label">Deposit Months</label>
@@ -358,7 +486,57 @@ export default function Buildings() {
         </div>
       </Modal>
 
-      <ConfirmDialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => deleteBuilding(deleteConfirm?.id)} title="Remove Building" message={`Remove "${deleteConfirm?.name}"? This won't delete tenant or payment data.`} danger />
+
+      {/* Bulk Upload Preview */}
+      {bulkPreview && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setBulkPreview(null)}>
+          <div className="modal-content max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200">
+              <h2 className="font-semibold text-surface-800">Preview — {bulkPreview.length} rows</h2>
+              <button onClick={() => setBulkPreview(null)} className="text-surface-400 hover:text-surface-600">
+                <span className="text-lg">×</span>
+              </button>
+            </div>
+            <div className="overflow-auto flex-1 p-4">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Building</th>
+                    <th>Door No</th>
+                    <th>Floor</th>
+                    <th>Type</th>
+                    <th>Monthly Rent</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bulkPreview.map((r, i) => (
+                    <tr key={i}>
+                      <td>{r.building_name}</td>
+                      <td className="font-mono">{r.door_number}</td>
+                      <td>{r.floor_number || '—'}</td>
+                      <td>{r.flat_type || '—'}</td>
+                      <td className="font-mono">{formatCurrency(Number(r.monthly_rent) || 0)}</td>
+                      <td>{r.status || 'vacant'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex gap-3 px-5 py-4 border-t border-surface-200">
+              <button onClick={() => setBulkPreview(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={confirmBulkUpload} disabled={bulkUploading} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                {bulkUploading
+                  ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Uploading…</>
+                  : <><Upload className="w-4 h-4" /> Confirm Upload</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            <ConfirmDialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => deleteBuilding(deleteConfirm?.id)} title="Remove Building" message={`Remove "${deleteConfirm?.name}"? This won't delete tenant or payment data.`} danger />
     </div>
+
   )
 }
