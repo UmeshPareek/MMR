@@ -4,56 +4,71 @@ import { AuthProvider, useAuth } from '@/contexts/AuthContext'
 import Layout from '@/components/layout/Layout'
 import Login from '@/pages/Login'
 import Dashboard from '@/pages/Dashboard'
+import TeamHome from '@/pages/TeamHome'
 import Buildings from '@/pages/Buildings'
+import BuildingFile from '@/pages/BuildingFile'
+import Owners from '@/pages/Owners'
 import Tenants from '@/pages/Tenants'
 import Payments from '@/pages/Payments'
+import OwnerPayments from '@/pages/OwnerPayments'
 import Expenses from '@/pages/Expenses'
 import Staff from '@/pages/Staff'
 import Reports from '@/pages/Reports'
 import Audit from '@/pages/Audit'
 import Settings from '@/pages/Settings'
-import Owners from '@/pages/Owners'
-import OwnerPayments from '@/pages/OwnerPayments'
+import UtilityBills from '@/pages/UtilityBills'
+import SecurityDeposits from '@/pages/SecurityDeposits'
 
-function ProtectedRoute({ children, requireAdmin = false, requireSuperAdmin = false }) {
+function ProtectedRoute({ children, adminOnly = false, superOnly = false }) {
   const { user, profile, loading } = useAuth()
-
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-surface-500 text-sm">Loading MMR…</p>
-      </div>
-    </div>
-  )
-
-  if (!user) return <Navigate to="/login" replace />
-  if (requireSuperAdmin && profile?.role !== 'super_admin') return <Navigate to="/" replace />
-  if (requireAdmin && !['super_admin', 'admin'].includes(profile?.role)) return <Navigate to="/" replace />
-
+  if (loading) return <Loader />
+  if (!user || !profile) return <Navigate to="/login" replace />
+  if (superOnly && profile.role !== 'super_admin') return <Navigate to="/" replace />
+  if (adminOnly && !['super_admin', 'admin'].includes(profile.role)) return <Navigate to="/" replace />
   return children
 }
 
+function Loader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface-50">
+      <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  )
+}
+
+// Role-based home: team sees TeamHome, admin/super admin sees Dashboard
+function HomeRoute() {
+  const { profile } = useAuth()
+  if (profile?.role === 'team') return <TeamHome />
+  return <Dashboard />
+}
+
 function AppRoutes() {
-  const { user } = useAuth()
+  const { user, loading } = useAuth()
+  if (loading) return <Loader />
+  if (!user) return <Routes><Route path="*" element={<Login />} /></Routes>
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
-      <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route index element={<Dashboard />} />
-        <Route path="buildings" element={<Buildings />} />
-        <Route path="owners" element={<Owners />} />
-        <Route path="tenants" element={<Tenants />} />
-        <Route path="payments" element={<Payments />} />
-        <Route path="owner-payments" element={<OwnerPayments />} />
-        <Route path="expenses" element={<Expenses />} />
-        <Route path="staff" element={<Staff />} />
-        <Route path="reports" element={<Reports />} />
-        <Route path="audit" element={<ProtectedRoute requireSuperAdmin><Audit /></ProtectedRoute>} />
-        <Route path="settings" element={<ProtectedRoute requireAdmin><Settings /></ProtectedRoute>} />
+      <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+        <Route path="/" element={<HomeRoute />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/buildings" element={<Buildings />} />
+        <Route path="/buildings/:id" element={<BuildingFile />} />
+        <Route path="/owners" element={<Owners />} />
+        <Route path="/tenants" element={<Tenants />} />
+        <Route path="/payments" element={<Payments />} />
+        <Route path="/owner-payments" element={<OwnerPayments />} />
+        <Route path="/expenses" element={<Expenses />} />
+        <Route path="/staff" element={<Staff />} />
+        <Route path="/reports" element={<Reports />} />
+        <Route path="/utility-bills" element={<UtilityBills />} />
+        <Route path="/security-deposits" element={<SecurityDeposits />} />
+        <Route path="/audit" element={<ProtectedRoute superOnly><Audit /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="/login" element={<Login />} />
     </Routes>
   )
 }
@@ -62,23 +77,12 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <Toaster position="top-right" toastOptions={{
+          style: { background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0', fontSize: '13px' },
+          success: { iconTheme: { primary: '#16a34a', secondary: '#fff' } },
+          error: { iconTheme: { primary: '#dc2626', secondary: '#fff' } },
+        }} />
         <AppRoutes />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            duration: 4000,
-            style: {
-              background: '#1e293b',
-              color: '#f1f5f9',
-              border: '1px solid #334155',
-              borderRadius: '10px',
-              fontFamily: 'DM Sans, sans-serif',
-              fontSize: '14px',
-            },
-            success: { iconTheme: { primary: '#10b981', secondary: '#1e293b' } },
-            error: { iconTheme: { primary: '#ef4444', secondary: '#1e293b' } },
-          }}
-        />
       </AuthProvider>
     </BrowserRouter>
   )
