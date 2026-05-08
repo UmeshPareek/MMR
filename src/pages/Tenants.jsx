@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
 import { Users, Plus, Edit2, Trash2, Phone, Home } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -16,7 +17,7 @@ const defaultForm = () => ({
 })
 
 export default function Tenants() {
-  const { profile } = useAuth()
+  const { profile, isAdmin, isSuperAdmin } = useAuth()
   const [tenants, setTenants] = useState([])
   const [buildings, setBuildings] = useState([])
   const [flats, setFlats] = useState([])
