@@ -52,12 +52,20 @@ export default function Buildings() {
   }
 
   async function loadOwners() {
-    const { data } = await supabase.from('owners').select('id, name').eq('is_active', true).order('name')
+    const { data } = await supabase.from('owners').select('id, name').order('name')
     setOwners(data || [])
   }
 
   async function loadFlats(buildingId) {
-    const { data } = await supabase.from('flats').select('*, tenant:tenants(full_name, phone)').eq('building_id', buildingId).order('door_number')
+    const { data: flatData } = await supabase.from('flats').select('*').eq('building_id', buildingId).order('door_number')
+    // Fetch active tenants separately
+    const flatIds = (flatData || []).map(f => f.id)
+    const { data: tenantData } = flatIds.length
+      ? await supabase.from('tenants').select('id, full_name, phone, flat_id').eq('status', 'active').in('flat_id', flatIds)
+      : { data: [] }
+    const tenantByFlat = {}
+    ;(tenantData || []).forEach(t => { tenantByFlat[t.flat_id] = t })
+    const data = (flatData || []).map(f => ({ ...f, tenant: tenantByFlat[f.id] || null }))
     setFlats(prev => ({ ...prev, [buildingId]: data || [] }))
   }
 
