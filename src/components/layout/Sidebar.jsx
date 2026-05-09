@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard, Building2, Users, CreditCard, TrendingDown,
   UserCog, BarChart3, ShieldCheck, Settings, X, LogOut,
-  Home, Banknote, Zap, Wallet, ListChecks
+  Home, Banknote, Zap, Wallet, ListChecks, ClipboardList
 } from 'lucide-react'
 import { initials } from '@/utils/helpers'
 
@@ -73,6 +73,7 @@ export default function Sidebar({ open, onClose }) {
           <Section label="Collect">
             <Item to="/payments" icon={CreditCard} label="Log Payment" />
             <Item to="/daily-collection" icon={ListChecks} label="Collection Tracker" />
+            <Item to="/daily-reconciliation" icon={ClipboardList} label="Daily Reconciliation" />
             <Item to="/utility-bills" icon={Zap} label="Utility Bills" />
             <Item to="/security-deposits" icon={Wallet} label="Security Deposits" />
           </Section>
