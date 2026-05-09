@@ -90,7 +90,16 @@ export default function Buildings() {
   async function saveBuilding() {
     if (!bForm.name || !bForm.address) return toast.error('Name and address are required')
     setSaving(true)
-    const payload = { ...bForm, monthly_rent_to_owner: parseFloat(bForm.monthly_rent_to_owner) || 0, security_deposit_cash: parseFloat(bForm.security_deposit_cash) || 0, security_deposit_bank: parseFloat(bForm.security_deposit_bank) || 0, total_flats: parseInt(bForm.total_flats) || 0, created_by: profile?.id }
+    const payload = {
+      ...bForm,
+      monthly_rent_to_owner: parseFloat(bForm.monthly_rent_to_owner) || 0,
+      security_deposit_cash: parseFloat(bForm.security_deposit_cash) || 0,
+      security_deposit_bank: parseFloat(bForm.security_deposit_bank) || 0,
+      total_flats: parseInt(bForm.total_flats) || 0,
+      lease_start_date: bForm.lease_start_date || null,
+      lease_end_date: bForm.lease_end_date || null,
+      created_by: profile?.id,
+    }
     if (!payload.owner_id) delete payload.owner_id
 
     const { error } = editBuilding
