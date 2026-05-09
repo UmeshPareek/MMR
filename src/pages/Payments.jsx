@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
@@ -100,6 +100,7 @@ export default function Payments() {
     cash_voucher_url: null, cash_photo_url: null, payer_photo_url: null,
   });
   const [saving, setSaving] = useState(false);
+  const channelRef = useRef(null);
 
   // View proofs
   const [viewProofs, setViewProofs] = useState(null);
@@ -107,7 +108,18 @@ export default function Payments() {
   // History view
   const [viewMode, setViewMode] = useState('log'); // log | history
 
-  useEffect(() => { loadAll(); }, [selectedMonth]);
+  useEffect(() => {
+    loadAll();
+
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+    const channel = supabase
+      .channel('payments-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => loadAll())
+      .subscribe();
+    channelRef.current = channel;
+
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, [selectedMonth]);
 
   async function loadAll() {
     setLoading(true);
