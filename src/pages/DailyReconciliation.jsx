@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../utils/helpers';
@@ -26,7 +26,21 @@ export default function DailyReconciliation() {
   const [todayConfirmed, setTodayConfirmed] = useState(false);
   const [expandedCollector, setExpandedCollector] = useState(null);
 
-  useEffect(() => { load(); }, [selectedDate]);
+  const channelRef = useRef(null);
+
+  useEffect(() => {
+    load();
+
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+    const channel = supabase
+      .channel('reconciliation-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_reconciliations' }, () => load())
+      .subscribe();
+    channelRef.current = channel;
+
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, [selectedDate]);
 
   async function load() {
     setLoading(true);
