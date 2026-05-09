@@ -34,10 +34,31 @@ export default function Tenants() {
 
   async function load() {
     setLoading(true)
-    let q = supabase.from('tenants').select('*, flat:flats(door_number), building:buildings(name)').order('full_name')
+    let q = supabase.from('tenants').select('*').order('full_name')
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
-    const { data } = await q
-    setTenants(data || [])
+    const { data, error } = await q
+    if (error) { console.error('Tenants error:', error); setLoading(false); return; }
+
+    // Fetch flats and buildings separately
+    const flatIds = [...new Set((data || []).map(t => t.flat_id).filter(Boolean))]
+    const buildingIds = [...new Set((data || []).map(t => t.building_id).filter(Boolean))]
+
+    const [{ data: flatsData }, { data: buildingsData }] = await Promise.all([
+      flatIds.length ? supabase.from('flats').select('id, door_number').in('id', flatIds) : { data: [] },
+      buildingIds.length ? supabase.from('buildings').select('id, name').in('id', buildingIds) : { data: [] },
+    ])
+
+    const flatMap = {}
+    ;(flatsData || []).forEach(f => { flatMap[f.id] = f })
+    const buildingMap = {}
+    ;(buildingsData || []).forEach(b => { buildingMap[b.id] = b })
+
+    const enriched = (data || []).map(t => ({
+      ...t,
+      flat: t.flat_id ? flatMap[t.flat_id] : null,
+      building: t.building_id ? buildingMap[t.building_id] : null,
+    }))
+    setTenants(enriched)
     setLoading(false)
   }
 
