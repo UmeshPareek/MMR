@@ -83,10 +83,12 @@ export default function Dashboard() {
   const [prevStats, setPrevStats] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const channelRef = useRef(null)
+  const monthRef = useRef(selectedMonth)
 
   useEffect(() => {
+    monthRef.current = selectedMonth
     setLoading(true)
-    Promise.all([loadAll(), loadTrend()]).finally(() => setLoading(false))
+    Promise.all([loadAll(selectedMonth), loadTrend()]).finally(() => setLoading(false))
 
     // Clean up previous subscription
     if (channelRef.current) {
@@ -96,30 +98,12 @@ export default function Dashboard() {
     // Real-time subscriptions — auto refresh on any data change
     const channel = supabase
       .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => {
-        loadAll()
-        setLastUpdated(new Date())
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
       .subscribe()
 
     channelRef.current = channel
@@ -133,11 +117,11 @@ export default function Dashboard() {
 
   const refreshAll = useCallback(async () => {
     setLastUpdated(new Date())
-    await Promise.all([loadAll(), loadTrend()])
+    await Promise.all([loadAll(selectedMonth), loadTrend()])
   }, [selectedMonth])
 
-  async function loadAll() {
-    const m = selectedMonth
+  async function loadAll(m) {
+    m = m || selectedMonth
     const prevM = MONTHS[MONTHS.indexOf(m) - 1] || m
 
     const [
