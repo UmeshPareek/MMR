@@ -88,7 +88,21 @@ export default function Dashboard() {
   useEffect(() => {
     monthRef.current = selectedMonth
     setLoading(true)
-    Promise.all([loadAll(selectedMonth), loadTrend()]).finally(() => setLoading(false))
+    // Auto-detect best month on first load
+    supabase.from('rent_collections')
+      .select('for_month')
+      .order('for_month', { ascending: false })
+      .limit(1)
+      .then(({ data }) => {
+        const bestMonth = data?.[0]?.for_month
+        if (bestMonth && bestMonth !== selectedMonth) {
+          setSelectedMonth(bestMonth)
+          monthRef.current = bestMonth
+          Promise.all([loadAll(bestMonth), loadTrend()]).finally(() => setLoading(false))
+        } else {
+          Promise.all([loadAll(selectedMonth), loadTrend()]).finally(() => setLoading(false))
+        }
+      })
 
     // Clean up previous subscription
     if (channelRef.current) {
