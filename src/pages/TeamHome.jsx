@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths } from '../utils/helpers';
@@ -19,7 +19,21 @@ export default function TeamHome() {
   const [expanded, setExpanded] = useState({});
   const [filter, setFilter] = useState('unpaid'); // unpaid | all
 
-  useEffect(() => { load(); }, [selectedMonth, filter]);
+  const channelRef = useRef(null);
+
+  useEffect(() => {
+    load();
+
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+    const channel = supabase
+      .channel('teamhome-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flat_utilities' }, () => load())
+      .subscribe();
+    channelRef.current = channel;
+
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, [selectedMonth, filter]);
 
   async function load() {
     setLoading(true);
