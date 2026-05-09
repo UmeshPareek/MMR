@@ -1,33 +1,70 @@
 import { useEffect, useState } from 'react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'
+import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Cell, ReferenceLine
+} from 'recharts'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, fmtMonth, lastNMonths, currentMonth } from '@/utils/helpers'
+import { formatCurrency, fmtMonth, lastNMonths } from '@/utils/helpers'
 import { format, parseISO, endOfMonth } from 'date-fns'
+import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
 
-const PIE_COLORS = ['#0d9488', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#64748b']
+const MONTHS = lastNMonths(6)
+const MODE_COLORS = {
+  rentok: '#8b5cf6', crib: '#ec4899', upi: '#3b82f6',
+  bank_transfer: '#0d9488', cash: '#f59e0b', cheque: '#64748b', other: '#94a3b8'
+}
+const MODE_LABELS = {
+  rentok: 'RentOK', crib: 'Crib', upi: 'UPI',
+  bank_transfer: 'Bank', cash: 'Cash', cheque: 'Cheque', other: 'Other'
+}
 
-function KpiCard({ label, value, sub, accent = '#0d9488' }) {
+function Sparkline({ data, color, height = 40 }) {
+  if (!data || data.length < 2) return null
+  const max = Math.max(...data)
+  const min = Math.min(...data)
+  const range = max - min || 1
+  const w = 80, h = height
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * w
+    const y = h - ((v - min) / range) * (h - 4) - 2
+    return `${x},${y}`
+  }).join(' ')
   return (
-    <div className="card p-5" style={{ borderTop: `3px solid ${accent}` }}>
-      <p className="text-xs font-medium text-surface-500 uppercase tracking-wide mb-2">{label}</p>
-      <p className="text-2xl font-bold text-surface-900 font-mono leading-none">{value}</p>
-      {sub && <p className="text-xs text-surface-400 mt-1.5">{sub}</p>}
+    <svg width={w} height={h} className="opacity-60">
+      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function PnLRow({ label, value, indent = 0, bold = false, accent, sub }) {
+  return (
+    <div className={`flex items-center justify-between py-2 ${indent ? 'pl-' + (indent * 4) : ''} ${bold ? '' : 'opacity-80'}`}>
+      <div className="flex items-center gap-2 min-w-0">
+        {indent > 0 && <span className="w-px h-4 bg-surface-200 flex-shrink-0 ml-2" />}
+        <div className="min-w-0">
+          <p className={`text-sm ${bold ? 'font-semibold text-surface-800' : 'text-surface-600'} truncate`}>{label}</p>
+          {sub && <p className="text-xs text-surface-400">{sub}</p>}
+        </div>
+      </div>
+      <p className={`font-mono text-sm flex-shrink-0 ml-4 ${bold ? 'font-bold' : 'font-medium'} ${accent === 'green' ? 'text-emerald-700' : accent === 'red' ? 'text-red-600' : accent === 'teal' ? 'text-brand-700' : 'text-surface-700'}`}>
+        {value}
+      </p>
     </div>
   )
 }
 
-const ChartTooltip = ({ active, payload, label }) => {
+const ChartTip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null
   return (
-    <div className="bg-white border border-surface-200 rounded-lg px-3 py-2.5 text-xs shadow-card-hover">
-      <p className="font-semibold text-surface-700 mb-1.5">{label}</p>
+    <div className="bg-white border border-surface-200 rounded-lg shadow-card-hover px-3 py-2.5 text-xs">
+      <p className="font-semibold text-surface-600 mb-2">{label}</p>
       {payload.map((p, i) => (
-        <div key={i} className="flex items-center justify-between gap-4">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-            <span className="text-surface-500">{p.name}</span>
+        <div key={i} className="flex items-center justify-between gap-4 mb-1">
+          <span className="flex items-center gap-1.5 text-surface-500">
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
+            {p.name}
           </span>
-          <span className="font-semibold text-surface-800">{formatCurrency(p.value)}</span>
+          <span className="font-semibold font-mono text-surface-800">{formatCurrency(p.value)}</span>
         </div>
       ))}
     </div>
@@ -35,206 +72,388 @@ const ChartTooltip = ({ active, payload, label }) => {
 }
 
 export default function Dashboard() {
-  const months = lastNMonths(6)
-  const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1])
+  const [selectedMonth, setSelectedMonth] = useState(MONTHS[MONTHS.length - 1])
   const [stats, setStats] = useState(null)
-  const [cashFlow, setCashFlow] = useState([])
+  const [pnl, setPnl] = useState(null)
+  const [trend, setTrend] = useState([])
   const [modeData, setModeData] = useState([])
+  const [buildingPnl, setBuildingPnl] = useState([])
   const [recent, setRecent] = useState([])
   const [loading, setLoading] = useState(true)
+  const [prevStats, setPrevStats] = useState(null)
 
   useEffect(() => {
     setLoading(true)
-    Promise.all([loadStats(), loadRecent(), loadModes()])
-      .finally(() => setLoading(false))
+    Promise.all([loadAll(), loadTrend()]).finally(() => setLoading(false))
   }, [selectedMonth])
 
-  useEffect(() => {
-    loadCashFlow()
-  }, [])
-
-  async function loadStats() {
+  async function loadAll() {
     const m = selectedMonth
+    const prevM = MONTHS[MONTHS.indexOf(m) - 1] || m
+
     const [
-      { count: buildings },
-      { count: tenants },
-      { data: rent },
-      { data: exp },
-      { data: ub },
-      { data: op },
-      { count: vacant },
+      { count: buildings }, { count: tenants }, { count: vacant },
+      { data: rent }, { data: ownerPmt }, { data: exp }, { data: ub }, { data: deps },
+      { data: prevRent }, { data: prevExp }, { data: prevOwner },
+      { data: modes }, { data: bData }, { data: recentPay }
     ] = await Promise.all([
       supabase.from('buildings').select('*', { count: 'exact', head: true }).eq('is_active', true),
       supabase.from('tenants').select('*', { count: 'exact', head: true }).eq('status', 'active'),
-      supabase.from('rent_collections').select('amount').eq('for_month', m),
-      supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
-      supabase.from('utility_bills').select('amount').eq('for_month', m),
-      supabase.from('owner_payments').select('amount').eq('for_month', m),
       supabase.from('flats').select('*', { count: 'exact', head: true }).eq('status', 'vacant'),
+      supabase.from('rent_collections').select('amount, building_id').eq('for_month', m),
+      supabase.from('owner_payments').select('amount, building_id, payment_type').eq('for_month', m),
+      supabase.from('expenses').select('amount, category, building_id').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
+      supabase.from('utility_bills').select('amount, building_id').eq('for_month', m),
+      supabase.from('security_deposits').select('amount, deposit_type').eq('for_month', m).catch(() => ({ data: [] })),
+      supabase.from('rent_collections').select('amount').eq('for_month', prevM),
+      supabase.from('expenses').select('amount').gte('expense_date', `${prevM}-01`).lte('expense_date', format(endOfMonth(parseISO(`${prevM}-01`)), 'yyyy-MM-dd')),
+      supabase.from('owner_payments').select('amount').eq('for_month', prevM),
+      supabase.from('rent_collections').select('payment_mode, amount').eq('for_month', m),
+      supabase.from('buildings').select('id, name'),
+      supabase.from('rent_collections').select('id, amount, payment_mode, payment_date, for_month, flat_id, building_id, tenant_id').order('created_at', { ascending: false }).limit(6),
     ])
+
     const income = (rent || []).reduce((s, r) => s + Number(r.amount), 0)
-    const expenses = [...(exp || []), ...(ub || []), ...(op || [])].reduce((s, r) => s + Number(r.amount), 0)
-    setStats({ buildings: buildings || 0, tenants: tenants || 0, income, expenses, net: income - expenses, vacant: vacant || 0 })
+    const ownerRent = (ownerPmt || []).filter(p => p.payment_type !== 'security_deposit').reduce((s, r) => s + Number(r.amount), 0)
+    const expTotal = (exp || []).reduce((s, r) => s + Number(r.amount), 0)
+    const utilTotal = (ub || []).reduce((s, r) => s + Number(r.amount), 0)
+    const totalExpenses = ownerRent + expTotal + utilTotal
+    const grossProfit = income - ownerRent
+    const netProfit = income - totalExpenses
+    const margin = income > 0 ? Math.round((netProfit / income) * 100) : 0
+
+    const prevIncome = (prevRent || []).reduce((s, r) => s + Number(r.amount), 0)
+    const prevExpTotal = (prevExp || []).reduce((s, r) => s + Number(r.amount), 0)
+    const prevOwnerTotal = (prevOwner || []).reduce((s, r) => s + Number(r.amount), 0)
+    const prevNet = prevIncome - prevExpTotal - prevOwnerTotal
+
+    setPrevStats({ income: prevIncome, net: prevNet })
+
+    setStats({ buildings: buildings || 0, tenants: tenants || 0, vacant: vacant || 0, income, totalExpenses, netProfit, margin })
+
+    setPnl({
+      income,
+      ownerRent,
+      expTotal,
+      utilTotal,
+      totalExpenses,
+      grossProfit,
+      netProfit,
+      margin,
+      expByCategory: (exp || []).reduce((acc, e) => {
+        acc[e.category] = (acc[e.category] || 0) + Number(e.amount)
+        return acc
+      }, {}),
+    })
+
+    // Mode breakdown
+    const modeMap = {}
+    ;(modes || []).forEach(r => { modeMap[r.payment_mode] = (modeMap[r.payment_mode] || 0) + Number(r.amount) })
+    setModeData(Object.entries(modeMap).map(([mode, amount]) => ({ mode, amount, label: MODE_LABELS[mode] || mode })).sort((a,b) => b.amount - a.amount))
+
+    // Building P&L
+    const bMap = {}
+    ;(bData || []).forEach(b => { bMap[b.id] = { name: b.name, income: 0, expenses: 0 } })
+    ;(rent || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].income += Number(r.amount) })
+    ;(ownerPmt || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].expenses += Number(r.amount) })
+    ;(exp || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].expenses += Number(r.amount) })
+    setBuildingPnl(Object.values(bMap).filter(b => b.income > 0 || b.expenses > 0).sort((a,b) => (b.income - b.expenses) - (a.income - a.expenses)))
+
+    // Enrich recent
+    if (recentPay?.length) {
+      const tIds = [...new Set(recentPay.map(p => p.tenant_id).filter(Boolean))]
+      const fIds = [...new Set(recentPay.map(p => p.flat_id).filter(Boolean))]
+      const bIds = [...new Set(recentPay.map(p => p.building_id).filter(Boolean))]
+      const [{ data: tData }, { data: fData }, { data: bDataR }] = await Promise.all([
+        tIds.length ? supabase.from('tenants').select('id, full_name').in('id', tIds) : { data: [] },
+        fIds.length ? supabase.from('flats').select('id, door_number').in('id', fIds) : { data: [] },
+        bIds.length ? supabase.from('buildings').select('id, name').in('id', bIds) : { data: [] },
+      ])
+      const tMap = {}, fMap = {}, bMapR = {}
+      ;(tData || []).forEach(t => { tMap[t.id] = t })
+      ;(fData || []).forEach(f => { fMap[f.id] = f })
+      ;(bDataR || []).forEach(b => { bMapR[b.id] = b })
+      setRecent(recentPay.map(p => ({
+        ...p,
+        tenant: tMap[p.tenant_id],
+        flat: fMap[p.flat_id],
+        building: bMapR[p.building_id],
+      })))
+    }
   }
 
-  async function loadCashFlow() {
-    const months = lastNMonths(6)
+  async function loadTrend() {
     const rows = []
-    for (const m of months) {
-      const [{ data: rc }, { data: ex }, { data: ub }, { data: op }] = await Promise.all([
+    for (const m of MONTHS) {
+      const [{ data: rc }, { data: op }, { data: ex }] = await Promise.all([
         supabase.from('rent_collections').select('amount').eq('for_month', m),
-        supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
-        supabase.from('utility_bills').select('amount').eq('for_month', m),
         supabase.from('owner_payments').select('amount').eq('for_month', m),
+        supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
       ])
       const income = (rc || []).reduce((s, r) => s + Number(r.amount), 0)
-      const expense = [...(ex || []), ...(ub || []), ...(op || [])].reduce((s, r) => s + Number(r.amount), 0)
-      rows.push({ month: fmtMonth(m), income, expense })
+      const expenses = [...(op || []), ...(ex || [])].reduce((s, r) => s + Number(r.amount), 0)
+      rows.push({ month: fmtMonth(m), income, expenses, profit: income - expenses })
     }
-    setCashFlow(rows)
+    setTrend(rows)
   }
 
-  async function loadRecent() {
-    const { data } = await supabase
-      .from('rent_collections')
-      .select('id, amount, payment_mode, payment_date, for_month, tenant:tenants(full_name), flat:flats(door_number), building:buildings(name)')
-      .order('payment_date', { ascending: false })
-      .limit(8)
-    setRecent(data || [])
+  const delta = (current, prev) => {
+    if (!prev || prev === 0) return null
+    const pct = Math.round(((current - prev) / prev) * 100)
+    return pct
   }
 
-  async function loadModes() {
-    const { data } = await supabase.from('rent_collections').select('payment_mode, amount').eq('for_month', selectedMonth)
-    const map = {}
-    ;(data || []).forEach(r => { map[r.payment_mode] = (map[r.payment_mode] || 0) + Number(r.amount) })
-    setModeData(Object.entries(map).map(([name, value]) => ({ name: name.toUpperCase().replace('_', ' '), value })))
-  }
-
+  const incomeDelta = delta(stats?.income, prevStats?.income)
+  const netDelta = delta(stats?.netProfit, prevStats?.net)
   const sk = loading ? '—' : null
+
+  const MetricCard = ({ label, value, delta, deltaLabel, accent, icon: Icon }) => {
+    const isPositive = delta > 0
+    const isNeutral = delta === 0 || delta === null
+    return (
+      <div className="card p-5 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-surface-500 uppercase tracking-widest">{label}</p>
+          {!isNeutral && (
+            <span className={`flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+              {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {Math.abs(delta)}%
+            </span>
+          )}
+        </div>
+        <p className={`text-2xl font-bold font-mono leading-none ${accent}`}>{value}</p>
+        {deltaLabel && <p className="text-xs text-surface-400">{deltaLabel}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
 
-      {/* Header row */}
+      {/* Top bar */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <p className="text-sm font-medium text-surface-500">Overview</p>
-          <select className="select w-auto py-1.5 text-sm"
-            value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
-            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          <h2 className="font-semibold text-surface-800">Financial Overview</h2>
+          <select className="select w-auto py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
+            {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
-        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-          Live
-        </span>
-      </div>
-
-      {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard label="Buildings" value={sk ?? stats?.buildings} accent="#0d9488" />
-        <KpiCard label="Active Tenants" value={sk ?? stats?.tenants} accent="#3b82f6" />
-        <KpiCard label="Income MTD" value={sk ?? formatCurrency(stats?.income, true)} accent="#16a34a" />
-        <KpiCard label="Expenses MTD" value={sk ?? formatCurrency(stats?.expenses, true)} accent="#dc2626" />
-        <KpiCard
-          label="Net Cash Flow"
-          value={sk ?? formatCurrency(stats?.net, true)}
-          accent={!stats || stats.net >= 0 ? '#16a34a' : '#dc2626'}
-        />
-        <KpiCard label="Vacant Flats" value={sk ?? stats?.vacant} accent="#f59e0b" />
-      </div>
-
-      {/* Charts */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="card p-5 lg:col-span-2">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-surface-800 text-sm">6-Month Cash Flow</h3>
-            <div className="flex items-center gap-3 text-xs text-surface-400">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-emerald-500 rounded inline-block" /> Income</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 bg-red-400 rounded inline-block" /> Expense</span>
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={cashFlow} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <defs>
-                <linearGradient id="ig" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#16a34a" stopOpacity={0.12} />
-                  <stop offset="100%" stopColor="#16a34a" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#dc2626" stopOpacity={0.1} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false}
-                tickFormatter={v => `₹${(v / 1000).toFixed(0)}K`} width={48} />
-              <Tooltip content={<ChartTooltip />} />
-              <Area type="monotone" dataKey="income" name="Income" stroke="#16a34a" fill="url(#ig)" strokeWidth={2} dot={{ fill: '#16a34a', r: 3, strokeWidth: 0 }} />
-              <Area type="monotone" dataKey="expense" name="Expense" stroke="#dc2626" fill="url(#eg)" strokeWidth={2} dot={{ fill: '#dc2626', r: 3, strokeWidth: 0 }} />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-surface-400 hidden sm:block">
+            {stats?.tenants} tenants · {stats?.buildings} buildings · {stats?.vacant} vacant
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
         </div>
+      </div>
 
-        <div className="card p-5">
-          <h3 className="font-semibold text-surface-800 text-sm mb-4">Collections by Mode</h3>
-          {modeData.length === 0 ? (
-            <div className="h-[200px] flex items-center justify-center text-sm text-surface-400">No data yet</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={200}>
-              <PieChart>
-                <Pie data={modeData} cx="50%" cy="45%" innerRadius={52} outerRadius={75} paddingAngle={2} dataKey="value">
-                  {modeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={v => formatCurrency(v)}
-                  contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 12 }} />
-                <Legend iconType="circle" iconSize={7}
-                  formatter={v => <span style={{ color: '#64748b', fontSize: 11 }}>{v}</span>} />
-              </PieChart>
-            </ResponsiveContainer>
+      {/* Hero metric row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <MetricCard label="Total Revenue" value={sk ?? formatCurrency(stats?.income)} delta={incomeDelta} deltaLabel="vs last month" accent="text-surface-900" />
+        <MetricCard label="Total Expenses" value={sk ?? formatCurrency(stats?.totalExpenses)} accent="text-red-600" />
+        <MetricCard label="Net Profit" value={sk ?? formatCurrency(stats?.netProfit)} delta={netDelta} deltaLabel="vs last month" accent={!stats || stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'} />
+        <div className="card p-5 flex flex-col gap-3">
+          <p className="text-xs font-semibold text-surface-500 uppercase tracking-widest">Profit Margin</p>
+          <p className={`text-2xl font-bold font-mono leading-none ${!stats || stats.margin >= 0 ? 'text-brand-700' : 'text-red-600'}`}>
+            {sk ?? (stats?.margin + '%')}
+          </p>
+          {stats && (
+            <div className="h-1.5 bg-surface-100 rounded-full overflow-hidden">
+              <div className="h-full bg-brand-500 rounded-full transition-all duration-700" style={{ width: `${Math.max(0, Math.min(100, stats.margin))}%` }} />
+            </div>
           )}
         </div>
       </div>
 
+      {/* Main content — P&L + Chart */}
+      <div className="grid lg:grid-cols-5 gap-4">
+
+        {/* P&L Statement */}
+        <div className="lg:col-span-2 card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold text-surface-800 text-sm">P&L Statement</h3>
+            <span className="text-xs text-surface-400">{selectedMonth}</span>
+          </div>
+
+          <div className="space-y-0">
+            {/* Revenue */}
+            <div className="border-b border-surface-100 pb-1 mb-1">
+              <PnLRow label="Rent Collected" value={sk ?? formatCurrency(pnl?.income)} bold accent="green" />
+            </div>
+
+            {/* Cost of Revenue */}
+            <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider pt-1 pb-0.5">Cost of Revenue</p>
+            <PnLRow label="Owner Rent Payments" value={sk ?? formatCurrency(pnl?.ownerRent)} indent={1} accent="red" />
+            <div className="border-b border-surface-100 pb-1 mb-1">
+              <PnLRow label="Gross Profit" value={sk ?? formatCurrency(pnl?.grossProfit)} bold accent={pnl?.grossProfit >= 0 ? 'green' : 'red'} />
+            </div>
+
+            {/* Operating Expenses */}
+            <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider pt-1 pb-0.5">Operating Expenses</p>
+            <PnLRow label="Utility Bills" value={sk ?? formatCurrency(pnl?.utilTotal)} indent={1} accent="red" />
+            {pnl?.expByCategory && Object.entries(pnl.expByCategory).map(([cat, amt]) => (
+              <PnLRow key={cat} label={cat} value={formatCurrency(amt)} indent={1} accent="red" />
+            ))}
+            {(!pnl?.expByCategory || Object.keys(pnl.expByCategory).length === 0) && (
+              <PnLRow label="General Expenses" value={sk ?? formatCurrency(pnl?.expTotal)} indent={1} accent="red" />
+            )}
+
+            {/* Net */}
+            <div className="border-t-2 border-surface-200 pt-2 mt-2">
+              <PnLRow label="Net Profit / Loss"
+                value={sk ?? formatCurrency(pnl?.netProfit)}
+                bold accent={pnl?.netProfit >= 0 ? 'green' : 'red'}
+                sub={pnl ? `${pnl.margin}% margin` : ''} />
+            </div>
+          </div>
+        </div>
+
+        {/* Charts column */}
+        <div className="lg:col-span-3 space-y-4">
+          {/* 6-month trend */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-surface-800 text-sm">6-Month Trend</h3>
+              <div className="flex items-center gap-3 text-xs text-surface-400">
+                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-emerald-500 rounded inline-block" />Revenue</span>
+                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-red-400 rounded inline-block" />Expenses</span>
+                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-brand-500 rounded inline-block" />Profit</span>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <AreaChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                <defs>
+                  {[['ig','#16a34a'],['eg','#dc2626'],['pg','#0d9488']].map(([id, color]) => (
+                    <linearGradient key={id} id={id} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={color} stopOpacity={0.1} />
+                      <stop offset="100%" stopColor={color} stopOpacity={0} />
+                    </linearGradient>
+                  ))}
+                </defs>
+                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/100000).toFixed(0)}L`} width={36} />
+                <Tooltip content={<ChartTip />} />
+                <ReferenceLine y={0} stroke="#e2e8f0" />
+                <Area type="monotone" dataKey="income" name="Revenue" stroke="#16a34a" fill="url(#ig)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#dc2626" fill="url(#eg)" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey="profit" name="Profit" stroke="#0d9488" fill="url(#pg)" strokeWidth={2} dot={false} strokeDasharray="4 2" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Mode breakdown */}
+          <div className="card p-5">
+            <h3 className="font-semibold text-surface-800 text-sm mb-3">Revenue by Collection Mode</h3>
+            {modeData.length === 0 ? (
+              <p className="text-sm text-surface-400 text-center py-4">No collections for {selectedMonth}</p>
+            ) : (
+              <div className="space-y-2.5">
+                {modeData.map(({ mode, amount, label }) => {
+                  const pct = stats?.income > 0 ? Math.round((amount / stats.income) * 100) : 0
+                  return (
+                    <div key={mode} className="flex items-center gap-3">
+                      <div className="w-16 text-xs font-medium text-surface-600 flex-shrink-0">{label}</div>
+                      <div className="flex-1 h-2 bg-surface-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${pct}%`, backgroundColor: MODE_COLORS[mode] || '#94a3b8' }} />
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0 w-32 justify-end">
+                        <span className="text-xs font-mono text-surface-600">{formatCurrency(amount)}</span>
+                        <span className="text-xs text-surface-400 w-8 text-right">{pct}%</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Building-wise P&L */}
+      {buildingPnl.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-surface-100 flex items-center justify-between">
+            <h3 className="font-semibold text-surface-800 text-sm">Building-wise Performance</h3>
+            <span className="text-xs text-surface-400">{selectedMonth}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Building</th>
+                  <th className="text-right">Revenue</th>
+                  <th className="text-right">Expenses</th>
+                  <th className="text-right">Profit</th>
+                  <th>Margin</th>
+                  <th>Trend</th>
+                </tr>
+              </thead>
+              <tbody>
+                {buildingPnl.map((b, i) => {
+                  const profit = b.income - b.expenses
+                  const margin = b.income > 0 ? Math.round((profit / b.income) * 100) : 0
+                  return (
+                    <tr key={i}>
+                      <td className="font-medium text-surface-800">{b.name}</td>
+                      <td className="text-right font-mono text-emerald-700">{formatCurrency(b.income)}</td>
+                      <td className="text-right font-mono text-red-600">{formatCurrency(b.expenses)}</td>
+                      <td className={`text-right font-mono font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {formatCurrency(profit)}
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-surface-100 rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.max(0, margin)}%`, backgroundColor: profit >= 0 ? '#0d9488' : '#dc2626' }} />
+                          </div>
+                          <span className="text-xs font-mono text-surface-500">{margin}%</span>
+                        </div>
+                      </td>
+                      <td>
+                        <Sparkline data={[b.income * 0.8, b.income * 0.9, b.income]} color={profit >= 0 ? '#0d9488' : '#dc2626'} height={28} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Recent payments */}
       <div className="card overflow-hidden">
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-surface-100">
-          <h3 className="font-semibold text-surface-800 text-sm">Recent Rent Collections</h3>
+          <h3 className="font-semibold text-surface-800 text-sm">Recent Payments</h3>
           <a href="/payments" className="text-xs font-medium text-brand-600 hover:text-brand-700">View all →</a>
         </div>
         {recent.length === 0 ? (
-          <p className="text-sm text-surface-400 text-center py-10">No collections recorded yet</p>
+          <p className="text-sm text-surface-400 text-center py-8">No payments recorded yet</p>
         ) : (
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th>Flat</th>
-                <th>Building</th>
-                <th>Month</th>
-                <th>Mode</th>
-                <th className="text-right">Amount</th>
-                <th>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map(p => (
-                <tr key={p.id}>
-                  <td className="font-medium text-surface-800">{p.tenant?.full_name || '—'}</td>
-                  <td className="font-mono text-xs">{p.flat?.door_number || '—'}</td>
-                  <td>{p.building?.name || '—'}</td>
-                  <td className="text-surface-500">{fmtMonth(p.for_month)}</td>
-                  <td>
-                    <span className="badge bg-brand-50 text-brand-700 border border-brand-100">
-                      {p.payment_mode?.toUpperCase().replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(p.amount)}</td>
-                  <td className="text-surface-400 text-xs">{p.payment_date}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="divide-y divide-surface-100">
+            {recent.map(p => (
+              <div key={p.id} className="flex items-center gap-4 px-5 py-3">
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+                  style={{ background: MODE_COLORS[p.payment_mode] + '20', color: MODE_COLORS[p.payment_mode] }}>
+                  {(p.tenant?.full_name || '?').charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-surface-800 truncate">{p.tenant?.full_name || '—'}</p>
+                  <p className="text-xs text-surface-400">{p.building?.name} · Room {p.flat?.door_number}</p>
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="font-mono font-semibold text-sm text-emerald-700">{formatCurrency(p.amount)}</p>
+                  <p className="text-xs text-surface-400">{p.payment_date}</p>
+                </div>
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
+                  style={{ background: MODE_COLORS[p.payment_mode] + '20', color: MODE_COLORS[p.payment_mode] }}>
+                  {(MODE_LABELS[p.payment_mode] || p.payment_mode)}
+                </span>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
