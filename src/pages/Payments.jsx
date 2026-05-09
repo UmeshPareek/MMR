@@ -1,24 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { formatCurrency, lastNMonths, PAYMENT_MODES, exportMultiSheet } from '../utils/helpers';
+import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
-  Plus, Download, Filter, Camera, Upload, X, CheckCircle2,
-  AlertTriangle, Lock, Eye, Trash2, RefreshCw, ImageIcon
+  Plus, Download, Camera, Upload, X, CheckCircle2,
+  Clock, XCircle, Building2, ChevronDown, ChevronRight,
+  Phone, Lock, Trash2, Eye, ImageIcon, Filter, RefreshCw
 } from 'lucide-react';
 
 const MODES = ['cash', 'upi', 'bank_transfer', 'rentok', 'crib', 'cheque', 'other'];
 const MODE_LABELS = { cash: 'Cash', upi: 'UPI', bank_transfer: 'Bank Transfer', rentok: 'RentOK', crib: 'Crib', cheque: 'Cheque', other: 'Other' };
+const MODE_COLORS = {
+  cash: 'bg-amber-50 text-amber-700 border-amber-200',
+  upi: 'bg-blue-50 text-blue-700 border-blue-200',
+  bank_transfer: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  rentok: 'bg-purple-50 text-purple-700 border-purple-200',
+  crib: 'bg-pink-50 text-pink-700 border-pink-200',
+  cheque: 'bg-surface-100 text-surface-600 border-surface-200',
+  other: 'bg-surface-100 text-surface-500 border-surface-200',
+};
 
-// Cash proof requirements
 const CASH_PROOFS = [
-  { key: 'cash_voucher_url', label: 'Signed Cash Voucher', hint: 'Photo of the signed receipt/voucher' },
-  { key: 'cash_photo_url', label: 'Cash Photo', hint: 'Photo of the actual cash amount' },
+  { key: 'cash_voucher_url', label: 'Signed Voucher', hint: 'Photo of signed cash receipt' },
+  { key: 'cash_photo_url', label: 'Cash Photo', hint: 'Photo of the cash amount' },
   { key: 'payer_photo_url', label: 'Payer Photo', hint: 'Photo of the person paying' },
 ];
 
-function ProofUpload({ proofKey, label, hint, value, onChange, disabled }) {
+function ProofUpload({ proofKey, label, hint, value, onChange }) {
   const inputRef = useRef();
   const [uploading, setUploading] = useState(false);
 
@@ -26,8 +35,7 @@ function ProofUpload({ proofKey, label, hint, value, onChange, disabled }) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith('image/')) return toast.error('Images only');
-    if (file.size > 5 * 1024 * 1024) return toast.error('Max 5MB per image');
-
+    if (file.size > 5 * 1024 * 1024) return toast.error('Max 5MB');
     setUploading(true);
     try {
       const ext = file.name.split('.').pop();
@@ -46,34 +54,26 @@ function ProofUpload({ proofKey, label, hint, value, onChange, disabled }) {
   }
 
   return (
-    <div className={`border rounded-lg p-3 ${value ? 'border-emerald-300 bg-emerald-50/50' : 'border-surface-300 bg-surface-50'}`}>
-      <input ref={inputRef} type="file" accept="image/*" capture="environment"
-        onChange={handleFile} className="hidden" disabled={disabled || uploading} />
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1">
+    <div className={`rounded-lg border p-2.5 ${value ? 'border-emerald-300 bg-emerald-50/50' : 'border-surface-300 bg-surface-50'}`}>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment" onChange={handleFile} className="hidden" />
+      <div className="flex items-center justify-between gap-2">
+        <div>
           <p className="text-xs font-semibold text-surface-700 flex items-center gap-1">
-            {value ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Camera className="w-3.5 h-3.5 text-surface-400" />}
+            {value ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : <Camera className="w-3 h-3 text-surface-400" />}
             {label} <span className="text-red-500">*</span>
           </p>
-          <p className="text-xs text-surface-400 mt-0.5">{hint}</p>
+          <p className="text-xs text-surface-400">{hint}</p>
         </div>
         {value ? (
           <div className="flex gap-1">
-            <a href={value} target="_blank" rel="noopener noreferrer"
-              className="btn btn-sm bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200">
-              <Eye className="w-3.5 h-3.5" />
-            </a>
-            <button onClick={() => onChange(null)} className="btn btn-sm bg-red-50 text-red-600 border border-red-200">
-              <X className="w-3.5 h-3.5" />
-            </button>
+            <a href={value} target="_blank" rel="noopener noreferrer" className="btn btn-sm bg-emerald-50 text-emerald-700 border border-emerald-200 p-1.5"><Eye className="w-3 h-3" /></a>
+            <button type="button" onClick={() => onChange(null)} className="btn btn-sm bg-red-50 text-red-600 border border-red-200 p-1.5"><X className="w-3 h-3" /></button>
           </div>
         ) : (
           <button type="button" onClick={() => inputRef.current?.click()} disabled={uploading}
-            className="btn btn-sm btn-secondary flex items-center gap-1.5">
-            {uploading
-              ? <div className="w-3 h-3 border border-surface-400 border-t-transparent rounded-full animate-spin" />
-              : <Upload className="w-3 h-3" />}
-            {uploading ? 'Uploading…' : 'Upload'}
+            className="btn btn-sm btn-secondary flex items-center gap-1 text-xs">
+            {uploading ? <div className="w-3 h-3 border border-surface-400 border-t-transparent rounded-full animate-spin" /> : <Upload className="w-3 h-3" />}
+            {uploading ? '…' : 'Upload'}
           </button>
         )}
       </div>
@@ -85,97 +85,105 @@ export default function Payments() {
   const { isAdmin, isSuperAdmin, profile } = useAuth();
   const months = lastNMonths(6);
   const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1]);
-  const [buildings, setBuildings] = useState([]);
-  const [selectedBuilding, setSelectedBuilding] = useState('all');
-  const [collections, setCollections] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [viewProofs, setViewProofs] = useState(null);
 
-  // Form state
-  const [flats, setFlats] = useState([]);
+  // Building-wise data
+  const [buildings, setBuildings] = useState([]);
+  const [buildingData, setBuildingData] = useState({}); // {buildingId: {flats: [], collections: {}}}
+  const [expanded, setExpanded] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  // Quick pay form — inline per flat
+  const [activeFlat, setActiveFlat] = useState(null); // flat being paid
   const [form, setForm] = useState({
-    flat_id: '', tenant_id: '', building_id: '', amount: '',
-    payment_mode: 'cash', payment_date: new Date().toISOString().slice(0, 10),
-    for_month: months[months.length - 1], transaction_ref: '', notes: '',
+    amount: '', payment_mode: 'upi', payment_date: new Date().toISOString().slice(0, 10),
+    transaction_ref: '', notes: '',
     cash_voucher_url: null, cash_photo_url: null, payer_photo_url: null,
   });
   const [saving, setSaving] = useState(false);
-  const [flatTenants, setFlatTenants] = useState({});
 
-  useEffect(() => { loadBuildings(); }, []);
-  useEffect(() => { loadCollections(); }, [selectedMonth, selectedBuilding]);
+  // View proofs
+  const [viewProofs, setViewProofs] = useState(null);
 
-  async function loadBuildings() {
-    const { data } = await supabase.from('buildings').select('id, name').eq('is_active', true).order('name');
-    setBuildings(data || []);
-  }
+  // History view
+  const [viewMode, setViewMode] = useState('log'); // log | history
 
-  async function loadFlatsForForm() {
-    const { data: flatData } = await supabase
-      .from('flats')
-      .select('id, door_number, monthly_rent, building_id, buildings(name)')
-      .eq('status', 'occupied')
-      .order('door_number');
-    setFlats(flatData || []);
+  useEffect(() => { loadAll(); }, [selectedMonth]);
 
-    // Get tenants for each flat
-    const ids = (flatData || []).map(f => f.id);
-    if (ids.length) {
-      const { data: tenants } = await supabase
-        .from('tenants').select('id, full_name, flat_id, monthly_rent')
-        .eq('status', 'active').in('flat_id', ids);
-      const map = {};
-      (tenants || []).forEach(t => { map[t.flat_id] = t; });
-      setFlatTenants(map);
-    }
-  }
-
-  async function loadCollections() {
+  async function loadAll() {
     setLoading(true);
     try {
-      let q = supabase
-        .from('rent_collections')
-        .select(`id, amount, payment_mode, payment_date, for_month, transaction_ref, notes,
-          cash_voucher_url, cash_photo_url, payer_photo_url,
-          tenant:tenants(full_name, phone),
-          flat:flats(door_number),
-          building:buildings(name),
-          collector:profiles!collected_by(full_name)`)
-        .eq('for_month', selectedMonth)
-        .order('payment_date', { ascending: false });
-      if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
-      const { data, error } = await q;
-      if (error) throw error;
-      setCollections(data || []);
+      const { data: bList } = await supabase.from('buildings').select('id, name').eq('is_active', true).order('name');
+      setBuildings(bList || []);
+
+      const { data: flats } = await supabase
+        .from('flats').select('id, door_number, monthly_rent, building_id').eq('status', 'occupied').order('door_number');
+
+      const flatIds = (flats || []).map(f => f.id);
+
+      const [{ data: tenants }, { data: collections }] = await Promise.all([
+        flatIds.length
+          ? supabase.from('tenants').select('id, full_name, phone, flat_id').eq('status', 'active').in('flat_id', flatIds)
+          : { data: [] },
+        flatIds.length
+          ? supabase.from('rent_collections').select('*').eq('for_month', selectedMonth).in('flat_id', flatIds)
+          : { data: [] },
+      ]);
+
+      const tenantMap = {};
+      (tenants || []).forEach(t => { tenantMap[t.flat_id] = t; });
+      const collMap = {};
+      (collections || []).forEach(c => {
+        collMap[c.flat_id] = collMap[c.flat_id] || [];
+        collMap[c.flat_id].push(c);
+      });
+
+      // Group by building
+      const bData = {};
+      (bList || []).forEach(b => { bData[b.id] = { flats: [], stats: { paid: 0, partial: 0, unpaid: 0, total: 0 } }; });
+      (flats || []).forEach(f => {
+        if (!bData[f.building_id]) return;
+        const tenant = tenantMap[f.id];
+        const colls = collMap[f.id] || [];
+        const paid = colls.reduce((s, c) => s + Number(c.amount), 0);
+        const expected = Number(f.monthly_rent);
+        const status = paid >= expected ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+        bData[f.building_id].flats.push({ ...f, tenant, colls, paid, expected, balance: expected - paid, status });
+        bData[f.building_id].stats[status]++;
+        bData[f.building_id].stats.total++;
+      });
+
+      setBuildingData(bData);
+
+      // Auto-expand buildings with unpaid flats
+      const exp = {};
+      Object.entries(bData).forEach(([id, d]) => {
+        if (d.stats.unpaid > 0 || d.stats.partial > 0) exp[id] = true;
+      });
+      setExpanded(exp);
     } catch (e) {
-      toast.error('Load failed: ' + e.message);
+      toast.error(e.message);
     } finally {
       setLoading(false);
     }
   }
 
-  function handleFlatSelect(flatId) {
-    const flat = flats.find(f => f.id === flatId);
-    const tenant = flatTenants[flatId];
-    setForm(p => ({
-      ...p,
-      flat_id: flatId,
-      building_id: flat?.building_id || '',
-      tenant_id: tenant?.id || '',
-      amount: String(tenant?.monthly_rent || flat?.monthly_rent || ''),
-    }));
+  function openPay(flat) {
+    setActiveFlat(flat);
+    setForm({
+      amount: String(flat.balance > 0 ? flat.balance : flat.expected),
+      payment_mode: 'upi',
+      payment_date: new Date().toISOString().slice(0, 10),
+      transaction_ref: '', notes: '',
+      cash_voucher_url: null, cash_photo_url: null, payer_photo_url: null,
+    });
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.flat_id) return toast.error('Select a flat');
-    if (!form.tenant_id) return toast.error('No active tenant for this flat');
-    if (!form.amount || Number(form.amount) <= 0) return toast.error('Enter a valid amount');
-
-    // Cash requires all 3 proofs
+    if (!activeFlat?.tenant) return toast.error('No active tenant for this flat');
+    if (!form.amount || Number(form.amount) <= 0) return toast.error('Enter amount');
     if (form.payment_mode === 'cash') {
-      if (!form.cash_voucher_url) return toast.error('Cash voucher photo required');
+      if (!form.cash_voucher_url) return toast.error('Voucher photo required');
       if (!form.cash_photo_url) return toast.error('Cash photo required');
       if (!form.payer_photo_url) return toast.error('Payer photo required');
     }
@@ -183,13 +191,13 @@ export default function Payments() {
     setSaving(true);
     try {
       const { error } = await supabase.from('rent_collections').insert({
-        flat_id: form.flat_id,
-        tenant_id: form.tenant_id,
-        building_id: form.building_id,
+        flat_id: activeFlat.id,
+        tenant_id: activeFlat.tenant.id,
+        building_id: activeFlat.building_id,
         amount: Number(form.amount),
         payment_mode: form.payment_mode,
         payment_date: form.payment_date,
-        for_month: form.for_month,
+        for_month: selectedMonth,
         transaction_ref: form.transaction_ref || null,
         notes: form.notes || null,
         cash_voucher_url: form.cash_voucher_url || null,
@@ -198,216 +206,331 @@ export default function Payments() {
         collected_by: profile?.id,
       });
       if (error) throw error;
-      toast.success('Payment recorded');
-      setShowAdd(false);
-      setForm({
-        flat_id: '', tenant_id: '', building_id: '', amount: '',
-        payment_mode: 'cash', payment_date: new Date().toISOString().slice(0, 10),
-        for_month: months[months.length - 1], transaction_ref: '', notes: '',
-        cash_voucher_url: null, cash_photo_url: null, payer_photo_url: null,
-      });
-      loadCollections();
+      toast.success(`Payment logged — ${activeFlat.tenant.full_name}`);
+      setActiveFlat(null);
+      loadAll();
     } catch (e) {
-      toast.error('Save failed: ' + e.message);
+      toast.error(e.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Delete this collection record?')) return;
+    if (!confirm('Delete this payment?')) return;
     const { error } = await supabase.from('rent_collections').delete().eq('id', id);
     if (error) toast.error(error.message);
-    else { toast.success('Deleted'); loadCollections(); }
+    else { toast.success('Deleted'); loadAll(); }
   }
 
   function handleExport() {
-    if (!collections.length) return toast.error('No data to export');
-    const rows = collections.map(c => ({
-      Date: c.payment_date,
-      Tenant: c.tenant?.full_name || '—',
-      Flat: c.flat?.door_number || '—',
-      Building: c.building?.name || '—',
-      Month: c.for_month,
-      Mode: c.payment_mode,
-      Amount: c.amount,
-      Reference: c.transaction_ref || '—',
-      'Collected By': c.collector?.full_name || '—',
-      'Has Cash Proof': c.cash_voucher_url ? 'Yes' : 'No',
-    }));
-    exportMultiSheet([{ name: 'Collections', data: rows }], `Rent_${selectedMonth}`);
+    const rows = Object.values(buildingData).flatMap(b =>
+      b.flats.map(f => ({
+        Building: buildings.find(x => x.id === f.building_id)?.name || '—',
+        Room: f.door_number,
+        Tenant: f.tenant?.full_name || '—',
+        'Expected (₹)': f.expected,
+        'Paid (₹)': f.paid,
+        'Balance (₹)': f.balance,
+        Status: f.status.toUpperCase(),
+        Mode: f.colls.map(c => c.payment_mode).join(', ') || '—',
+      }))
+    );
+    exportMultiSheet([{ name: selectedMonth, data: rows }], `Payments_${selectedMonth}`);
     toast.success('Exported');
   }
 
-  const totalCollected = collections.reduce((s, c) => s + Number(c.amount), 0);
-  const cashCount = collections.filter(c => c.payment_mode === 'cash').length;
+  // All collections flat list for history
+  const allCollections = Object.values(buildingData).flatMap(b =>
+    b.flats.flatMap(f => f.colls.map(c => ({
+      ...c,
+      flatNumber: f.door_number,
+      tenantName: f.tenant?.full_name || '—',
+      buildingName: buildings.find(x => x.id === f.building_id)?.name || '—',
+    })))
+  ).sort((a, b) => new Date(b.payment_date) - new Date(a.payment_date));
 
-  const modeBadge = (mode) => {
-    const colors = {
-      cash: 'bg-amber-50 text-amber-700 border-amber-200',
-      upi: 'bg-blue-50 text-blue-700 border-blue-200',
-      bank_transfer: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-      rentok: 'bg-purple-50 text-purple-700 border-purple-200',
-      crib: 'bg-pink-50 text-pink-700 border-pink-200',
-      cheque: 'bg-surface-100 text-surface-700 border-surface-200',
-      other: 'bg-surface-100 text-surface-500 border-surface-200',
-    };
-    return <span className={`badge border text-xs ${colors[mode] || 'bg-surface-100 border-surface-200'}`}>{MODE_LABELS[mode] || mode}</span>;
-  };
+  const totalCollected = Object.values(buildingData).reduce((s, b) => s + b.flats.reduce((ss, f) => ss + f.paid, 0), 0);
+  const totalExpected = Object.values(buildingData).reduce((s, b) => s + b.flats.reduce((ss, f) => ss + f.expected, 0), 0);
+  const totalUnpaid = Object.values(buildingData).reduce((s, b) => s + b.stats.unpaid, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-surface-900">Rent Collection</h1>
-          <p className="text-sm text-surface-500 mt-0.5">Record payments · Cash requires photo proof</p>
+          <p className="text-sm text-surface-500 mt-0.5">Tap a flat to log payment</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={handleExport} className="btn-secondary flex items-center gap-2">
-            <Download className="w-4 h-4" /> Export
-          </button>
-          <button onClick={() => { setShowAdd(true); loadFlatsForForm(); }} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Record Payment
-          </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="card p-3 flex flex-wrap gap-3 items-end">
-        <Filter className="w-4 h-4 text-surface-400 self-center" />
-        <div>
-          <label className="label text-xs mb-0.5">Month</label>
-          <select className="select py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
+        <div className="flex items-center gap-2">
+          <select className="select w-auto py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
             {months.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-        </div>
-        <div>
-          <label className="label text-xs mb-0.5">Building</label>
-          <select className="select py-1.5 text-sm" value={selectedBuilding} onChange={e => setSelectedBuilding(e.target.value)}>
-            <option value="all">All Buildings</option>
-            {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-        </div>
-        <button onClick={loadCollections} className="btn-ghost btn-sm flex items-center gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
-        <div className="ml-auto flex items-center gap-3 text-xs text-surface-500">
-          <span>{collections.length} records</span>
-          {cashCount > 0 && (
-            <span className="badge bg-amber-50 text-amber-700 border border-amber-200">
-              {cashCount} cash payments
-            </span>
-          )}
-          <span className="font-semibold text-emerald-700 font-mono">{formatCurrency(totalCollected)}</span>
+          <button onClick={handleExport} className="btn-secondary btn-sm flex items-center gap-1.5"><Download className="w-3.5 h-3.5" /></button>
+          <button onClick={loadAll} className="btn-ghost btn-sm"><RefreshCw className="w-3.5 h-3.5" /></button>
         </div>
       </div>
 
-      {/* Add Payment Modal */}
-      {showAdd && (
-        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowAdd(false)}>
-          <div className="modal-content max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-surface-200">
-              <h2 className="font-semibold text-surface-800">Record Rent Payment</h2>
-              <button onClick={() => setShowAdd(false)} className="text-surface-400 hover:text-surface-600">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-5 space-y-4">
+      {/* Summary strip */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="card p-3 border-l-4 border-emerald-400">
+          <p className="text-xs text-surface-500">Collected</p>
+          <p className="text-lg font-bold font-mono text-emerald-700">{formatCurrency(totalCollected)}</p>
+        </div>
+        <div className="card p-3 border-l-4 border-red-400">
+          <p className="text-xs text-surface-500">Pending</p>
+          <p className="text-lg font-bold font-mono text-red-600">{formatCurrency(totalExpected - totalCollected)}</p>
+        </div>
+        <div className="card p-3 border-l-4 border-amber-400">
+          <p className="text-xs text-surface-500">Unpaid Flats</p>
+          <p className="text-lg font-bold text-amber-700">{totalUnpaid}</p>
+        </div>
+      </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="label">Flat *</label>
-                  <select className="select" value={form.flat_id} onChange={e => handleFlatSelect(e.target.value)} required>
-                    <option value="">Select flat…</option>
-                    {flats.map(f => (
-                      <option key={f.id} value={f.id}>
-                        {f.buildings?.name} — {f.door_number} (₹{f.monthly_rent?.toLocaleString()})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+      {/* View toggle */}
+      <div className="flex gap-1 border-b border-surface-200">
+        <button onClick={() => setViewMode('log')} className={`tab ${viewMode === 'log' ? 'active' : ''}`}>Log Payments</button>
+        <button onClick={() => setViewMode('history')} className={`tab ${viewMode === 'history' ? 'active' : ''}`}>History ({allCollections.length})</button>
+      </div>
 
-                <div>
-                  <label className="label">Amount (₹) *</label>
-                  <input type="number" className="input" value={form.amount}
-                    onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-                    placeholder="0.00" required />
-                </div>
-
-                <div>
-                  <label className="label">Payment Mode *</label>
-                  <select className="select" value={form.payment_mode}
-                    onChange={e => setForm(p => ({ ...p, payment_mode: e.target.value }))}>
-                    {MODES.map(m => <option key={m} value={m}>{MODE_LABELS[m]}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">For Month *</label>
-                  <select className="select" value={form.for_month}
-                    onChange={e => setForm(p => ({ ...p, for_month: e.target.value }))}>
-                    {months.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="label">Payment Date *</label>
-                  <input type="date" className="input" value={form.payment_date}
-                    onChange={e => setForm(p => ({ ...p, payment_date: e.target.value }))} required />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="label">Transaction Reference</label>
-                  <input className="input" value={form.transaction_ref}
-                    onChange={e => setForm(p => ({ ...p, transaction_ref: e.target.value }))}
-                    placeholder="UPI ID / Cheque No / App reference" />
-                </div>
-
-                <div className="col-span-2">
-                  <label className="label">Notes</label>
-                  <input className="input" value={form.notes}
-                    onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-                    placeholder="Any additional notes" />
-                </div>
-              </div>
-
-              {/* Cash proof section — only shown for cash */}
-              {form.payment_mode === 'cash' && (
-                <div className="border border-amber-200 bg-amber-50/50 rounded-lg p-4 space-y-3">
-                  <p className="text-sm font-semibold text-amber-800 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    Cash Payment — 3 Photos Required
-                  </p>
-                  <p className="text-xs text-amber-700">All three photos must be uploaded before saving.</p>
-                  {CASH_PROOFS.map(({ key, label, hint }) => (
-                    <ProofUpload key={key} proofKey={key} label={label} hint={hint}
-                      value={form[key]}
-                      onChange={url => setForm(p => ({ ...p, [key]: url }))} />
-                  ))}
-                </div>
-              )}
-
-              <div className="flex gap-3 pt-2">
-                <button type="button" onClick={() => setShowAdd(false)} className="btn-secondary flex-1">Cancel</button>
-                <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
-                  {saving
-                    ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving…</>
-                    : 'Save Payment'}
+      {/* ── LOG MODE — Building-wise checklist ── */}
+      {viewMode === 'log' && (
+        <div className="space-y-3">
+          {loading ? (
+            <div className="flex justify-center py-12"><div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
+          ) : buildings.map(b => {
+            const bData = buildingData[b.id];
+            if (!bData || bData.stats.total === 0) return null;
+            const isOpen = expanded[b.id];
+            return (
+              <div key={b.id} className="card overflow-hidden">
+                {/* Building header */}
+                <button onClick={() => setExpanded(p => ({ ...p, [b.id]: !p[b.id] }))}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-50 transition-colors text-left">
+                  {isOpen ? <ChevronDown className="w-4 h-4 text-surface-400" /> : <ChevronRight className="w-4 h-4 text-surface-400" />}
+                  <Building2 className="w-4 h-4 text-surface-400 flex-shrink-0" />
+                  <span className="font-semibold text-surface-800 flex-1 text-sm">{b.name}</span>
+                  <div className="flex items-center gap-2">
+                    {bData.stats.unpaid > 0 && <span className="badge bg-red-50 text-red-700 border border-red-200 text-xs">{bData.stats.unpaid} unpaid</span>}
+                    {bData.stats.partial > 0 && <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">{bData.stats.partial} partial</span>}
+                    {bData.stats.paid > 0 && <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">{bData.stats.paid} paid</span>}
+                  </div>
                 </button>
+
+                {/* Flat list */}
+                {isOpen && (
+                  <div className="border-t border-surface-100 divide-y divide-surface-100">
+                    {bData.flats.map(flat => (
+                      <div key={flat.id}>
+                        {/* Flat row */}
+                        <div className={`flex items-center gap-3 px-4 py-3 ${flat.status === 'unpaid' ? 'bg-red-50/30' : flat.status === 'partial' ? 'bg-amber-50/20' : ''}`}>
+                          {/* Status icon */}
+                          <div className="flex-shrink-0">
+                            {flat.status === 'paid' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
+                            {flat.status === 'partial' && <Clock className="w-5 h-5 text-amber-500" />}
+                            {flat.status === 'unpaid' && <XCircle className="w-5 h-5 text-red-400" />}
+                          </div>
+
+                          {/* Room */}
+                          <div className="w-12 flex-shrink-0">
+                            <p className="font-mono font-bold text-surface-800 text-sm">{flat.door_number}</p>
+                          </div>
+
+                          {/* Tenant */}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-surface-700 truncate">{flat.tenant?.full_name || <span className="text-surface-400">No tenant</span>}</p>
+                            {flat.tenant?.phone && (
+                              <a href={`tel:${flat.tenant.phone}`} className="text-xs text-brand-600 flex items-center gap-1">
+                                <Phone className="w-3 h-3" />{flat.tenant.phone}
+                              </a>
+                            )}
+                          </div>
+
+                          {/* Amount & action */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <div className="text-right">
+                              {flat.status === 'paid' ? (
+                                <p className="text-sm font-mono font-semibold text-emerald-600">{formatCurrency(flat.paid)}</p>
+                              ) : (
+                                <>
+                                  <p className="text-sm font-mono font-semibold text-red-600">{formatCurrency(flat.balance)}</p>
+                                  {flat.paid > 0 && <p className="text-xs text-surface-400 font-mono">{formatCurrency(flat.paid)} paid</p>}
+                                </>
+                              )}
+                            </div>
+
+                            {/* Mode badges for paid */}
+                            {flat.colls.length > 0 && (
+                              <div className="flex gap-1 flex-wrap max-w-[80px]">
+                                {[...new Set(flat.colls.map(c => c.payment_mode))].map(m => (
+                                  <span key={m} className={`badge border text-xs ${MODE_COLORS[m] || ''}`}>{MODE_LABELS[m]?.slice(0, 4) || m}</span>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* Action button */}
+                            {flat.tenant && flat.status !== 'paid' && (
+                              <button onClick={() => setActiveFlat(activeFlat?.id === flat.id ? null : flat)}
+                                className={`btn btn-sm flex-shrink-0 ${activeFlat?.id === flat.id ? 'btn-secondary' : 'btn-primary'}`}>
+                                {activeFlat?.id === flat.id ? 'Cancel' : '+ Pay'}
+                              </button>
+                            )}
+                            {flat.status === 'paid' && (isAdmin || isSuperAdmin) && (
+                              <button onClick={() => handleDelete(flat.colls[0]?.id)} className="btn-ghost btn-sm p-1.5 text-surface-300 hover:text-red-400">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Inline payment form */}
+                        {activeFlat?.id === flat.id && (
+                          <div className="bg-brand-50/50 border-t border-brand-100 px-4 py-4">
+                            <form onSubmit={handleSubmit} className="space-y-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-sm font-semibold text-brand-800">
+                                  Log payment — {flat.tenant?.full_name} ({flat.door_number})
+                                </p>
+                                <p className="text-xs text-surface-500">Expected: {formatCurrency(flat.expected)}</p>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="label">Amount (₹) *</label>
+                                  <input type="number" className="input" value={form.amount}
+                                    onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
+                                    placeholder={flat.balance} required />
+                                </div>
+                                <div>
+                                  <label className="label">Date *</label>
+                                  <input type="date" className="input" value={form.payment_date}
+                                    onChange={e => setForm(p => ({ ...p, payment_date: e.target.value }))} required />
+                                </div>
+                              </div>
+
+                              {/* Mode selector — big tap targets */}
+                              <div>
+                                <label className="label">Payment Mode *</label>
+                                <div className="flex flex-wrap gap-2">
+                                  {MODES.map(m => (
+                                    <button key={m} type="button"
+                                      onClick={() => setForm(p => ({ ...p, payment_mode: m }))}
+                                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${form.payment_mode === m ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-surface-600 border-surface-300 hover:border-brand-400'}`}>
+                                      {MODE_LABELS[m]}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Reference — only for digital */}
+                              {form.payment_mode !== 'cash' && (
+                                <div>
+                                  <label className="label">Transaction Reference</label>
+                                  <input className="input" value={form.transaction_ref}
+                                    onChange={e => setForm(p => ({ ...p, transaction_ref: e.target.value }))}
+                                    placeholder="UPI ref / App ID / Cheque no." />
+                                </div>
+                              )}
+
+                              {/* Cash proofs */}
+                              {form.payment_mode === 'cash' && (
+                                <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
+                                  <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
+                                    <Camera className="w-3.5 h-3.5" /> Cash — 3 photos required
+                                  </p>
+                                  {CASH_PROOFS.map(({ key, label, hint }) => (
+                                    <ProofUpload key={key} proofKey={key} label={label} hint={hint}
+                                      value={form[key]} onChange={url => setForm(p => ({ ...p, [key]: url }))} />
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="flex gap-2 pt-1">
+                                <button type="button" onClick={() => setActiveFlat(null)} className="btn-secondary flex-1">Cancel</button>
+                                <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                                  {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                                  {saving ? 'Saving…' : 'Confirm Payment'}
+                                </button>
+                              </div>
+                            </form>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </form>
-          </div>
+            );
+          })}
         </div>
       )}
 
-      {/* Cash Proofs Viewer */}
+      {/* ── HISTORY MODE ── */}
+      {viewMode === 'history' && (
+        <div className="card overflow-hidden">
+          {allCollections.length === 0 ? (
+            <div className="text-center py-10 text-surface-400 text-sm">No payments recorded for {selectedMonth}</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Building</th><th>Room</th><th>Tenant</th>
+                    <th>Mode</th><th className="text-right">Amount</th><th>Proof</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {allCollections.map(c => (
+                    <tr key={c.id}>
+                      <td className="text-xs text-surface-500">{c.payment_date}</td>
+                      <td className="text-xs text-surface-500">{c.buildingName}</td>
+                      <td className="font-mono font-semibold text-surface-800">{c.flatNumber}</td>
+                      <td className="text-surface-700">{c.tenantName}</td>
+                      <td><span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span></td>
+                      <td className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(c.amount)}</td>
+                      <td>
+                        {c.payment_mode === 'cash' ? (
+                          <button onClick={() => setViewProofs(c)}
+                            className={`btn btn-sm text-xs flex items-center gap-1 ${c.cash_voucher_url ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
+                            <ImageIcon className="w-3 h-3" />{c.cash_voucher_url ? 'View' : 'Missing'}
+                          </button>
+                        ) : <span className="text-surface-300 text-xs">—</span>}
+                      </td>
+                      <td>
+                        {(isAdmin || isSuperAdmin) ? (
+                          <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <Lock className="w-3.5 h-3.5 text-surface-300" />
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-surface-50 border-t border-surface-200">
+                    <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-surface-500">Total</td>
+                    <td className="px-4 py-2 text-right font-mono font-bold text-emerald-700">
+                      {formatCurrency(allCollections.reduce((s, c) => s + Number(c.amount), 0))}
+                    </td>
+                    <td colSpan={2} />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Proof viewer */}
       {viewProofs && (
         <div className="modal-overlay" onClick={() => setViewProofs(null)}>
-          <div className="modal-content max-w-lg p-5">
+          <div className="modal-content max-w-sm p-5" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-surface-800">Cash Payment Proofs</h3>
+              <h3 className="font-semibold text-surface-800">Cash Proofs</h3>
               <button onClick={() => setViewProofs(null)} className="text-surface-400 hover:text-surface-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
@@ -415,95 +538,14 @@ export default function Payments() {
                 <div key={key}>
                   <p className="text-xs font-medium text-surface-500 mb-1.5">{label}</p>
                   {viewProofs[key]
-                    ? <img src={viewProofs[key]} alt={label} className="w-full rounded-lg border border-surface-200 max-h-48 object-cover" />
-                    : <div className="h-20 bg-surface-100 rounded-lg flex items-center justify-center text-surface-400 text-sm border border-dashed border-surface-300">
-                        No photo uploaded
-                      </div>}
+                    ? <img src={viewProofs[key]} alt={label} className="w-full rounded-lg border border-surface-200 max-h-44 object-cover" />
+                    : <div className="h-16 bg-surface-100 rounded border border-dashed border-surface-300 flex items-center justify-center text-surface-400 text-xs">Not uploaded</div>}
                 </div>
               ))}
             </div>
           </div>
         </div>
       )}
-
-      {/* Collections table */}
-      <div className="card overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : collections.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-surface-400 text-sm">No collections for {selectedMonth}</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Tenant</th>
-                  <th>Flat</th>
-                  <th>Building</th>
-                  <th>Month</th>
-                  <th>Mode</th>
-                  <th className="text-right">Amount</th>
-                  <th>Reference</th>
-                  <th>Proof</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {collections.map(c => (
-                  <tr key={c.id}>
-                    <td className="text-xs text-surface-500">{c.payment_date}</td>
-                    <td className="font-medium text-surface-800">{c.tenant?.full_name || '—'}</td>
-                    <td className="font-mono text-sm">{c.flat?.door_number || '—'}</td>
-                    <td className="text-surface-600 text-sm">{c.building?.name || '—'}</td>
-                    <td className="text-surface-500 text-xs">{c.for_month}</td>
-                    <td>{modeBadge(c.payment_mode)}</td>
-                    <td className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(c.amount)}</td>
-                    <td className="text-xs text-surface-400">{c.transaction_ref || '—'}</td>
-                    <td>
-                      {c.payment_mode === 'cash' ? (
-                        <button onClick={() => setViewProofs(c)}
-                          className={`btn btn-sm flex items-center gap-1 ${c.cash_voucher_url ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-red-600 bg-red-50 border border-red-200'}`}>
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          {c.cash_voucher_url ? 'View' : 'Missing'}
-                        </button>
-                      ) : (
-                        <span className="text-surface-400 text-xs">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {(isAdmin || isSuperAdmin) ? (
-                        <button onClick={() => handleDelete(c.id)}
-                          className="btn-ghost btn-sm text-surface-400 hover:text-red-500 p-1.5"
-                          title="Delete payment">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      ) : (
-                        <Lock className="w-3.5 h-3.5 text-surface-300 mx-auto" title="Only admin can delete" />
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="bg-surface-50 border-t border-surface-200">
-                  <td colSpan={6} className="px-4 py-2 text-xs font-semibold text-surface-500">
-                    Total — {collections.length} payments
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono font-bold text-emerald-700">
-                    {formatCurrency(totalCollected)}
-                  </td>
-                  <td colSpan={3} />
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
