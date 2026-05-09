@@ -19,6 +19,7 @@ import Settings from '@/pages/Settings'
 import UtilityBills from '@/pages/UtilityBills'
 import SecurityDeposits from '@/pages/SecurityDeposits'
 import DailyCollection from '@/pages/DailyCollection'
+import DailyReconciliation from '@/pages/DailyReconciliation'
 
 function ProtectedRoute({ children, adminOnly = false, superOnly = false }) {
   const { user, profile, loading } = useAuth()
@@ -66,6 +67,7 @@ function AppRoutes() {
         <Route path="/utility-bills" element={<UtilityBills />} />
         <Route path="/security-deposits" element={<SecurityDeposits />} />
         <Route path="/daily-collection" element={<DailyCollection />} />
+        <Route path="/daily-reconciliation" element={<DailyReconciliation />} />
         <Route path="/audit" element={<ProtectedRoute superOnly><Audit /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
