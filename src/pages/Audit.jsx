@@ -122,10 +122,6 @@ export default function Audit() {
           reader.readAsDataURL(item.file);
         });
 
-        const prompt = item.password
-          ? `This PDF is password protected with password: "${item.password}". Extract ALL transactions from this ${item.bank.toUpperCase()} bank statement as a JSON array. Each object must have: date (YYYY-MM-DD), narration (full description text), credit (number, 0 if debit), debit (number, 0 if credit). Return ONLY a valid JSON array, no other text.`
-          : `Extract ALL transactions from this ${item.bank.toUpperCase()} bank statement as a JSON array. Each object must have: date (YYYY-MM-DD), narration (full description text), credit (number, 0 if debit), debit (number, 0 if credit). Return ONLY a valid JSON array, no other text.`;
-
         const response = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
