@@ -122,29 +122,19 @@ export default function Audit() {
           reader.readAsDataURL(item.file);
         });
 
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        const response = await fetch('/api/extract-pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 8000,
-            messages: [{
-              role: 'user',
-              content: [
-                { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
-                { type: 'text', text: prompt }
-              ]
-            }]
-          })
+          body: JSON.stringify({ pdfBase64: base64, password: item.password, bank: item.bank })
         });
 
+        if (!response.ok) {
+          const errText = await response.text();
+          throw new Error(`Server error ${response.status}: ${errText.slice(0, 200)}`);
+        }
         const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        const text = data.content?.[0]?.text || '';
-        const jsonMatch = text.match(/\[[\s\S]*\]/);
-        if (!jsonMatch) throw new Error('Could not extract transactions from PDF');
-
-        const rawTxns = JSON.parse(jsonMatch[0]);
+        if (data.error) throw new Error(data.error);
+        const rawTxns = data.txns;
         const enriched = rawTxns.map(t => {
           const parsed = item.bank === 'hdfc'
             ? parseHDFCNarration(t.narration)
