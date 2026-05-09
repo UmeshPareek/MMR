@@ -450,7 +450,7 @@ export default function Payments() {
                   <th className="text-right">Amount</th>
                   <th>Reference</th>
                   <th>Proof</th>
-                  {(isAdmin || isSuperAdmin) && <th>Action</th>}
+                  <th>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -475,14 +475,17 @@ export default function Payments() {
                         <span className="text-surface-400 text-xs">—</span>
                       )}
                     </td>
-                    {(isAdmin || isSuperAdmin) && (
-                      <td>
+                    <td>
+                      {(isAdmin || isSuperAdmin) ? (
                         <button onClick={() => handleDelete(c.id)}
-                          className="btn-ghost btn-sm text-surface-400 hover:text-red-500 p-1.5">
+                          className="btn-ghost btn-sm text-surface-400 hover:text-red-500 p-1.5"
+                          title="Delete payment">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
-                      </td>
-                    )}
+                      ) : (
+                        <Lock className="w-3.5 h-3.5 text-surface-300 mx-auto" title="Only admin can delete" />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
