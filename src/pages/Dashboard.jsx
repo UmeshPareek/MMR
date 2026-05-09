@@ -1,12 +1,9 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
-  ResponsiveContainer, Cell, ReferenceLine
-} from 'recharts'
+import { useEffect, useState, useRef } from 'react'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtMonth, lastNMonths } from '@/utils/helpers'
 import { format, parseISO, endOfMonth } from 'date-fns'
-import { TrendingUp, TrendingDown, ArrowUpRight, ArrowDownRight, Minus } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
 const MONTHS = lastNMonths(6)
 const MODE_COLORS = {
@@ -18,37 +15,27 @@ const MODE_LABELS = {
   bank_transfer: 'Bank', cash: 'Cash', cheque: 'Cheque', other: 'Other'
 }
 
-function Sparkline({ data, color, height = 40 }) {
+function Sparkline({ data, color }) {
   if (!data || data.length < 2) return null
-  const max = Math.max(...data)
-  const min = Math.min(...data)
-  const range = max - min || 1
-  const w = 80, h = height
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w
-    const y = h - ((v - min) / range) * (h - 4) - 2
-    return `${x},${y}`
-  }).join(' ')
-  return (
-    <svg width={w} height={h} className="opacity-60">
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
+  const max = Math.max(...data), min = Math.min(...data), range = max - min || 1
+  const w = 64, h = 24
+  const pts = data.map((v, i) => `${(i / (data.length-1)) * w},${h - ((v-min)/range) * (h-4) - 2}`).join(' ')
+  return <svg width={w} height={h}><polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
 }
 
 function PnLRow({ label, value, indent = 0, bold = false, accent, sub }) {
   return (
-    <div className={`flex items-center justify-between py-2 ${indent ? 'pl-' + (indent * 4) : ''} ${bold ? '' : 'opacity-80'}`}>
+    <div className={`flex items-center justify-between py-2 ${indent ? 'pl-6' : ''}`}>
       <div className="flex items-center gap-2 min-w-0">
-        {indent > 0 && <span className="w-px h-4 bg-surface-200 flex-shrink-0 ml-2" />}
-        <div className="min-w-0">
-          <p className={`text-sm ${bold ? 'font-semibold text-surface-800' : 'text-surface-600'} truncate`}>{label}</p>
+        {indent > 0 && <span className="w-px h-3.5 bg-surface-200 flex-shrink-0" />}
+        <div>
+          <p className={`text-sm ${bold ? 'font-semibold text-surface-800' : 'text-surface-600'}`}>{label}</p>
           {sub && <p className="text-xs text-surface-400">{sub}</p>}
         </div>
       </div>
-      <p className={`font-mono text-sm flex-shrink-0 ml-4 ${bold ? 'font-bold' : 'font-medium'} ${accent === 'green' ? 'text-emerald-700' : accent === 'red' ? 'text-red-600' : accent === 'teal' ? 'text-brand-700' : 'text-surface-700'}`}>
-        {value}
-      </p>
+      <p className={`font-mono text-sm flex-shrink-0 ml-4 ${bold ? 'font-bold' : 'font-medium'} ${
+        accent === 'green' ? 'text-emerald-700' : accent === 'red' ? 'text-red-600' : 'text-surface-700'
+      }`}>{value}</p>
     </div>
   )
 }
@@ -61,10 +48,9 @@ const ChartTip = ({ active, payload, label }) => {
       {payload.map((p, i) => (
         <div key={i} className="flex items-center justify-between gap-4 mb-1">
           <span className="flex items-center gap-1.5 text-surface-500">
-            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: p.color }} />
-            {p.name}
+            <span className="w-2 h-2 rounded-full" style={{ background: p.color }} />{p.name}
           </span>
-          <span className="font-semibold font-mono text-surface-800">{formatCurrency(p.value)}</span>
+          <span className="font-semibold font-mono">{formatCurrency(p.value)}</span>
         </div>
       ))}
     </div>
@@ -83,64 +69,57 @@ export default function Dashboard() {
   const [prevStats, setPrevStats] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const channelRef = useRef(null)
-  const monthRef = useRef(selectedMonth)
+  const initialized = useRef(false)
 
+  // On first mount — detect latest month with data
   useEffect(() => {
-    monthRef.current = selectedMonth
-    setLoading(true)
-    // Auto-detect best month on first load
     supabase.from('rent_collections')
-      .select('for_month')
-      .order('for_month', { ascending: false })
-      .limit(1)
+      .select('for_month').order('for_month', { ascending: false }).limit(1)
       .then(({ data }) => {
-        const bestMonth = data?.[0]?.for_month
-        if (bestMonth && bestMonth !== selectedMonth) {
-          setSelectedMonth(bestMonth)
-          monthRef.current = bestMonth
-          Promise.all([loadAll(bestMonth), loadTrend()]).finally(() => setLoading(false))
-        } else {
-          Promise.all([loadAll(selectedMonth), loadTrend()]).finally(() => setLoading(false))
+        const best = data?.[0]?.for_month
+        if (best && MONTHS.includes(best)) {
+          setSelectedMonth(best)
         }
+        initialized.current = true
       })
 
-    // Clean up previous subscription
-    if (channelRef.current) {
-      supabase.removeChannel(channelRef.current)
-    }
+    loadTrend()
 
-    // Real-time subscriptions — auto refresh on any data change
-    const channel = supabase
-      .channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => { loadAll(monthRef.current); setLastUpdated(new Date()) })
+    // Real-time subscription
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    const channel = supabase.channel('dashboard-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' },
+        () => { setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' },
+        () => { setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' },
+        () => { setLastUpdated(new Date()) })
       .subscribe()
-
     channelRef.current = channel
 
-    return () => {
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current)
-      }
-    }
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [])
+
+  // Load data whenever selectedMonth changes
+  useEffect(() => {
+    setLoading(true)
+    loadAll(selectedMonth).finally(() => setLoading(false))
   }, [selectedMonth])
 
-  const refreshAll = useCallback(async () => {
-    setLastUpdated(new Date())
-    await Promise.all([loadAll(selectedMonth), loadTrend()])
-  }, [selectedMonth])
+  // Re-load on real-time update
+  useEffect(() => {
+    if (!lastUpdated) return
+    loadAll(selectedMonth)
+    loadTrend()
+  }, [lastUpdated])
 
   async function loadAll(m) {
-    m = m || selectedMonth
+    if (!m) return
     const prevM = MONTHS[MONTHS.indexOf(m) - 1] || m
 
     const [
       { count: buildings }, { count: tenants }, { count: vacant },
-      { data: rent }, { data: ownerPmt }, { data: exp }, { data: ub }, { data: deps },
+      { data: rent }, { data: ownerPmt }, { data: exp }, { data: ub },
       { data: prevRent }, { data: prevExp }, { data: prevOwner },
       { data: modes }, { data: bData }, { data: recentPay }
     ] = await Promise.all([
@@ -149,15 +128,20 @@ export default function Dashboard() {
       supabase.from('flats').select('*', { count: 'exact', head: true }).eq('status', 'vacant'),
       supabase.from('rent_collections').select('amount, building_id').eq('for_month', m),
       supabase.from('owner_payments').select('amount, building_id, payment_type').eq('for_month', m),
-      supabase.from('expenses').select('amount, category, building_id').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
+      supabase.from('expenses').select('amount, category, building_id')
+        .gte('expense_date', `${m}-01`)
+        .lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
       supabase.from('utility_bills').select('amount, building_id').eq('for_month', m),
-      supabase.from('security_deposits').select('amount, deposit_type').eq('for_month', m).catch(() => ({ data: [] })),
       supabase.from('rent_collections').select('amount').eq('for_month', prevM),
-      supabase.from('expenses').select('amount').gte('expense_date', `${prevM}-01`).lte('expense_date', format(endOfMonth(parseISO(`${prevM}-01`)), 'yyyy-MM-dd')),
+      supabase.from('expenses').select('amount')
+        .gte('expense_date', `${prevM}-01`)
+        .lte('expense_date', format(endOfMonth(parseISO(`${prevM}-01`)), 'yyyy-MM-dd')),
       supabase.from('owner_payments').select('amount').eq('for_month', prevM),
       supabase.from('rent_collections').select('payment_mode, amount').eq('for_month', m),
       supabase.from('buildings').select('id, name'),
-      supabase.from('rent_collections').select('id, amount, payment_mode, payment_date, for_month, flat_id, building_id, tenant_id').order('created_at', { ascending: false }).limit(6),
+      supabase.from('rent_collections')
+        .select('id, amount, payment_mode, payment_date, for_month, flat_id, building_id, tenant_id')
+        .order('created_at', { ascending: false }).limit(6),
     ])
 
     const income = (rent || []).reduce((s, r) => s + Number(r.amount), 0)
@@ -170,43 +154,31 @@ export default function Dashboard() {
     const margin = income > 0 ? Math.round((netProfit / income) * 100) : 0
 
     const prevIncome = (prevRent || []).reduce((s, r) => s + Number(r.amount), 0)
-    const prevExpTotal = (prevExp || []).reduce((s, r) => s + Number(r.amount), 0)
-    const prevOwnerTotal = (prevOwner || []).reduce((s, r) => s + Number(r.amount), 0)
-    const prevNet = prevIncome - prevExpTotal - prevOwnerTotal
+    const prevNet = prevIncome
+      - (prevExp || []).reduce((s, r) => s + Number(r.amount), 0)
+      - (prevOwner || []).reduce((s, r) => s + Number(r.amount), 0)
 
     setPrevStats({ income: prevIncome, net: prevNet })
-
     setStats({ buildings: buildings || 0, tenants: tenants || 0, vacant: vacant || 0, income, totalExpenses, netProfit, margin })
-
     setPnl({
-      income,
-      ownerRent,
-      expTotal,
-      utilTotal,
-      totalExpenses,
-      grossProfit,
-      netProfit,
-      margin,
+      income, ownerRent, expTotal, utilTotal, totalExpenses, grossProfit, netProfit, margin,
       expByCategory: (exp || []).reduce((acc, e) => {
-        acc[e.category] = (acc[e.category] || 0) + Number(e.amount)
-        return acc
+        acc[e.category] = (acc[e.category] || 0) + Number(e.amount); return acc
       }, {}),
     })
 
-    // Mode breakdown
     const modeMap = {}
     ;(modes || []).forEach(r => { modeMap[r.payment_mode] = (modeMap[r.payment_mode] || 0) + Number(r.amount) })
-    setModeData(Object.entries(modeMap).map(([mode, amount]) => ({ mode, amount, label: MODE_LABELS[mode] || mode })).sort((a,b) => b.amount - a.amount))
+    setModeData(Object.entries(modeMap).map(([mode, amount]) => ({ mode, amount })).sort((a, b) => b.amount - a.amount))
 
-    // Building P&L
     const bMap = {}
     ;(bData || []).forEach(b => { bMap[b.id] = { name: b.name, income: 0, expenses: 0 } })
     ;(rent || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].income += Number(r.amount) })
     ;(ownerPmt || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].expenses += Number(r.amount) })
     ;(exp || []).forEach(r => { if (bMap[r.building_id]) bMap[r.building_id].expenses += Number(r.amount) })
-    setBuildingPnl(Object.values(bMap).filter(b => b.income > 0 || b.expenses > 0).sort((a,b) => (b.income - b.expenses) - (a.income - a.expenses)))
+    setBuildingPnl(Object.values(bMap).filter(b => b.income > 0 || b.expenses > 0).sort((a, b) => (b.income - b.expenses) - (a.income - a.expenses)))
 
-    // Enrich recent
+    // Enrich recent payments
     if (recentPay?.length) {
       const tIds = [...new Set(recentPay.map(p => p.tenant_id).filter(Boolean))]
       const fIds = [...new Set(recentPay.map(p => p.flat_id).filter(Boolean))]
@@ -220,12 +192,7 @@ export default function Dashboard() {
       ;(tData || []).forEach(t => { tMap[t.id] = t })
       ;(fData || []).forEach(f => { fMap[f.id] = f })
       ;(bDataR || []).forEach(b => { bMapR[b.id] = b })
-      setRecent(recentPay.map(p => ({
-        ...p,
-        tenant: tMap[p.tenant_id],
-        flat: fMap[p.flat_id],
-        building: bMapR[p.building_id],
-      })))
+      setRecent(recentPay.map(p => ({ ...p, tenant: tMap[p.tenant_id], flat: fMap[p.flat_id], building: bMapR[p.building_id] })))
     }
   }
 
@@ -235,7 +202,9 @@ export default function Dashboard() {
       const [{ data: rc }, { data: op }, { data: ex }] = await Promise.all([
         supabase.from('rent_collections').select('amount').eq('for_month', m),
         supabase.from('owner_payments').select('amount').eq('for_month', m),
-        supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
+        supabase.from('expenses').select('amount')
+          .gte('expense_date', `${m}-01`)
+          .lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
       ])
       const income = (rc || []).reduce((s, r) => s + Number(r.amount), 0)
       const expenses = [...(op || []), ...(ex || [])].reduce((s, r) => s + Number(r.amount), 0)
@@ -244,32 +213,29 @@ export default function Dashboard() {
     setTrend(rows)
   }
 
-  const delta = (current, prev) => {
+  const delta = (cur, prev) => {
     if (!prev || prev === 0) return null
-    const pct = Math.round(((current - prev) / prev) * 100)
-    return pct
+    return Math.round(((cur - prev) / prev) * 100)
   }
-
   const incomeDelta = delta(stats?.income, prevStats?.income)
   const netDelta = delta(stats?.netProfit, prevStats?.net)
   const sk = loading ? '—' : null
 
-  const MetricCard = ({ label, value, delta, deltaLabel, accent, icon: Icon }) => {
-    const isPositive = delta > 0
-    const isNeutral = delta === 0 || delta === null
+  const MetricCard = ({ label, value, d, sub, accent }) => {
+    const pos = d > 0, neutral = d === 0 || d === null
     return (
       <div className="card p-5 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-surface-500 uppercase tracking-widest">{label}</p>
-          {!isNeutral && (
-            <span className={`flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${isPositive ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
-              {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-              {Math.abs(delta)}%
+          {!neutral && (
+            <span className={`flex items-center gap-0.5 text-xs font-semibold px-1.5 py-0.5 rounded-full ${pos ? 'text-emerald-700 bg-emerald-50' : 'text-red-600 bg-red-50'}`}>
+              {pos ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {Math.abs(d)}%
             </span>
           )}
         </div>
         <p className={`text-2xl font-bold font-mono leading-none ${accent}`}>{value}</p>
-        {deltaLabel && <p className="text-xs text-surface-400">{deltaLabel}</p>}
+        {sub && <p className="text-xs text-surface-400">{sub}</p>}
       </div>
     )
   }
@@ -277,11 +243,12 @@ export default function Dashboard() {
   return (
     <div className="space-y-5">
 
-      {/* Top bar */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <h2 className="font-semibold text-surface-800">Financial Overview</h2>
-          <select className="select w-auto py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
+          <select className="select w-auto py-1.5 text-sm" value={selectedMonth}
+            onChange={e => setSelectedMonth(e.target.value)}>
             {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
@@ -289,62 +256,44 @@ export default function Dashboard() {
           <span className="text-xs text-surface-400 hidden sm:block">
             {stats?.tenants} tenants · {stats?.buildings} buildings · {stats?.vacant} vacant
           </span>
-          <div className="flex items-center gap-2">
-            {lastUpdated && (
-              <span className="text-xs text-surface-400 hidden sm:block">
-                Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            )}
-            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live
-            </span>
-          </div>
+          {lastUpdated && <span className="text-xs text-surface-400 hidden sm:block">Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</span>}
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Live
+          </span>
         </div>
       </div>
 
-      {/* Hero metric row */}
+      {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MetricCard label="Total Revenue" value={sk ?? formatCurrency(stats?.income)} delta={incomeDelta} deltaLabel="vs last month" accent="text-surface-900" />
+        <MetricCard label="Total Revenue" value={sk ?? formatCurrency(stats?.income)} d={incomeDelta} sub="vs last month" accent="text-surface-900" />
         <MetricCard label="Total Expenses" value={sk ?? formatCurrency(stats?.totalExpenses)} accent="text-red-600" />
-        <MetricCard label="Net Profit" value={sk ?? formatCurrency(stats?.netProfit)} delta={netDelta} deltaLabel="vs last month" accent={!stats || stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'} />
+        <MetricCard label="Net Profit" value={sk ?? formatCurrency(stats?.netProfit)} d={netDelta} sub="vs last month" accent={!stats || stats.netProfit >= 0 ? 'text-emerald-700' : 'text-red-600'} />
         <div className="card p-5 flex flex-col gap-3">
           <p className="text-xs font-semibold text-surface-500 uppercase tracking-widest">Profit Margin</p>
           <p className={`text-2xl font-bold font-mono leading-none ${!stats || stats.margin >= 0 ? 'text-brand-700' : 'text-red-600'}`}>
             {sk ?? (stats?.margin + '%')}
           </p>
-          {stats && (
-            <div className="h-1.5 bg-surface-100 rounded-full overflow-hidden">
-              <div className="h-full bg-brand-500 rounded-full transition-all duration-700" style={{ width: `${Math.max(0, Math.min(100, stats.margin))}%` }} />
-            </div>
-          )}
+          {stats && <div className="h-1.5 bg-surface-100 rounded-full overflow-hidden"><div className="h-full bg-brand-500 rounded-full transition-all duration-700" style={{ width: `${Math.max(0, Math.min(100, stats.margin))}%` }} /></div>}
         </div>
       </div>
 
-      {/* Main content — P&L + Chart */}
+      {/* P&L + Charts */}
       <div className="grid lg:grid-cols-5 gap-4">
-
-        {/* P&L Statement */}
+        {/* P&L */}
         <div className="lg:col-span-2 card p-5">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-semibold text-surface-800 text-sm">P&L Statement</h3>
             <span className="text-xs text-surface-400">{selectedMonth}</span>
           </div>
-
-          <div className="space-y-0">
-            {/* Revenue */}
+          <div>
             <div className="border-b border-surface-100 pb-1 mb-1">
               <PnLRow label="Rent Collected" value={sk ?? formatCurrency(pnl?.income)} bold accent="green" />
             </div>
-
-            {/* Cost of Revenue */}
             <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider pt-1 pb-0.5">Cost of Revenue</p>
             <PnLRow label="Owner Rent Payments" value={sk ?? formatCurrency(pnl?.ownerRent)} indent={1} accent="red" />
             <div className="border-b border-surface-100 pb-1 mb-1">
               <PnLRow label="Gross Profit" value={sk ?? formatCurrency(pnl?.grossProfit)} bold accent={pnl?.grossProfit >= 0 ? 'green' : 'red'} />
             </div>
-
-            {/* Operating Expenses */}
             <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider pt-1 pb-0.5">Operating Expenses</p>
             <PnLRow label="Utility Bills" value={sk ?? formatCurrency(pnl?.utilTotal)} indent={1} accent="red" />
             {pnl?.expByCategory && Object.entries(pnl.expByCategory).map(([cat, amt]) => (
@@ -353,27 +302,22 @@ export default function Dashboard() {
             {(!pnl?.expByCategory || Object.keys(pnl.expByCategory).length === 0) && (
               <PnLRow label="General Expenses" value={sk ?? formatCurrency(pnl?.expTotal)} indent={1} accent="red" />
             )}
-
-            {/* Net */}
             <div className="border-t-2 border-surface-200 pt-2 mt-2">
-              <PnLRow label="Net Profit / Loss"
-                value={sk ?? formatCurrency(pnl?.netProfit)}
-                bold accent={pnl?.netProfit >= 0 ? 'green' : 'red'}
-                sub={pnl ? `${pnl.margin}% margin` : ''} />
+              <PnLRow label="Net Profit / Loss" value={sk ?? formatCurrency(pnl?.netProfit)} bold
+                accent={pnl?.netProfit >= 0 ? 'green' : 'red'} sub={pnl ? `${pnl.margin}% margin` : ''} />
             </div>
           </div>
         </div>
 
-        {/* Charts column */}
+        {/* Charts */}
         <div className="lg:col-span-3 space-y-4">
-          {/* 6-month trend */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-surface-800 text-sm">6-Month Trend</h3>
               <div className="flex items-center gap-3 text-xs text-surface-400">
-                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-emerald-500 rounded inline-block" />Revenue</span>
-                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-red-400 rounded inline-block" />Expenses</span>
-                <span className="flex items-center gap-1"><span className="w-6 h-0.5 bg-brand-500 rounded inline-block" />Profit</span>
+                <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-emerald-500 rounded inline-block" />Revenue</span>
+                <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-red-400 rounded inline-block" />Expenses</span>
+                <span className="flex items-center gap-1"><span className="w-5 h-0.5 bg-brand-500 rounded inline-block" />Profit</span>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={160}>
@@ -387,7 +331,8 @@ export default function Dashboard() {
                   ))}
                 </defs>
                 <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${(v/100000).toFixed(0)}L`} width={36} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false}
+                  tickFormatter={v => `₹${(v/100000).toFixed(0)}L`} width={36} />
                 <Tooltip content={<ChartTip />} />
                 <ReferenceLine y={0} stroke="#e2e8f0" />
                 <Area type="monotone" dataKey="income" name="Revenue" stroke="#16a34a" fill="url(#ig)" strokeWidth={2} dot={false} />
@@ -397,26 +342,22 @@ export default function Dashboard() {
             </ResponsiveContainer>
           </div>
 
-          {/* Mode breakdown */}
           <div className="card p-5">
             <h3 className="font-semibold text-surface-800 text-sm mb-3">Revenue by Collection Mode</h3>
             {modeData.length === 0 ? (
               <p className="text-sm text-surface-400 text-center py-4">No collections for {selectedMonth}</p>
             ) : (
               <div className="space-y-2.5">
-                {modeData.map(({ mode, amount, label }) => {
+                {modeData.map(({ mode, amount }) => {
                   const pct = stats?.income > 0 ? Math.round((amount / stats.income) * 100) : 0
                   return (
                     <div key={mode} className="flex items-center gap-3">
-                      <div className="w-16 text-xs font-medium text-surface-600 flex-shrink-0">{label}</div>
+                      <div className="w-16 text-xs font-medium text-surface-600">{MODE_LABELS[mode] || mode}</div>
                       <div className="flex-1 h-2 bg-surface-100 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${pct}%`, backgroundColor: MODE_COLORS[mode] || '#94a3b8' }} />
+                        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: MODE_COLORS[mode] || '#94a3b8' }} />
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0 w-32 justify-end">
-                        <span className="text-xs font-mono text-surface-600">{formatCurrency(amount)}</span>
-                        <span className="text-xs text-surface-400 w-8 text-right">{pct}%</span>
-                      </div>
+                      <span className="text-xs font-mono text-surface-600 w-24 text-right">{formatCurrency(amount)}</span>
+                      <span className="text-xs text-surface-400 w-8 text-right">{pct}%</span>
                     </div>
                   )
                 })}
@@ -426,7 +367,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Building-wise P&L */}
+      {/* Building P&L */}
       {buildingPnl.length > 0 && (
         <div className="card overflow-hidden">
           <div className="px-5 py-3.5 border-b border-surface-100 flex items-center justify-between">
@@ -454,9 +395,7 @@ export default function Dashboard() {
                       <td className="font-medium text-surface-800">{b.name}</td>
                       <td className="text-right font-mono text-emerald-700">{formatCurrency(b.income)}</td>
                       <td className="text-right font-mono text-red-600">{formatCurrency(b.expenses)}</td>
-                      <td className={`text-right font-mono font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                        {formatCurrency(profit)}
-                      </td>
+                      <td className={`text-right font-mono font-bold ${profit >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(profit)}</td>
                       <td>
                         <div className="flex items-center gap-2">
                           <div className="w-16 h-1.5 bg-surface-100 rounded-full overflow-hidden">
@@ -465,9 +404,7 @@ export default function Dashboard() {
                           <span className="text-xs font-mono text-surface-500">{margin}%</span>
                         </div>
                       </td>
-                      <td>
-                        <Sparkline data={[b.income * 0.8, b.income * 0.9, b.income]} color={profit >= 0 ? '#0d9488' : '#dc2626'} height={28} />
-                      </td>
+                      <td><Sparkline data={[b.income * 0.7, b.income * 0.85, b.income]} color={profit >= 0 ? '#0d9488' : '#dc2626'} /></td>
                     </tr>
                   )
                 })}
@@ -490,7 +427,7 @@ export default function Dashboard() {
             {recent.map(p => (
               <div key={p.id} className="flex items-center gap-4 px-5 py-3">
                 <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                  style={{ background: MODE_COLORS[p.payment_mode] + '20', color: MODE_COLORS[p.payment_mode] }}>
+                  style={{ background: (MODE_COLORS[p.payment_mode] || '#94a3b8') + '20', color: MODE_COLORS[p.payment_mode] || '#94a3b8' }}>
                   {(p.tenant?.full_name || '?').charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -502,8 +439,8 @@ export default function Dashboard() {
                   <p className="text-xs text-surface-400">{p.payment_date}</p>
                 </div>
                 <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0"
-                  style={{ background: MODE_COLORS[p.payment_mode] + '20', color: MODE_COLORS[p.payment_mode] }}>
-                  {(MODE_LABELS[p.payment_mode] || p.payment_mode)}
+                  style={{ background: (MODE_COLORS[p.payment_mode] || '#94a3b8') + '20', color: MODE_COLORS[p.payment_mode] || '#94a3b8' }}>
+                  {MODE_LABELS[p.payment_mode] || p.payment_mode}
                 </span>
               </div>
             ))}
