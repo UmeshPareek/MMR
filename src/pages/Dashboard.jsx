@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, ReferenceLine
@@ -81,10 +81,59 @@ export default function Dashboard() {
   const [recent, setRecent] = useState([])
   const [loading, setLoading] = useState(true)
   const [prevStats, setPrevStats] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(null)
+  const channelRef = useRef(null)
 
   useEffect(() => {
     setLoading(true)
     Promise.all([loadAll(), loadTrend()]).finally(() => setLoading(false))
+
+    // Clean up previous subscription
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current)
+    }
+
+    // Real-time subscriptions — auto refresh on any data change
+    const channel = supabase
+      .channel('dashboard-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => {
+        loadAll()
+        setLastUpdated(new Date())
+      })
+      .subscribe()
+
+    channelRef.current = channel
+
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+      }
+    }
+  }, [selectedMonth])
+
+  const refreshAll = useCallback(async () => {
+    setLastUpdated(new Date())
+    await Promise.all([loadAll(), loadTrend()])
   }, [selectedMonth])
 
   async function loadAll() {
@@ -242,10 +291,17 @@ export default function Dashboard() {
           <span className="text-xs text-surface-400 hidden sm:block">
             {stats?.tenants} tenants · {stats?.buildings} buildings · {stats?.vacant} vacant
           </span>
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Live
-          </span>
+          <div className="flex items-center gap-2">
+            {lastUpdated && (
+              <span className="text-xs text-surface-400 hidden sm:block">
+                Updated {lastUpdated.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Live
+            </span>
+          </div>
         </div>
       </div>
 
