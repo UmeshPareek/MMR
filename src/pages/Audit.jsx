@@ -1,584 +1,752 @@
 import { useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { formatCurrency, fmtDate, exportMultiSheet } from '../utils/helpers';
-import { Spinner, EmptyState, Badge } from '../components/ui/index';
+import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
-import * as XLSX from 'xlsx';
 import {
-  ShieldAlert, Upload, Download, AlertTriangle, CheckCircle2,
-  XCircle, FileSpreadsheet, TrendingDown, RefreshCw, Eye,
-  ArrowUpCircle, ArrowDownCircle, Zap
+  ShieldCheck, Upload, Download, AlertTriangle, CheckCircle2,
+  XCircle, FileText, RefreshCw, ChevronDown, ChevronRight,
+  Banknote, Smartphone, Eye, X, Filter, Building2
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
-const FLAG_SEVERITY = {
-  high: { label: 'High', cls: 'bg-expense-500/20 text-expense-400 border border-expense-500/30' },
-  medium: { label: 'Medium', cls: 'bg-amber-500/20 text-amber-400 border border-amber-500/30' },
-  low: { label: 'Low', cls: 'bg-blue-500/20 text-blue-400 border border-blue-500/30' },
-};
+// ─── Bank Statement Parsers ───────────────────────────────
+function parseHDFC(text) {
+  const txns = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Date pattern DD/MM/YY or DD/MM/YYYY
+    const dateMatch = line.match(/^(\d{2}\/\d{2}\/\d{2,4})/);
+    if (!dateMatch) continue;
+
+    const dateStr = dateMatch[1];
+    const parts = dateStr.split('/');
+    const year = parts[2].length === 2 ? '20' + parts[2] : parts[2];
+    const date = `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+
+    // Full narration — may span 2 lines
+    let narration = line.replace(dateMatch[0], '').trim();
+    if (i + 1 < lines.length && !lines[i+1].match(/^\d{2}\/\d{2}/)) {
+      narration += ' ' + lines[i+1];
+      i++;
+    }
+
+    // Extract amounts — look for numbers with commas
+    const amounts = narration.match(/[\d,]+\.\d{2}/g) || [];
+    const cleanNarration = narration.replace(/[\d,]+\.\d{2}/g, '').replace(/\s+/g, ' ').trim();
+
+    // Parse HDFC ATN pattern: ATN-XXXXXXXX0820-NAME+ROOM+TYPE
+    let tenantHint = null, roomHint = null, txnType = 'other';
+    const atnMatch = cleanNarration.match(/ATN-[A-Z0-9]+-([A-Z0-9]+?)(\d{3,4})(RENT|OTHERS|ELECTRICI|WATER|DEPOSIT)?/i);
+    if (atnMatch) {
+      tenantHint = atnMatch[1].toLowerCase();
+      roomHint = atnMatch[2];
+      const typeStr = (atnMatch[3] || '').toLowerCase();
+      if (typeStr.includes('rent')) txnType = 'rent';
+      else if (typeStr.includes('electric')) txnType = 'electricity';
+      else if (typeStr.includes('water')) txnType = 'water';
+      else if (typeStr.includes('deposit')) txnType = 'deposit';
+      else txnType = 'other';
+    }
+
+    // Determine credit/debit from amounts position
+    // In HDFC: withdrawal comes before deposit in the line
+    let credit = 0, debit = 0;
+    if (amounts.length >= 2) {
+      const a = parseFloat(amounts[0].replace(/,/g,''));
+      const b = parseFloat(amounts[1].replace(/,/g,''));
+      // If line has "withdrawal" context, first is debit
+      if (cleanNarration.match(/UPI|IMPS|NEFT|RTGS/) && b > 0) {
+        credit = b;
+      } else if (a > 0) {
+        credit = a;
+      }
+    } else if (amounts.length === 1) {
+      credit = parseFloat(amounts[0].replace(/,/g,''));
+    }
+
+    if (credit > 0 || debit > 0) {
+      txns.push({ date, narration: cleanNarration, credit, debit, tenantHint, roomHint, txnType, bank: 'HDFC' });
+    }
+  }
+  return txns;
+}
+
+function parseICICI(text) {
+  const txns = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    // Date: DD.MM.YYYY or DD/MM/YYYY
+    const dateMatch = line.match(/^(\d{1,2}[./]\d{2}[./]\d{4})/);
+    if (!dateMatch) continue;
+
+    const dateStr = dateMatch[1].replace(/\./g, '/');
+    const parts = dateStr.split('/');
+    const date = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+
+    let narration = line.replace(dateMatch[0], '').trim();
+    // Collect continuation lines
+    while (i + 1 < lines.length && !lines[i+1].match(/^\d{1,2}[./]\d{2}[./]\d{4}/)) {
+      const next = lines[i+1];
+      if (next.match(/^\d[\d,]*\.\d{2}/) || next.match(/^[A-Z]{2,}/)) {
+        narration += ' ' + next;
+        i++;
+      } else break;
+    }
+
+    const amounts = narration.match(/[\d,]+\.\d{2}/g) || [];
+    const cleanNarration = narration.replace(/[\d,]+\.\d{2}/g, '').replace(/\s+/g, ' ').trim();
+
+    // Try to extract name hints from ICICI narration
+    let tenantHint = null, roomHint = null, txnType = 'other';
+    const rentalMatch = cleanNarration.match(/RENTAL\s*PAYMENT/i);
+    if (rentalMatch) txnType = 'rent';
+
+    // Extract name from UPI: UPI/NAME/... or NEFT-...-NAME-...
+    const upiMatch = cleanNarration.match(/UPI\/([A-Za-z]+)/i);
+    const neftMatch = cleanNarration.match(/NEFT-[A-Z0-9]+-[A-Z0-9]+-([A-Z]+)/i);
+    if (upiMatch) tenantHint = upiMatch[1].toLowerCase();
+    else if (neftMatch) tenantHint = neftMatch[1].toLowerCase();
+
+    // Determine credit vs debit
+    let credit = 0, debit = 0;
+    if (amounts.length >= 2) {
+      // ICICI: withdrawal, deposit, balance order
+      const a = parseFloat(amounts[0].replace(/,/g,''));
+      const b = parseFloat(amounts.length > 1 ? amounts[amounts.length-2].replace(/,/g,'') : '0');
+      if (cleanNarration.match(/UPI\/|NEFT-|RTGS-|IMPS-/) && b > 0) credit = b;
+      else if (a > 0) credit = a;
+    } else if (amounts.length === 1) {
+      credit = parseFloat(amounts[0].replace(/,/g,''));
+    }
+
+    if (credit > 0 || debit > 0) {
+      txns.push({ date, narration: cleanNarration, credit, debit, tenantHint, roomHint, txnType, bank: 'ICICI' });
+    }
+  }
+  return txns;
+}
+
+// ─── Fuzzy name match ─────────────────────────────────────
+function nameScore(a, b) {
+  a = (a || '').toLowerCase().replace(/\s+/g,'');
+  b = (b || '').toLowerCase().replace(/\s+/g,'');
+  if (!a || !b) return 0;
+  if (a.includes(b) || b.includes(a)) return 90;
+  // Common prefix length
+  let common = 0;
+  const minLen = Math.min(a.length, b.length);
+  for (let i = 0; i < minLen; i++) { if (a[i] === b[i]) common++; else break; }
+  return Math.round((common / minLen) * 100);
+}
 
 export default function Audit() {
   const { isSuperAdmin } = useAuth();
   const fileRef = useRef();
-  const [uploading, setUploading] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [statements, setStatements] = useState([]);
-  const [flags, setFlags] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [activeTab, setActiveTab] = useState('upload');
+  const months = lastNMonths(6);
+  const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1]);
+  const [bankTxns, setBankTxns] = useState([]);
   const [filename, setFilename] = useState('');
+  const [bankType, setBankType] = useState('hdfc');
+  const [parsing, setParsing] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  // Results
+  const [results, setResults] = useState(null);
+  const [activeTab, setActiveTab] = useState('summary');
+  const [expandedBuilding, setExpandedBuilding] = useState(null);
 
   if (!isSuperAdmin) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="card p-8 text-center max-w-sm">
-          <ShieldAlert className="w-12 h-12 text-expense-400 mx-auto mb-3" />
+          <ShieldCheck className="w-12 h-12 text-brand-600 mx-auto mb-3" />
           <h2 className="text-lg font-semibold text-surface-800 mb-2">Access Restricted</h2>
-          <p className="text-surface-400 text-sm">The Audit module is only available to Super Admin.</p>
+          <p className="text-surface-500 text-sm">Audit is only available to Super Admin.</p>
         </div>
       </div>
     );
   }
 
-  function parseCSV(text) {
-    const lines = text.split('\n').filter(l => l.trim());
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[^a-z0-9]/g, '_'));
-    return lines.slice(1).map(line => {
-      const vals = line.split(',');
-      const obj = {};
-      headers.forEach((h, i) => obj[h] = (vals[i] || '').trim().replace(/^"|"$/g, ''));
-      return obj;
-    }).filter(r => Object.values(r).some(v => v));
-  }
-
-  function parseExcelStatement(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = e => {
-        try {
-          const wb = XLSX.read(e.target.result, { type: 'binary' });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const raw = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
-          resolve(raw);
-        } catch (err) { reject(err); }
-      };
-      reader.onerror = reject;
-      reader.readAsBinaryString(file);
-    });
-  }
-
-  function normalizeRows(rows) {
-    // Try to detect column mappings
-    const sample = rows[0] ? Object.keys(rows[0]).map(k => k.toLowerCase()) : [];
-    const findKey = (candidates) => {
-      const lKeys = Object.keys(rows[0] || {});
-      for (const c of candidates) {
-        const match = lKeys.find(k => k.toLowerCase().includes(c));
-        if (match) return match;
-      }
-      return null;
-    };
-    const dateKey = findKey(['date', 'txn_date', 'value_date', 'transaction_date', 'dt']);
-    const descKey = findKey(['description', 'narration', 'particulars', 'remarks', 'desc', 'details']);
-    const debitKey = findKey(['debit', 'withdrawal', 'dr', 'debit_amount']);
-    const creditKey = findKey(['credit', 'deposit', 'cr', 'credit_amount']);
-    const amtKey = findKey(['amount', 'amt']);
-    const refKey = findKey(['reference', 'ref', 'cheque', 'chq', 'utr', 'txn_id']);
-    const balKey = findKey(['balance', 'bal', 'closing_balance']);
-
-    return rows.map((r, i) => {
-      let debit = 0, credit = 0;
-      if (debitKey) debit = parseFloat(String(r[debitKey]).replace(/,/g, '')) || 0;
-      if (creditKey) credit = parseFloat(String(r[creditKey]).replace(/,/g, '')) || 0;
-      if (amtKey && !debitKey && !creditKey) {
-        const amt = parseFloat(String(r[amtKey]).replace(/,/g, '')) || 0;
-        if (amt < 0) debit = Math.abs(amt); else credit = amt;
-      }
-      return {
-        row: i + 2,
-        date: dateKey ? r[dateKey] : '',
-        description: descKey ? r[descKey] : '',
-        debit,
-        credit,
-        balance: balKey ? parseFloat(String(r[balKey]).replace(/,/g, '')) || 0 : 0,
-        ref: refKey ? r[refKey] : '',
-      };
-    }).filter(r => r.date || r.description || r.debit || r.credit);
-  }
-
-  async function handleFileUpload(e) {
+  async function handleFile(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     setFilename(file.name);
-    setUploading(true);
-    toast.loading('Parsing bank statement…', { id: 'parse' });
+    setParsing(true);
+    toast.loading('Reading PDF…', { id: 'parse' });
 
     try {
-      let rows;
-      if (file.name.endsWith('.csv')) {
-        const text = await file.text();
-        const raw = parseCSV(text);
-        rows = normalizeRows(raw);
-      } else {
-        const raw = await parseExcelStatement(file);
-        rows = normalizeRows(raw);
-      }
+      // Use Claude's Anthropic API to extract text from PDF
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
 
-      if (!rows.length) throw new Error('No valid rows found in file');
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 4000,
+          messages: [{
+            role: 'user',
+            content: [
+              {
+                type: 'document',
+                source: { type: 'base64', media_type: 'application/pdf', data: base64 }
+              },
+              {
+                type: 'text',
+                text: `Extract ALL transactions from this bank statement as JSON array. Each transaction must have: date (YYYY-MM-DD), narration (full description), credit (number, 0 if none), debit (number, 0 if none). Return ONLY valid JSON array, no other text. Example: [{"date":"2026-04-01","narration":"IMPS-EAZYAPP-ATN-XXXXXXXX0820-NABEEL403RENT","credit":22000,"debit":0}]`
+              }
+            ]
+          }]
+        })
+      });
 
-      setStatements(rows);
-      setActiveTab('analyze');
-      toast.success(`Parsed ${rows.length} transactions`, { id: 'parse' });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || '';
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('Could not extract transactions');
+
+      const rawTxns = JSON.parse(jsonMatch[0]);
+
+      // Enrich with parsing logic
+      const enriched = rawTxns.map(t => {
+        let tenantHint = null, roomHint = null, txnType = 'other';
+        const n = (t.narration || '').toUpperCase();
+
+        // HDFC ATN pattern
+        const atnMatch = n.match(/ATN-[A-Z0-9]+-([A-Z]+)(\d{3,4})(RENT|OTHERS|ELECTRICI|WATER|DEPOSIT)?/);
+        if (atnMatch) {
+          tenantHint = atnMatch[1].toLowerCase();
+          roomHint = atnMatch[2];
+          const tp = (atnMatch[3] || '').toLowerCase();
+          txnType = tp.includes('rent') ? 'rent' : tp.includes('electric') ? 'electricity' : tp.includes('water') ? 'water' : tp.includes('deposit') ? 'deposit' : 'other';
+        }
+
+        // ICICI RENTAL PAYMENT
+        if (n.includes('RENTAL')) txnType = 'rent';
+
+        // Extract tenant name from various patterns
+        if (!tenantHint) {
+          const upiName = n.match(/UPI\/([A-Z]+)/);
+          const neftName = n.match(/NEFT-[A-Z0-9]+-([A-Z]+)/);
+          if (upiName) tenantHint = upiName[1].toLowerCase();
+          else if (neftName) tenantHint = neftName[1].toLowerCase();
+        }
+
+        return { ...t, tenantHint, roomHint, txnType, bank: bankType.toUpperCase() };
+      });
+
+      setBankTxns(enriched);
+      toast.success(`Extracted ${enriched.length} transactions`, { id: 'parse' });
     } catch (err) {
-      toast.error(err.message || 'Failed to parse file', { id: 'parse' });
+      toast.error('Failed to parse PDF: ' + err.message, { id: 'parse' });
     } finally {
-      setUploading(false);
+      setParsing(false);
       fileRef.current.value = '';
     }
   }
 
-  async function runAnalysis() {
-    if (!statements.length) return toast.error('Upload a statement first');
+  async function runAudit() {
+    if (!bankTxns.length) return toast.error('Upload a bank statement first');
     setAnalyzing(true);
-    toast.loading('Running audit analysis…', { id: 'audit' });
+    toast.loading('Running audit…', { id: 'audit' });
 
     try {
-      // Fetch internal records
+      const forMonth = selectedMonth;
+
+      // Fetch all active tenants with flat/building
+      const { data: tenants } = await supabase
+        .from('tenants')
+        .select('id, full_name, phone, flat_id, building_id, monthly_rent, flats(door_number), buildings(name)')
+        .eq('status', 'active');
+
+      // Fetch all collections for the month
       const { data: collections } = await supabase
-        .from('rent_collections').select('amount, payment_mode, payment_date, notes');
-      const { data: ownerPmts } = await supabase
-        .from('owner_payments').select('amount, payment_mode, payment_date, notes');
-      const { data: expenses } = await supabase
-        .from('expenses').select('amount, date, description, category');
-      const { data: salaries } = await supabase
-        .from('staff_salaries').select('net_amount, payment_date, notes');
+        .from('rent_collections')
+        .select('*, tenant:tenants(full_name), flat:flats(door_number), building:buildings(name)')
+        .eq('for_month', forMonth);
 
-      const allDebits = statements.filter(r => r.debit > 0);
-      const allCredits = statements.filter(r => r.credit > 0);
-
-      const foundFlags = [];
-      let matchedDebits = 0, matchedCredits = 0;
-
-      // 1. Large transactions (> ₹50,000)
-      statements.filter(r => r.debit > 50000 || r.credit > 50000).forEach(r => {
-        foundFlags.push({
-          type: r.debit > 50000 ? 'Large Debit' : 'Large Credit',
-          severity: 'high',
-          row: r.row,
-          date: r.date,
-          amount: r.debit > 50000 ? r.debit : r.credit,
-          description: r.description,
-          note: `Transaction above ₹50,000 — requires manual review`,
-        });
+      const collByTenant = {};
+      (collections || []).forEach(c => {
+        collByTenant[c.tenant_id] = collByTenant[c.tenant_id] || [];
+        collByTenant[c.tenant_id].push(c);
       });
 
-      // 2. Duplicate transactions (same amount + date within 1 day)
-      const seen = {};
-      statements.forEach(r => {
-        const key = `${r.date}_${r.debit}_${r.credit}`;
-        if (seen[key]) {
-          foundFlags.push({
-            type: 'Potential Duplicate',
-            severity: 'high',
-            row: r.row,
-            date: r.date,
-            amount: r.debit || r.credit,
-            description: r.description,
-            note: `Identical amount on same date as row ${seen[key]}`,
-          });
-        }
-        seen[key] = r.row;
-      });
+      // ── 1. Tenant payment status ──────────────────────
+      const tenantStatus = (tenants || []).map(t => {
+        const colls = collByTenant[t.id] || [];
+        const totalPaid = colls.reduce((s, c) => s + Number(c.amount), 0);
+        const expected = Number(t.monthly_rent);
+        const balance = expected - totalPaid;
+        const modes = [...new Set(colls.map(c => c.payment_mode))];
 
-      // 3. Round number suspicion (exact round amounts > ₹10,000)
-      statements.filter(r => {
-        const amt = r.debit || r.credit;
-        return amt > 10000 && amt % 1000 === 0;
-      }).slice(0, 10).forEach(r => {
-        foundFlags.push({
-          type: 'Round Amount',
-          severity: 'low',
-          row: r.row,
-          date: r.date,
-          amount: r.debit || r.credit,
-          description: r.description,
-          note: `Round number above ₹10,000 — verify with records`,
-        });
-      });
-
-      // 4. Weekend/odd hour transactions
-      statements.forEach(r => {
-        if (!r.date) return;
-        const d = new Date(r.date);
-        if (!isNaN(d) && (d.getDay() === 0 || d.getDay() === 6)) {
-          foundFlags.push({
-            type: 'Weekend Transaction',
-            severity: 'low',
-            row: r.row,
-            date: r.date,
-            amount: r.debit || r.credit,
-            description: r.description,
-            note: `Transaction recorded on a weekend`,
-          });
-        }
-      });
-
-      // 5. Unmatched debits (debit not found in any internal record ±10%)
-      const internalDebits = [
-        ...(ownerPmts || []).map(p => Number(p.amount)),
-        ...(expenses || []).map(e => Number(e.amount)),
-        ...(salaries || []).map(s => Number(s.net_amount)),
-      ];
-      allDebits.forEach(r => {
-        const match = internalDebits.find(a => Math.abs(a - r.debit) / r.debit < 0.1);
-        if (!match && r.debit > 1000) {
-          foundFlags.push({
-            type: 'Unmatched Debit',
-            severity: 'medium',
-            row: r.row,
-            date: r.date,
-            amount: r.debit,
-            description: r.description,
-            note: `No matching internal record found for this debit`,
-          });
-          matchedDebits++;
-        }
-      });
-
-      // 6. Unmatched credits (credit not found in rent collections ±10%)
-      const internalCredits = (collections || []).map(c => Number(c.amount));
-      allCredits.forEach(r => {
-        const match = internalCredits.find(a => Math.abs(a - r.credit) / r.credit < 0.1);
-        if (!match && r.credit > 1000) {
-          foundFlags.push({
-            type: 'Unmatched Credit',
-            severity: 'medium',
-            row: r.row,
-            date: r.date,
-            amount: r.credit,
-            description: r.description,
-            note: `Credit not matched to any rent collection record`,
-          });
-          matchedCredits++;
-        }
-      });
-
-      // 7. Balance consistency check
-      let prevBal = null;
-      statements.forEach((r, i) => {
-        if (prevBal !== null && r.balance > 0) {
-          const expectedBal = prevBal + r.credit - r.debit;
-          const diff = Math.abs(expectedBal - r.balance);
-          if (diff > 100 && r.balance > 0) {
-            foundFlags.push({
-              type: 'Balance Mismatch',
-              severity: 'high',
-              row: r.row,
-              date: r.date,
-              amount: diff,
-              description: r.description,
-              note: `Expected balance ₹${expectedBal.toFixed(2)}, got ₹${r.balance.toFixed(2)}`,
-            });
+        // Try to find matching bank transaction
+        const bankMatch = bankTxns.find(tx => {
+          if (tx.credit <= 0) return false;
+          // Room number match (strong signal)
+          if (tx.roomHint && t.flats?.door_number) {
+            const room = t.flats.door_number.replace(/\D/g,'');
+            if (tx.roomHint === room) {
+              // Also check name similarity
+              const score = nameScore(tx.tenantHint, t.full_name.split(' ')[0]);
+              return score > 50;
+            }
           }
-        }
-        if (r.balance > 0) prevBal = r.balance;
+          // Name match (weaker)
+          const score = nameScore(tx.tenantHint, t.full_name.split(' ')[0]);
+          return score > 70 && Math.abs(tx.credit - expected) < expected * 0.1;
+        });
+
+        return {
+          tenantId: t.id,
+          name: t.full_name,
+          room: t.flats?.door_number || '—',
+          building: t.buildings?.name || '—',
+          expected,
+          paid: totalPaid,
+          balance,
+          modes,
+          status: totalPaid >= expected ? 'paid' : totalPaid > 0 ? 'partial' : 'unpaid',
+          inSystem: colls.length > 0,
+          inBank: !!bankMatch,
+          bankAmount: bankMatch?.credit || 0,
+          bankMismatch: bankMatch && Math.abs(bankMatch.credit - totalPaid) > 100,
+        };
       });
 
-      setFlags(foundFlags);
-
-      // Stats
-      const totalDebits = allDebits.reduce((s, r) => s + r.debit, 0);
-      const totalCredits = allCredits.reduce((s, r) => s + r.credit, 0);
-      setStats({
-        txCount: statements.length,
-        debitCount: allDebits.length,
-        creditCount: allCredits.length,
-        totalDebits,
-        totalCredits,
-        netFlow: totalCredits - totalDebits,
-        flagCount: foundFlags.length,
-        highFlags: foundFlags.filter(f => f.severity === 'high').length,
-        medFlags: foundFlags.filter(f => f.severity === 'medium').length,
-        lowFlags: foundFlags.filter(f => f.severity === 'low').length,
+      // ── 2. Bank credits not in system ─────────────────
+      const creditTxns = bankTxns.filter(t => t.credit > 0 && t.txnType === 'rent');
+      const unmatchedBank = creditTxns.filter(tx => {
+        return !tenantStatus.some(t => {
+          if (tx.roomHint && t.room) {
+            const room = t.room.replace(/\D/g,'');
+            return tx.roomHint === room && nameScore(tx.tenantHint, t.name.split(' ')[0]) > 50;
+          }
+          return nameScore(tx.tenantHint, t.name.split(' ')[0]) > 70;
+        });
       });
 
-      setActiveTab('flags');
-      toast.success(`Analysis complete — ${foundFlags.length} flags raised`, { id: 'audit' });
-    } catch (err) {
-      toast.error('Analysis failed: ' + err.message, { id: 'audit' });
+      // ── 3. Mode mismatch ──────────────────────────────
+      const modeMismatches = tenantStatus.filter(t => {
+        // If logged as UPI/bank_transfer but found in bank, consistent
+        // If logged as cash but found in bank credits, suspicious
+        if (!t.inBank) return false;
+        return t.modes.includes('cash') && t.inBank;
+      });
+
+      // ── 4. Summary stats ──────────────────────────────
+      const totalExpected = tenantStatus.reduce((s, t) => s + t.expected, 0);
+      const totalCollected = tenantStatus.reduce((s, t) => s + t.paid, 0);
+      const totalBankCredits = bankTxns.filter(t => t.credit > 0).reduce((s, t) => s + t.credit, 0);
+      const paidCount = tenantStatus.filter(t => t.status === 'paid').length;
+      const unpaidCount = tenantStatus.filter(t => t.status === 'unpaid').length;
+      const partialCount = tenantStatus.filter(t => t.status === 'partial').length;
+
+      setResults({
+        tenantStatus,
+        unmatchedBank,
+        modeMismatches,
+        stats: {
+          totalExpected, totalCollected, totalBankCredits,
+          paidCount, unpaidCount, partialCount,
+          bankTxnCount: bankTxns.length,
+          unmatchedCount: unmatchedBank.length,
+          mismatchCount: modeMismatches.length,
+        },
+        month: forMonth,
+      });
+
+      setActiveTab('summary');
+      toast.success('Audit complete', { id: 'audit' });
+    } catch (e) {
+      toast.error('Audit failed: ' + e.message, { id: 'audit' });
     } finally {
       setAnalyzing(false);
     }
   }
 
-  function exportAuditReport() {
-    if (!statements.length) return toast.error('No data to export');
-
-    const stmtSheet = statements.map(r => ({
-      Row: r.row, Date: r.date, Description: r.description,
-      'Debit (₹)': r.debit || '', 'Credit (₹)': r.credit || '',
-      'Balance (₹)': r.balance || '', Reference: r.ref,
-    }));
-
-    const flagSheet = flags.map(f => ({
-      Severity: f.severity.toUpperCase(), Type: f.type,
-      Row: f.row, Date: f.date, 'Amount (₹)': f.amount,
-      Description: f.description, Note: f.note,
-    }));
-
-    const summarySheet = stats ? [{
-      'Total Transactions': stats.txCount,
-      'Total Credits (₹)': stats.totalCredits,
-      'Total Debits (₹)': stats.totalDebits,
-      'Net Flow (₹)': stats.netFlow,
-      'High Severity Flags': stats.highFlags,
-      'Medium Severity Flags': stats.medFlags,
-      'Low Severity Flags': stats.lowFlags,
-      'Total Flags': stats.flagCount,
-    }] : [];
+  function handleExport() {
+    if (!results) return;
+    const { tenantStatus, unmatchedBank, modeMismatches } = results;
 
     exportMultiSheet([
-      { name: 'Summary', data: summarySheet },
-      { name: 'All Transactions', data: stmtSheet },
-      { name: 'Audit Flags', data: flagSheet },
-    ], `MMR_Audit_${new Date().toISOString().slice(0, 10)}`);
+      {
+        name: 'Tenant Payment Status',
+        data: tenantStatus.map(t => ({
+          Building: t.building, Room: t.room, Tenant: t.name,
+          'Expected (₹)': t.expected, 'Paid (₹)': t.paid, 'Balance (₹)': t.balance,
+          Status: t.status.toUpperCase(), Modes: t.modes.join(', ') || '—',
+          'In System': t.inSystem ? 'Yes' : 'No',
+          'In Bank': t.inBank ? 'Yes' : 'No',
+          'Bank Amount': t.bankAmount || '—',
+        }))
+      },
+      {
+        name: 'Unpaid & Dues',
+        data: tenantStatus.filter(t => t.status !== 'paid').map(t => ({
+          Building: t.building, Room: t.room, Tenant: t.name,
+          'Expected (₹)': t.expected, 'Paid (₹)': t.paid, 'Balance (₹)': t.balance,
+          Status: t.status.toUpperCase(),
+        }))
+      },
+      {
+        name: 'Bank Not In System',
+        data: unmatchedBank.map(t => ({
+          Date: t.date, Narration: t.narration, 'Credit (₹)': t.credit, Bank: t.bank,
+        }))
+      },
+      {
+        name: 'Mode Mismatches',
+        data: modeMismatches.map(t => ({
+          Building: t.building, Room: t.room, Tenant: t.name,
+          'Logged as': t.modes.join(', '), 'In Bank': t.inBank ? 'Yes' : 'No',
+          Note: 'Logged as cash but found in bank credits',
+        }))
+      },
+    ], `MMR_Audit_${results.month}`);
     toast.success('Audit report exported');
   }
 
   const tabs = [
-    { id: 'upload', label: 'Upload', icon: Upload },
-    { id: 'analyze', label: `Transactions${statements.length ? ` (${statements.length})` : ''}`, icon: Eye },
-    { id: 'flags', label: `Flags${flags.length ? ` (${flags.length})` : ''}`, icon: AlertTriangle },
+    { id: 'summary', label: 'Summary' },
+    { id: 'tenants', label: `All Tenants (${results?.tenantStatus?.length || 0})` },
+    { id: 'unpaid', label: `Unpaid (${results?.stats?.unpaidCount + results?.stats?.partialCount || 0})` },
+    { id: 'unmatched', label: `Bank Unmatched (${results?.stats?.unmatchedCount || 0})` },
+    { id: 'mismatch', label: `Mode Issues (${results?.stats?.mismatchCount || 0})` },
+    { id: 'bank', label: `Bank Txns (${bankTxns.length})` },
   ];
 
+  const statusBadge = (s) => {
+    const map = {
+      paid: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      partial: 'bg-amber-50 text-amber-700 border-amber-200',
+      unpaid: 'bg-red-50 text-red-700 border-red-200',
+    };
+    return <span className={`badge border text-xs ${map[s]}`}>{s.toUpperCase()}</span>;
+  };
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-display font-bold text-surface-900 flex items-center gap-2">
-            <ShieldAlert className="w-6 h-6 text-brand-500" /> Audit
-          </h1>
-          <p className="text-surface-400 text-sm mt-0.5">Bank statement reconciliation & anomaly detection</p>
+          <h1 className="text-xl font-bold text-surface-900">Monthly Audit</h1>
+          <p className="text-sm text-surface-500 mt-0.5">Bank statement vs app collections reconciliation</p>
         </div>
-        {statements.length > 0 && (
-          <div className="flex gap-2 self-start sm:self-auto">
-            <button onClick={runAnalysis} disabled={analyzing}
-              className="btn-primary flex items-center gap-2">
-              {analyzing ? <Spinner size="sm" /> : <Zap className="w-4 h-4" />}
-              {analyzing ? 'Analyzing…' : 'Run Analysis'}
-            </button>
-            <button onClick={exportAuditReport} className="btn-secondary flex items-center gap-2">
-              <Download className="w-4 h-4" /> Export
-            </button>
-          </div>
+        {results && (
+          <button onClick={handleExport} className="btn-secondary flex items-center gap-2 self-start">
+            <Download className="w-4 h-4" /> Export Report
+          </button>
         )}
       </div>
 
-      {/* Stats strip */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="card p-4">
-            <p className="text-xs text-surface-400 mb-1">Transactions</p>
-            <p className="text-2xl font-display font-bold text-surface-900">{stats.txCount}</p>
-          </div>
-          <div className="card p-4">
-            <p className="text-xs text-surface-400 mb-1 flex items-center gap-1">
-              <ArrowUpCircle className="w-3 h-3 text-income-400" /> Total Credits
-            </p>
-            <p className="text-xl font-display font-bold text-income-400">{formatCurrency(stats.totalCredits)}</p>
-          </div>
-          <div className="card p-4">
-            <p className="text-xs text-surface-400 mb-1 flex items-center gap-1">
-              <ArrowDownCircle className="w-3 h-3 text-expense-400" /> Total Debits
-            </p>
-            <p className="text-xl font-display font-bold text-expense-400">{formatCurrency(stats.totalDebits)}</p>
-          </div>
-          <div className="card p-4">
-            <p className="text-xs text-surface-400 mb-1">Total Flags</p>
-            <div className="flex items-center gap-2">
-              <p className="text-2xl font-display font-bold text-amber-400">{stats.flagCount}</p>
-              <div className="flex gap-1 flex-wrap">
-                {stats.highFlags > 0 && <span className={`badge text-xs ${FLAG_SEVERITY.high.cls}`}>{stats.highFlags}H</span>}
-                {stats.medFlags > 0 && <span className={`badge text-xs ${FLAG_SEVERITY.medium.cls}`}>{stats.medFlags}M</span>}
-                {stats.lowFlags > 0 && <span className={`badge text-xs ${FLAG_SEVERITY.low.cls}`}>{stats.lowFlags}L</span>}
-              </div>
-            </div>
-          </div>
+      {/* Controls */}
+      <div className="card p-4 flex flex-wrap gap-4 items-end">
+        <div>
+          <label className="label">Month</label>
+          <select className="select" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
+            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
         </div>
-      )}
-
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-surface-200">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`tab flex items-center gap-2 ${activeTab === t.id ? 'active' : ''}`}>
-            <t.icon className="w-3.5 h-3.5" />{t.label}
+        <div>
+          <label className="label">Bank</label>
+          <select className="select" value={bankType} onChange={e => setBankType(e.target.value)}>
+            <option value="hdfc">HDFC</option>
+            <option value="icici">ICICI</option>
+          </select>
+        </div>
+        <div>
+          <label className="label">Bank Statement PDF</label>
+          <input ref={fileRef} type="file" accept=".pdf" onChange={handleFile} className="hidden" />
+          <button onClick={() => fileRef.current?.click()} disabled={parsing}
+            className="btn-secondary flex items-center gap-2">
+            {parsing
+              ? <div className="w-4 h-4 border-2 border-surface-400 border-t-transparent rounded-full animate-spin" />
+              : <Upload className="w-4 h-4" />}
+            {parsing ? 'Reading…' : filename ? filename.slice(0, 25) + '…' : 'Upload PDF'}
           </button>
-        ))}
+        </div>
+        <button onClick={runAudit} disabled={analyzing || !bankTxns.length}
+          className="btn-primary flex items-center gap-2">
+          {analyzing
+            ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            : <ShieldCheck className="w-4 h-4" />}
+          {analyzing ? 'Analyzing…' : 'Run Audit'}
+        </button>
       </div>
 
-      {/* Upload Tab */}
-      {activeTab === 'upload' && (
-        <div className="space-y-6">
-          <div
-            onClick={() => fileRef.current?.click()}
-            className="card border-2 border-dashed border-surface-600 hover:border-brand-500 transition-colors p-12 text-center cursor-pointer group"
-          >
-            <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={handleFileUpload} className="hidden" />
-            <div className="w-16 h-16 rounded-2xl bg-brand-500/10 flex items-center justify-center mx-auto mb-4 group-hover:bg-brand-500/20 transition-colors">
-              {uploading ? <Spinner size="lg" /> : <FileSpreadsheet className="w-8 h-8 text-brand-500" />}
-            </div>
-            <h3 className="text-lg font-semibold text-surface-800 mb-2">
-              {uploading ? 'Parsing…' : 'Upload Bank Statement'}
-            </h3>
-            <p className="text-surface-400 text-sm mb-4">
-              Supports CSV, Excel (.xlsx, .xls) exports from any bank
-            </p>
-            <span className="btn-secondary text-sm">Choose File</span>
-            {filename && <p className="mt-4 text-xs text-surface-500">{filename}</p>}
+      {/* Results */}
+      {results && (
+        <>
+          {/* Tabs */}
+          <div className="flex border-b border-surface-200 overflow-x-auto">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)}
+                className={`tab flex-shrink-0 ${activeTab === t.id ? 'active' : ''}`}>
+                {t.label}
+              </button>
+            ))}
           </div>
 
-          <div className="card p-5">
-            <h3 className="font-semibold text-surface-700 mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400" /> What gets flagged
-            </h3>
-            <div className="grid sm:grid-cols-2 gap-3">
-              {[
-                { sev: 'high', label: 'Large transactions above ₹50,000' },
-                { sev: 'high', label: 'Duplicate transactions (same date + amount)' },
-                { sev: 'high', label: 'Balance consistency errors in statement' },
-                { sev: 'medium', label: 'Debits with no matching internal record' },
-                { sev: 'medium', label: 'Credits not linked to any rent collection' },
-                { sev: 'low', label: 'Round-number transactions above ₹10,000' },
-                { sev: 'low', label: 'Weekend / holiday transactions' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-surface-300">
-                  <span className={`badge text-xs flex-shrink-0 ${FLAG_SEVERITY[item.sev].cls}`}>
-                    {FLAG_SEVERITY[item.sev].label}
-                  </span>
-                  {item.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Transactions Tab */}
-      {activeTab === 'analyze' && (
-        <div className="card overflow-hidden">
-          {statements.length === 0 ? (
-            <EmptyState icon={<FileSpreadsheet className="w-8 h-8" />}
-              title="No statement uploaded" description="Upload a bank statement to view transactions" />
-          ) : (
-            <>
-              <div className="p-4 border-b border-surface-200 flex items-center justify-between">
-                <span className="text-sm text-surface-400">{statements.length} transactions parsed</span>
-                {!analyzing && (
-                  <button onClick={runAnalysis} className="btn-primary text-xs flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5" /> Run Analysis
-                  </button>
-                )}
+          {/* SUMMARY */}
+          {activeTab === 'summary' && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {[
+                  { label: 'Expected', value: formatCurrency(results.stats.totalExpected), color: 'border-surface-300' },
+                  { label: 'Collected in App', value: formatCurrency(results.stats.totalCollected), color: 'border-emerald-400' },
+                  { label: 'Bank Credits', value: formatCurrency(results.stats.totalBankCredits), color: 'border-brand-500' },
+                  { label: 'Gap (App vs Bank)', value: formatCurrency(Math.abs(results.stats.totalCollected - results.stats.totalBankCredits)), color: results.stats.totalCollected !== results.stats.totalBankCredits ? 'border-red-400' : 'border-emerald-400' },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className={`card p-4 border-l-4 ${color}`}>
+                    <p className="text-xs text-surface-500 mb-1">{label}</p>
+                    <p className="text-lg font-bold font-mono text-surface-900">{value}</p>
+                  </div>
+                ))}
               </div>
-              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="card p-4 text-center">
+                  <p className="text-2xl font-bold text-emerald-600">{results.stats.paidCount}</p>
+                  <p className="text-xs text-surface-500 mt-1">Fully Paid</p>
+                </div>
+                <div className="card p-4 text-center">
+                  <p className="text-2xl font-bold text-amber-600">{results.stats.partialCount}</p>
+                  <p className="text-xs text-surface-500 mt-1">Partial</p>
+                </div>
+                <div className="card p-4 text-center">
+                  <p className="text-2xl font-bold text-red-600">{results.stats.unpaidCount}</p>
+                  <p className="text-xs text-surface-500 mt-1">Unpaid</p>
+                </div>
+                <div className={`card p-4 text-center ${results.stats.unmatchedCount > 0 ? 'border-red-200 bg-red-50' : ''}`}>
+                  <p className={`text-2xl font-bold ${results.stats.unmatchedCount > 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                    {results.stats.unmatchedCount}
+                  </p>
+                  <p className="text-xs text-surface-500 mt-1">Bank Credits Unmatched</p>
+                </div>
+              </div>
+
+              {/* Flags */}
+              {(results.stats.unmatchedCount > 0 || results.stats.mismatchCount > 0) && (
+                <div className="card p-4 border border-red-200 bg-red-50 space-y-2">
+                  <h3 className="font-semibold text-red-800 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> Flags Requiring Attention
+                  </h3>
+                  {results.stats.unmatchedCount > 0 && (
+                    <p className="text-sm text-red-700">• {results.stats.unmatchedCount} bank credit(s) have no matching collection entry in the app</p>
+                  )}
+                  {results.stats.mismatchCount > 0 && (
+                    <p className="text-sm text-red-700">• {results.stats.mismatchCount} payment(s) logged as Cash but found in bank credits — verify mode</p>
+                  )}
+                </div>
+              )}
+              {results.stats.unmatchedCount === 0 && results.stats.mismatchCount === 0 && (
+                <div className="card p-4 border border-emerald-200 bg-emerald-50 flex items-center gap-3">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <p className="text-sm font-medium text-emerald-800">No flags — all bank entries matched to collection records</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ALL TENANTS */}
+          {activeTab === 'tenants' && (
+            <div className="card overflow-hidden">
+              <div className="overflow-x-auto">
                 <table className="data-table">
-                  <thead className="sticky top-0 bg-surface-100">
+                  <thead>
                     <tr>
-                      <th>#</th>
-                      <th>Date</th>
-                      <th>Description</th>
-                      <th className="text-right">Debit</th>
-                      <th className="text-right">Credit</th>
+                      <th>Building</th><th>Room</th><th>Tenant</th>
+                      <th className="text-right">Expected</th>
+                      <th className="text-right">Paid</th>
                       <th className="text-right">Balance</th>
+                      <th>Status</th><th>Mode</th>
+                      <th>In Bank</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {statements.map((r, i) => (
-                      <tr key={i}>
-                        <td className="text-surface-500 font-mono text-xs">{r.row}</td>
-                        <td className="text-xs">{r.date}</td>
-                        <td className="max-w-xs truncate text-sm">{r.description}</td>
-                        <td className="text-right font-mono text-expense-400">
-                          {r.debit > 0 ? formatCurrency(r.debit) : '—'}
+                    {results.tenantStatus.map(t => (
+                      <tr key={t.tenantId}>
+                        <td className="text-xs text-surface-500">{t.building}</td>
+                        <td className="font-mono font-semibold text-surface-800">{t.room}</td>
+                        <td className="text-surface-700">{t.name}</td>
+                        <td className="text-right font-mono">{formatCurrency(t.expected)}</td>
+                        <td className="text-right font-mono text-emerald-700">{formatCurrency(t.paid)}</td>
+                        <td className="text-right font-mono" style={{ color: t.balance > 0 ? '#dc2626' : '#94a3b8' }}>
+                          {t.balance > 0 ? formatCurrency(t.balance) : '—'}
                         </td>
-                        <td className="text-right font-mono text-income-400">
-                          {r.credit > 0 ? formatCurrency(r.credit) : '—'}
-                        </td>
-                        <td className="text-right font-mono text-surface-400 text-xs">
-                          {r.balance > 0 ? formatCurrency(r.balance) : '—'}
+                        <td>{statusBadge(t.status)}</td>
+                        <td className="text-xs text-surface-500">{t.modes.join(', ') || '—'}</td>
+                        <td>
+                          {t.inBank
+                            ? <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs"><CheckCircle2 className="w-3 h-3" /> {formatCurrency(t.bankAmount)}</span>
+                            : t.modes.includes('cash')
+                              ? <span className="badge bg-surface-100 text-surface-500 border border-surface-200 text-xs">Cash (offline)</span>
+                              : <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs"><AlertTriangle className="w-3 h-3" /> Not found</span>}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            </>
+            </div>
           )}
-        </div>
+
+          {/* UNPAID */}
+          {activeTab === 'unpaid' && (
+            <div className="card overflow-hidden">
+              {results.tenantStatus.filter(t => t.status !== 'paid').length === 0 ? (
+                <div className="p-10 text-center">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-surface-500 text-sm">All tenants paid for {results.month}</p>
+                </div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr><th>Building</th><th>Room</th><th>Tenant</th><th className="text-right">Expected</th><th className="text-right">Paid</th><th className="text-right">Balance</th><th>Status</th></tr></thead>
+                  <tbody>
+                    {results.tenantStatus.filter(t => t.status !== 'paid').map(t => (
+                      <tr key={t.tenantId} className={t.status === 'unpaid' ? 'bg-red-50/30' : 'bg-amber-50/20'}>
+                        <td className="text-xs text-surface-500">{t.building}</td>
+                        <td className="font-mono font-semibold">{t.room}</td>
+                        <td className="font-medium text-surface-800">{t.name}</td>
+                        <td className="text-right font-mono">{formatCurrency(t.expected)}</td>
+                        <td className="text-right font-mono text-emerald-700">{formatCurrency(t.paid)}</td>
+                        <td className="text-right font-mono font-bold text-red-600">{formatCurrency(t.balance)}</td>
+                        <td>{statusBadge(t.status)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-50 border-t border-surface-200">
+                      <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-surface-500">Total Outstanding</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-red-600">
+                        {formatCurrency(results.tenantStatus.filter(t => t.status !== 'paid').reduce((s,t) => s + t.balance, 0))}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* UNMATCHED BANK */}
+          {activeTab === 'unmatched' && (
+            <div className="card overflow-hidden">
+              {results.unmatchedBank.length === 0 ? (
+                <div className="p-10 text-center">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-surface-500 text-sm">All bank credits matched to collection records</p>
+                </div>
+              ) : (
+                <>
+                  <div className="px-5 py-3 border-b border-surface-100 bg-red-50">
+                    <p className="text-sm font-semibold text-red-800 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      {results.unmatchedBank.length} bank credit(s) not found in app — money received but not logged
+                    </p>
+                  </div>
+                  <table className="data-table">
+                    <thead><tr><th>Date</th><th>Narration</th><th>Bank</th><th className="text-right">Amount</th></tr></thead>
+                    <tbody>
+                      {results.unmatchedBank.map((t, i) => (
+                        <tr key={i} className="bg-red-50/20">
+                          <td className="text-xs">{t.date}</td>
+                          <td className="text-xs max-w-xs truncate">{t.narration}</td>
+                          <td><span className="badge bg-surface-100 text-surface-600 border border-surface-200 text-xs">{t.bank}</span></td>
+                          <td className="text-right font-mono font-semibold text-red-600">{formatCurrency(t.credit)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* MODE MISMATCH */}
+          {activeTab === 'mismatch' && (
+            <div className="card overflow-hidden">
+              {results.modeMismatches.length === 0 ? (
+                <div className="p-10 text-center">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-surface-500 text-sm">No mode mismatches found</p>
+                </div>
+              ) : (
+                <>
+                  <div className="px-5 py-3 border-b border-surface-100 bg-amber-50">
+                    <p className="text-sm font-semibold text-amber-800 flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Logged as Cash but found in bank — verify payment mode
+                    </p>
+                  </div>
+                  <table className="data-table">
+                    <thead><tr><th>Building</th><th>Room</th><th>Tenant</th><th>Logged Mode</th><th className="text-right">Amount</th><th>Bank Entry</th></tr></thead>
+                    <tbody>
+                      {results.modeMismatches.map(t => (
+                        <tr key={t.tenantId} className="bg-amber-50/30">
+                          <td className="text-xs text-surface-500">{t.building}</td>
+                          <td className="font-mono font-semibold">{t.room}</td>
+                          <td className="font-medium text-surface-800">{t.name}</td>
+                          <td><span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">{t.modes.join(', ')}</span></td>
+                          <td className="text-right font-mono">{formatCurrency(t.paid)}</td>
+                          <td><span className="badge bg-red-50 text-red-700 border border-red-200 text-xs">Found in bank</span></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* BANK TRANSACTIONS */}
+          {activeTab === 'bank' && (
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
+                <span className="text-sm font-medium text-surface-700">{bankTxns.length} transactions from {bankType.toUpperCase()} statement</span>
+                <span className="text-xs text-surface-400">Credits: {formatCurrency(bankTxns.filter(t=>t.credit>0).reduce((s,t)=>s+t.credit,0))}</span>
+              </div>
+              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                <table className="data-table">
+                  <thead className="sticky top-0 bg-white"><tr><th>Date</th><th>Narration</th><th>Type</th><th className="text-right">Credit</th><th className="text-right">Debit</th></tr></thead>
+                  <tbody>
+                    {bankTxns.map((t, i) => (
+                      <tr key={i}>
+                        <td className="text-xs">{t.date}</td>
+                        <td className="text-xs max-w-xs truncate">{t.narration}</td>
+                        <td>
+                          {t.txnType !== 'other' && (
+                            <span className="badge bg-brand-50 text-brand-700 border border-brand-100 text-xs">{t.txnType}</span>
+                          )}
+                        </td>
+                        <td className="text-right font-mono text-emerald-700">{t.credit > 0 ? formatCurrency(t.credit) : '—'}</td>
+                        <td className="text-right font-mono text-red-600">{t.debit > 0 ? formatCurrency(t.debit) : '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
-      {/* Flags Tab */}
-      {activeTab === 'flags' && (
-        <div className="space-y-4">
-          {flags.length === 0 ? (
-            <div className="card p-12 text-center">
-              <CheckCircle2 className="w-12 h-12 text-income-400 mx-auto mb-3" />
-              <h3 className="text-lg font-semibold text-surface-800 mb-2">
-                {statements.length ? 'No flags raised' : 'Run analysis first'}
-              </h3>
-              <p className="text-surface-400 text-sm">
-                {statements.length
-                  ? 'All transactions look clean — no anomalies detected'
-                  : 'Upload a bank statement and click Run Analysis'}
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Filter by severity */}
-              {['high', 'medium', 'low'].map(sev => {
-                const sevFlags = flags.filter(f => f.severity === sev);
-                if (!sevFlags.length) return null;
-                return (
-                  <div key={sev} className="card overflow-hidden">
-                    <div className="p-4 border-b border-surface-200 flex items-center gap-2">
-                      <span className={`badge ${FLAG_SEVERITY[sev].cls}`}>
-                        {FLAG_SEVERITY[sev].label} Severity
-                      </span>
-                      <span className="text-sm text-surface-400">{sevFlags.length} flags</span>
-                    </div>
-                    <div className="divide-y divide-surface-700/50">
-                      {sevFlags.map((f, i) => (
-                        <div key={i} className="p-4 flex flex-col sm:flex-row sm:items-start gap-3">
-                          <div className="flex-shrink-0 mt-0.5">
-                            <AlertTriangle className={`w-4 h-4 ${
-                              sev === 'high' ? 'text-expense-400' :
-                              sev === 'medium' ? 'text-amber-400' : 'text-blue-400'
-                            }`} />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                              <span className="font-semibold text-surface-800 text-sm">{f.type}</span>
-                              <span className="text-xs text-surface-500">Row {f.row}</span>
-                              {f.date && <span className="text-xs text-surface-500">{f.date}</span>}
-                              {f.amount > 0 && (
-                                <span className="font-mono text-sm text-brand-500">{formatCurrency(f.amount)}</span>
-                              )}
-                            </div>
-                            {f.description && (
-                              <p className="text-xs text-surface-400 mb-1 truncate">{f.description}</p>
-                            )}
-                            <p className="text-xs text-surface-300">{f.note}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
+      {/* Empty state */}
+      {!results && !parsing && (
+        <div className="card p-10 text-center">
+          <FileText className="w-12 h-12 text-surface-300 mx-auto mb-3" />
+          <h3 className="font-semibold text-surface-700 mb-1">Upload Bank Statement to Begin</h3>
+          <p className="text-sm text-surface-400">Select month, choose bank (HDFC or ICICI), upload PDF statement, then click Run Audit</p>
         </div>
       )}
     </div>
