@@ -89,23 +89,23 @@ export default function Tenants() {
   }
 
   async function doDelete(id) {
-    const { error } = await supabase.from('tenants').update({ status: 'vacated' }).eq('id', id)
+    const { error } = await supabase.from('tenants').update({ status: 'inactive' }).eq('id', id)
     if (error) return toast.error(error.message)
     toast.success('Tenant marked as vacated'); setDeleteConfirm(null); load()
   }
 
   const filtered = tenants.filter(t =>
     t.full_name.toLowerCase().includes(search.toLowerCase()) ||
-    t.phone.includes(search) ||
+    (t.phone || '').includes(search) ||
     (t.flat?.door_number || '').toLowerCase().includes(search.toLowerCase()) ||
     (t.building?.name || '').toLowerCase().includes(search.toLowerCase())
   )
 
   return (
     <div className="space-y-5">
-      <div className="page-header">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="page-title">Tenants</h2>
+          <h2 className="text-xl font-bold text-surface-900">Tenants</h2>
           <p className="text-surface-500 text-sm mt-1">{tenants.length} {statusFilter !== 'all' ? statusFilter : ''} tenants</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -114,7 +114,7 @@ export default function Tenants() {
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="notice">Notice</option>
-            <option value="vacated">Vacated</option>
+            <option value="inactive">Inactive</option>
           </select>
           <button className="btn-primary" onClick={openAdd}><Plus size={16} /> Add Tenant</button>
         </div>
@@ -239,7 +239,7 @@ export default function Tenants() {
             <select className="select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
               <option value="active">Active</option>
               <option value="notice">Notice Period</option>
-              <option value="vacated">Vacated</option>
+              <option value="inactive">Inactive</option>
             </select>
           </div>
           <div className="form-group sm:col-span-2">
