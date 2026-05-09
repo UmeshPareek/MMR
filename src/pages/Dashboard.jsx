@@ -35,6 +35,8 @@ const ChartTooltip = ({ active, payload, label }) => {
 }
 
 export default function Dashboard() {
+  const months = lastNMonths(6)
+  const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1])
   const [stats, setStats] = useState(null)
   const [cashFlow, setCashFlow] = useState([])
   const [modeData, setModeData] = useState([])
@@ -42,12 +44,17 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([loadStats(), loadCashFlow(), loadRecent(), loadModes()])
+    setLoading(true)
+    Promise.all([loadStats(), loadRecent(), loadModes()])
       .finally(() => setLoading(false))
+  }, [selectedMonth])
+
+  useEffect(() => {
+    loadCashFlow()
   }, [])
 
   async function loadStats() {
-    const m = currentMonth()
+    const m = selectedMonth
     const [
       { count: buildings },
       { count: tenants },
@@ -97,7 +104,7 @@ export default function Dashboard() {
   }
 
   async function loadModes() {
-    const { data } = await supabase.from('rent_collections').select('payment_mode, amount').eq('for_month', currentMonth())
+    const { data } = await supabase.from('rent_collections').select('payment_mode, amount').eq('for_month', selectedMonth)
     const map = {}
     ;(data || []).forEach(r => { map[r.payment_mode] = (map[r.payment_mode] || 0) + Number(r.amount) })
     setModeData(Object.entries(map).map(([name, value]) => ({ name: name.toUpperCase().replace('_', ' '), value })))
@@ -109,8 +116,14 @@ export default function Dashboard() {
     <div className="space-y-5">
 
       {/* Header row */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-surface-500">{format(new Date(), 'MMMM yyyy')} Overview</p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <p className="text-sm font-medium text-surface-500">Overview</p>
+          <select className="select w-auto py-1.5 text-sm"
+            value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
+            {months.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
         <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
           Live
