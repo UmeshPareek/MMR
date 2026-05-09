@@ -8,6 +8,7 @@ const TITLES = {
   '/tenants': 'Tenants', '/payments': 'Rent Collection', '/owner-payments': 'Owner Payments',
   '/expenses': 'Expenses', '/staff': 'Staff & Salary', '/reports': 'Reports',
   '/daily-collection': 'Collection Tracker',
+  '/daily-reconciliation': 'Daily Reconciliation',
   '/utility-bills': 'Utility Bills',
   '/security-deposits': 'Security Deposits',
   '/dashboard': 'Dashboard',
