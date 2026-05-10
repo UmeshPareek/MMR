@@ -5,7 +5,7 @@ import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers'
 import toast from 'react-hot-toast';
 import {
   ShieldCheck, Upload, Download, AlertTriangle, CheckCircle2,
-  XCircle, FileText, Eye, X, Plus, Trash2, Lock,
+  XCircle, FileText, Eye, X, Plus, Trash2,
   Building2, TrendingUp, TrendingDown, RefreshCw, ChevronDown, ChevronRight
 } from 'lucide-react';
 
@@ -125,7 +125,7 @@ export default function Audit() {
         const response = await fetch('/api/extract-pdf', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64, password: item.password, bank: item.bank })
+          body: JSON.stringify({ fileBase64: base64, bank: item.bank, filename: item.file.name })
         });
 
         if (!response.ok) {
@@ -396,15 +396,20 @@ export default function Audit() {
           <button onClick={() => fileRef.current?.click()} className="btn-primary btn-sm flex items-center gap-2">
             <Plus className="w-3.5 h-3.5" /> Add Files
           </button>
-          <input ref={fileRef} type="file" accept=".pdf" multiple onChange={addFiles} className="hidden" />
+          <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" multiple onChange={addFiles} className="hidden" />
         </div>
 
         {fileQueue.length === 0 ? (
           <div onClick={() => fileRef.current?.click()}
             className="border-2 border-dashed border-surface-300 hover:border-brand-400 rounded-lg p-8 text-center cursor-pointer transition-colors">
             <Upload className="w-8 h-8 text-surface-300 mx-auto mb-2" />
-            <p className="text-sm text-surface-500">Click to upload HDFC or ICICI PDF statements</p>
-            <p className="text-xs text-surface-400 mt-1">Multiple files supported · Password-protected PDFs supported</p>
+            <p className="text-sm text-surface-500">Click to upload HDFC or ICICI bank statements</p>
+            <p className="text-xs text-surface-400 mt-1">Upload as <strong>Excel (.xlsx)</strong> — free & more reliable than PDF</p>
+            <div className="mt-3 text-xs text-surface-400 bg-surface-50 rounded-lg p-3 text-left space-y-1">
+              <p className="font-semibold text-surface-500">How to download:</p>
+              <p>HDFC: Net Banking → My Accounts → Download Statement → Excel</p>
+              <p>ICICI: Net Banking → Accounts → Account Statement → Download Excel</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -426,13 +431,7 @@ export default function Audit() {
                     <option value="icici">ICICI</option>
                   </select>
 
-                  {/* Password field */}
-                  <div className="relative">
-                    <Lock className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-surface-400" />
-                    <input type="password" placeholder="Password (if any)" value={item.password}
-                      onChange={e => updateFile(item.id, 'password', e.target.value)}
-                      className="input pl-6 py-1 text-xs w-36" />
-                  </div>
+
 
                   <button onClick={() => removeFile(item.id)} className="btn-ghost p-1.5 text-surface-400 hover:text-red-500">
                     <Trash2 className="w-3.5 h-3.5" />
@@ -561,7 +560,7 @@ export default function Audit() {
                         <FileText className="w-3.5 h-3.5 text-surface-400" />
                         {f.file.name}
                         <span className="badge bg-brand-50 text-brand-700 border border-brand-100 text-xs">{f.bank.toUpperCase()}</span>
-                        {f.password && <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs"><Lock className="w-2.5 h-2.5" />Protected</span>}
+
                       </span>
                       <span className="text-xs text-surface-400">{f.txns.length} txns · ₹{(f.txns.filter(t=>t.credit>0).reduce((s,t)=>s+t.credit,0)/100000).toFixed(1)}L credits</span>
                     </div>
