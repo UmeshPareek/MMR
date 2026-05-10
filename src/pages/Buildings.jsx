@@ -36,7 +36,26 @@ export default function Buildings() {
   const [bForm, setBForm] = useState(defaultBuildingForm())
   const [fForm, setFFform] = useState(defaultFlatForm())
 
-  useEffect(() => { loadBuildings(); loadOwners() }, [])
+  useEffect(() => {
+    loadBuildings()
+    loadOwners()
+
+    // Real-time — refresh counts whenever any flat changes
+    const channel = supabase.channel('buildings-flats-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, async () => {
+        const { data: bList } = await supabase.from('buildings').select('id').eq('is_active', true)
+        loadCounts(bList || [])
+        // Also refresh open flat list
+        setFlats(prev => {
+          // Clear cache so next expand re-fetches fresh data
+          const updated = { ...prev }
+          return updated
+        })
+      })
+      .subscribe()
+
+    return () => supabase.removeChannel(channel)
+  }, [])
 
   function defaultBuildingForm() {
     return { name: '', address: '', area: '', city: 'Bangalore', owner_id: '', total_flats: '', monthly_rent_to_owner: '', security_deposit_cash: '', security_deposit_bank: '', lease_start_date: '', lease_end_date: '', notes: '' }
@@ -46,27 +65,25 @@ export default function Buildings() {
     return { door_number: '', floor_number: '', flat_type: '', area_sqft: '', monthly_rent: '', security_deposit_months: 2, status: 'vacant', notes: '' }
   }
 
+  async function loadCounts(bList) {
+    if (!bList || bList.length === 0) return
+    const bIds = bList.map(b => b.id)
+    const { data: flatData } = await supabase.from('flats').select('building_id, status').in('building_id', bIds)
+    const counts = {}
+    ;(flatData || []).forEach(f => {
+      if (!counts[f.building_id]) counts[f.building_id] = { total: 0, occupied: 0, vacant: 0, maintenance: 0 }
+      counts[f.building_id].total++
+      counts[f.building_id][f.status] = (counts[f.building_id][f.status] || 0) + 1
+    })
+    setFlatCounts(counts)
+  }
+
   async function loadBuildings() {
     setLoading(true)
     const { data } = await supabase.from('buildings').select('*, owner:owners(name)').eq('is_active', true).order('name')
     const bList = data || []
     setBuildings(bList)
-
-    // Load flat counts for all buildings
-    if (bList.length > 0) {
-      const bIds = bList.map(b => b.id)
-      const { data: flatCounts } = await supabase
-        .from('flats')
-        .select('building_id, status')
-        .in('building_id', bIds)
-      const counts = {}
-      ;(flatCounts || []).forEach(f => {
-        if (!counts[f.building_id]) counts[f.building_id] = { total: 0, occupied: 0, vacant: 0, maintenance: 0 }
-        counts[f.building_id].total++
-        counts[f.building_id][f.status] = (counts[f.building_id][f.status] || 0) + 1
-      })
-      setFlatCounts(counts)
-    }
+    await loadCounts(bList)
     setLoading(false)
   }
 
@@ -172,6 +189,9 @@ export default function Buildings() {
     toast.success(editFlat ? 'Flat updated' : 'Flat added')
     setFlatModal({ open: false, buildingId: null })
     loadFlats(flatModal.buildingId)
+    // Refresh counts immediately
+    const { data: bList } = await supabase.from('buildings').select('id').eq('is_active', true)
+    loadCounts(bList || [])
   }
 
   async function deleteBuilding(id) {
