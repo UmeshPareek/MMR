@@ -1,115 +1,88 @@
-// Vercel serverless function — parses HDFC/ICICI Excel bank statements
-// Accepts .xlsx or .xls files encoded as base64
-
 import * as XLSX from 'xlsx';
 
 export const config = { api: { bodyParser: { sizeLimit: '20mb' } } }
 
-function parseHDFCExcel(rows) {
-  const txns = [];
-  // Find header row
-  let headerIdx = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i].map(c => String(c || '').toLowerCase());
-    if (row.some(c => c.includes('date')) && row.some(c => c.includes('narration') || c.includes('description'))) {
-      headerIdx = i;
-      break;
-    }
+function parseDate(raw) {
+  if (!raw) return null;
+  // Excel serial number
+  if (typeof raw === 'number') {
+    try {
+      const d = XLSX.SSF.parse_date_code(raw);
+      if (d) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+    } catch(e) {}
   }
-  if (headerIdx === -1) headerIdx = 0;
-
-  const header = rows[headerIdx].map(c => String(c || '').toLowerCase().trim());
-  const dateIdx = header.findIndex(h => h.includes('date') && !h.includes('value'));
-  const narIdx = header.findIndex(h => h.includes('narration') || h.includes('description') || h.includes('particulars'));
-  const withdrawIdx = header.findIndex(h => h.includes('withdrawal') || h.includes('debit'));
-  const depositIdx = header.findIndex(h => h.includes('deposit') || h.includes('credit'));
-
-  for (let i = headerIdx + 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row[dateIdx]) continue;
-
-    // Parse date — Excel serial or string
-    let date = '';
-    const rawDate = row[dateIdx];
-    if (typeof rawDate === 'number') {
-      const d = XLSX.SSF.parse_date_code(rawDate);
-      date = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-    } else {
-      const s = String(rawDate).trim();
-      // DD/MM/YY or DD/MM/YYYY or DD-MM-YYYY
-      const m = s.match(/(\d{1,2})[\/\-](\d{2})[\/\-](\d{2,4})/);
-      if (m) {
-        const yr = m[3].length === 2 ? '20' + m[3] : m[3];
-        date = `${yr}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-      } else continue;
-    }
-
-    const narration = String(row[narIdx] || '').trim();
-    const debit = parseFloat(String(row[withdrawIdx] || '0').replace(/,/g, '')) || 0;
-    const credit = parseFloat(String(row[depositIdx] || '0').replace(/,/g, '')) || 0;
-
-    if (!narration || (credit === 0 && debit === 0)) continue;
-
-    // Parse ATN pattern for HDFC
-    const atnMatch = narration.match(/ATN-[A-Z0-9]+-([A-Z]+)(\d{3,4})(RENT|OTHERS|ELECTRICI|WATER|DEPOSIT)?/i);
-    txns.push({
-      date, narration, credit, debit,
-      tenantHint: atnMatch?.[1]?.toLowerCase() || null,
-      roomHint: atnMatch?.[2] || null,
-      txnType: atnMatch?.[3]?.toLowerCase().includes('rent') ? 'rent' : credit > 0 ? 'credit' : 'debit',
-    });
+  // Date object
+  if (raw instanceof Date) {
+    const y = raw.getFullYear(), m = raw.getMonth()+1, d = raw.getDate();
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
   }
-  return txns;
+  // String: DD/MM/YY, DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
+  const s = String(raw).trim();
+  const m = s.match(/^(\d{1,2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
+  if (m) {
+    const yr = m[3].length === 2 ? '20' + m[3] : m[3];
+    return `${yr}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  }
+  return null;
 }
 
-function parseICICIExcel(rows) {
-  const txns = [];
-  let headerIdx = -1;
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i].map(c => String(c || '').toLowerCase());
-    if (row.some(c => c.includes('date')) && row.some(c => c.includes('remark') || c.includes('narration') || c.includes('description'))) {
-      headerIdx = i;
-      break;
-    }
-  }
-  if (headerIdx === -1) headerIdx = 0;
+function parseAmount(raw) {
+  if (!raw && raw !== 0) return 0;
+  return parseFloat(String(raw).replace(/,/g, '').trim()) || 0;
+}
 
+function findHeaderRow(rows) {
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const row = rows[i].map(c => String(c || '').toLowerCase().trim());
+    const hasDate = row.some(c => c === 'date' || c === 'txn date' || c === 'value date' || c === 'transaction date');
+    const hasNar = row.some(c => c.includes('narration') || c.includes('description') || c.includes('remark') || c.includes('particulars'));
+    if (hasDate && hasNar) return i;
+  }
+  // Fallback — find row with most non-empty cells
+  let best = 0, bestCount = 0;
+  for (let i = 0; i < Math.min(rows.length, 20); i++) {
+    const count = rows[i].filter(c => c !== '' && c != null).length;
+    if (count > bestCount) { bestCount = count; best = i; }
+  }
+  return best;
+}
+
+function parseExcel(rows, bank) {
+  const txns = [];
+  const headerIdx = findHeaderRow(rows);
   const header = rows[headerIdx].map(c => String(c || '').toLowerCase().trim());
-  const dateIdx = header.findIndex(h => h.includes('date') && !h.includes('value'));
-  const narIdx = header.findIndex(h => h.includes('remark') || h.includes('narration') || h.includes('description') || h.includes('particulars'));
-  const withdrawIdx = header.findIndex(h => h.includes('withdrawal') || h.includes('debit'));
-  const depositIdx = header.findIndex(h => h.includes('deposit') || h.includes('credit'));
+
+  // Find columns flexibly
+  const dateIdx = header.findIndex(h => h === 'date' || h === 'txn date' || h === 'transaction date' || (h.includes('date') && !h.includes('value')));
+  const narIdx = header.findIndex(h => h.includes('narration') || h.includes('description') || h.includes('remark') || h.includes('particulars'));
+  const withdrawIdx = header.findIndex(h => h.includes('withdrawal') || h.includes('debit') || h === 'dr');
+  const depositIdx = header.findIndex(h => h.includes('deposit') || h.includes('credit') || h === 'cr');
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row[dateIdx]) continue;
+    if (!row || row.every(c => !c)) continue;
 
-    let date = '';
-    const rawDate = row[dateIdx];
-    if (typeof rawDate === 'number') {
-      const d = XLSX.SSF.parse_date_code(rawDate);
-      date = `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-    } else {
-      const s = String(rawDate).trim();
-      const m = s.match(/(\d{1,2})[\/\-\.](\d{2})[\/\-\.](\d{2,4})/);
-      if (m) {
-        const yr = m[3].length === 2 ? '20' + m[3] : m[3];
-        date = `${yr}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
-      } else continue;
-    }
+    const date = parseDate(row[dateIdx]);
+    if (!date || date === 'NaN-NaN-NaN') continue;
 
     const narration = String(row[narIdx] || '').trim();
-    const debit = parseFloat(String(row[withdrawIdx] || '0').replace(/,/g, '')) || 0;
-    const credit = parseFloat(String(row[depositIdx] || '0').replace(/,/g, '')) || 0;
+    if (!narration) continue;
 
-    if (!narration || (credit === 0 && debit === 0)) continue;
+    const debit = parseAmount(row[withdrawIdx]);
+    const credit = parseAmount(row[depositIdx]);
+    if (credit === 0 && debit === 0) continue;
 
+    // HDFC ATN pattern
+    const atnMatch = narration.match(/ATN-[A-Z0-9]+-([A-Z]+)(\d{3,4})(RENT|OTHERS|ELECTRICI|WATER|DEPOSIT)?/i);
     const upiName = narration.match(/UPI\/([A-Za-z]+)/i);
+
     txns.push({
       date, narration, credit, debit,
-      tenantHint: upiName?.[1]?.toLowerCase() || null,
-      roomHint: null,
-      txnType: narration.match(/RENTAL/i) ? 'rent' : credit > 0 ? 'credit' : 'debit',
+      tenantHint: atnMatch?.[1]?.toLowerCase() || upiName?.[1]?.toLowerCase() || null,
+      roomHint: atnMatch?.[2] || null,
+      txnType: atnMatch?.[3]?.toLowerCase().includes('rent') ? 'rent'
+        : narration.match(/RENTAL/i) ? 'rent'
+        : credit > 0 ? 'credit' : 'debit',
     });
   }
   return txns;
@@ -123,22 +96,22 @@ export default async function handler(req, res) {
 
   try {
     const buffer = Buffer.from(fileBase64, 'base64');
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true, raw: false });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
 
     if (!rows || rows.length < 2) {
-      return res.status(422).json({ error: 'Excel file appears empty or invalid' });
+      return res.status(422).json({ error: 'File appears empty or invalid' });
     }
 
-    const txns = bank === 'icici' ? parseICICIExcel(rows) : parseHDFCExcel(rows);
+    const txns = parseExcel(rows, bank);
 
     if (txns.length === 0) {
-      return res.status(422).json({ error: 'No transactions found. Check bank type (HDFC/ICICI) is correct.' });
+      return res.status(422).json({ error: 'No transactions found. Verify bank type is HDFC or ICICI.' });
     }
 
-    return res.status(200).json({ txns, rows: rows.length });
+    return res.status(200).json({ txns });
   } catch (err) {
-    return res.status(500).json({ error: 'Failed to parse Excel: ' + err.message });
+    return res.status(500).json({ error: 'Failed to parse: ' + err.message });
   }
 }
