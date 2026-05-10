@@ -532,23 +532,30 @@ export default function Audit() {
   }
 
   async function loadHistory() {
-    const {data}=await supabase.from('audit_sessions').select('id,month,stats,created_at,created_by').order('created_at',{ascending:false}).limit(20);
+    const {data}=await supabase.from('audit_sessions').select('id,month,stats,tenant_status,fraud_flags,unmatched_bank,building_summary,collector_stats,day_wise,created_at,created_by').order('created_at',{ascending:false}).limit(20);
     setSavedSessions(data||[]);
   }
 
   async function loadSession(session) {
+    // If session was loaded from list (partial), fetch full data
+    let s = session;
+    if (!session.tenant_status) {
+      const { data } = await supabase.from('audit_sessions').select('*').eq('id', session.id).single();
+      if (data) s = data;
+    }
+    setSelectedMonth(s.month);
     setResults({
-      tenantStatus: session.tenant_status||[],
-      fraudFlags: session.fraud_flags||[],
-      unmatchedBank: session.unmatched_bank||[],
-      bSummary: session.building_summary||{},
-      collectorStats: session.collector_stats||[],
-      dayWiseArr: [],
-      stats: session.stats||{},
+      tenantStatus: s.tenant_status||[],
+      fraudFlags: s.fraud_flags||[],
+      unmatchedBank: s.unmatched_bank||[],
+      bSummary: s.building_summary||{},
+      collectorStats: s.collector_stats||[],
+      dayWiseArr: s.day_wise||[],
+      stats: s.stats||{},
     });
     setActiveTab('summary');
     setShowHistory(false);
-    toast.success(`Loaded audit for ${session.month}`);
+    toast.success(`Loaded audit for ${s.month}`);
   }
 
   async function saveSession() {
