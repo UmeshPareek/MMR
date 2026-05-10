@@ -19,7 +19,9 @@ export default function Buildings() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [expandedBuilding, setExpandedBuilding] = useState(null)
-  const [flats, setFlats] = useState({}) // buildingId -> flats[]
+  const [flats, setFlats] = useState({})
+  const [flatCounts, setFlatCounts] = useState({})
+  const [flatFilter, setFlatFilter] = useState({}) // buildingId -> flats[]
 
   // Modals
   const [buildingModal, setBuildingModal] = useState(false)
@@ -47,7 +49,24 @@ export default function Buildings() {
   async function loadBuildings() {
     setLoading(true)
     const { data } = await supabase.from('buildings').select('*, owner:owners(name)').eq('is_active', true).order('name')
-    setBuildings(data || [])
+    const bList = data || []
+    setBuildings(bList)
+
+    // Load flat counts for all buildings
+    if (bList.length > 0) {
+      const bIds = bList.map(b => b.id)
+      const { data: flatCounts } = await supabase
+        .from('flats')
+        .select('building_id, status')
+        .in('building_id', bIds)
+      const counts = {}
+      ;(flatCounts || []).forEach(f => {
+        if (!counts[f.building_id]) counts[f.building_id] = { total: 0, occupied: 0, vacant: 0, maintenance: 0 }
+        counts[f.building_id].total++
+        counts[f.building_id][f.status] = (counts[f.building_id][f.status] || 0) + 1
+      })
+      setFlatCounts(counts)
+    }
     setLoading(false)
   }
 
@@ -301,7 +320,17 @@ export default function Buildings() {
                   </div>
                   <div className="text-center">
                     <p className="text-surface-500 text-xs">Total Flats</p>
-                    <p className="text-surface-700 font-semibold">{building.total_flats}</p>
+                    <p className="text-surface-700 font-semibold">{flatCounts[building.id]?.total ?? building.total_flats ?? 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-surface-500 text-xs">Occupied</p>
+                    <p className="text-emerald-700 font-semibold">{flatCounts[building.id]?.occupied ?? 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-surface-500 text-xs">Vacant</p>
+                    <p className={(flatCounts[building.id]?.vacant ?? 0) > 0 ? 'text-red-600 font-semibold' : 'text-surface-500 font-semibold'}>
+                      {flatCounts[building.id]?.vacant ?? 0}
+                    </p>
                   </div>
                   {building.owner && (
                     <div className="text-center">
@@ -321,7 +350,28 @@ export default function Buildings() {
               {expandedBuilding === building.id && (
                 <div className="border-t border-surface-200 animate-fade-in">
                   <div className="flex items-center justify-between px-4 py-3 bg-surface-100">
-                    <p className="text-surface-400 text-sm font-medium">Flats in {building.name}</p>
+                    <div className="flex items-center gap-3">
+                      <p className="text-surface-400 text-sm font-medium">Flats in {building.name}</p>
+                      <div className="flex gap-1">
+                        {['all','occupied','vacant','maintenance'].map(s => (
+                          <button key={s}
+                            onClick={e => { e.stopPropagation(); setFlatFilter(prev => ({...prev, [building.id]: s})) }}
+                            className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${
+                              (flatFilter[building.id]||'all') === s
+                                ? s==='vacant' ? 'bg-red-500 text-white border-red-500'
+                                  : s==='occupied' ? 'bg-emerald-500 text-white border-emerald-500'
+                                  : s==='maintenance' ? 'bg-amber-500 text-white border-amber-500'
+                                  : 'bg-brand-600 text-white border-brand-600'
+                                : 'bg-white text-surface-600 border-surface-300 hover:border-brand-400'
+                            }`}>
+                            {s==='all'?`All (${(flats[building.id]||[]).length})`:
+                             s==='occupied'?`Occupied (${(flats[building.id]||[]).filter(f=>f.status==='occupied').length})`:
+                             s==='vacant'?`Vacant (${(flats[building.id]||[]).filter(f=>f.status==='vacant').length})`:
+                             `Demo (${(flats[building.id]||[]).filter(f=>f.status==='maintenance').length})`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <button className="btn-secondary btn-sm" onClick={() => openAddFlat(building.id)}>
                       <Plus size={13} /> Add Flat
                     </button>
@@ -346,7 +396,7 @@ export default function Buildings() {
                           </tr>
                         </thead>
                         <tbody>
-                          {flats[building.id].map(flat => {
+                          {(flats[building.id].filter(flat => { const filter = flatFilter[building.id] || 'all'; return filter === 'all' || flat.status === filter; })).map(flat => {
                             const st = FLAT_STATUSES[flat.status]
                             return (
                               <tr key={flat.id}>
