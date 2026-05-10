@@ -110,9 +110,15 @@ export default function Tenants() {
   }
 
   async function doDelete(id) {
-    const { error } = await supabase.from('tenants').update({ status: 'inactive' }).eq('id', id)
+    // Get tenant's flat_id first
+    const { data: tenant } = await supabase.from('tenants').select('flat_id').eq('id', id).single()
+    const { error } = await supabase.from('tenants').update({ status: 'inactive', move_out_date: new Date().toISOString().slice(0,10) }).eq('id', id)
     if (error) return toast.error(error.message)
-    toast.success('Tenant marked as vacated'); setDeleteConfirm(null); load()
+    // Mark flat as vacant
+    if (tenant?.flat_id) {
+      await supabase.from('flats').update({ status: 'vacant' }).eq('id', tenant.flat_id)
+    }
+    toast.success('Tenant vacated — flat marked vacant'); setDeleteConfirm(null); load()
   }
 
   const filtered = tenants.filter(t =>
