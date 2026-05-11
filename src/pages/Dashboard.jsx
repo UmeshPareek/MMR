@@ -119,7 +119,7 @@ export default function Dashboard() {
 
     const [
       { count: buildings }, { count: tenants }, { count: vacant },
-      { data: rent }, { data: ownerPmt }, { data: exp }, { data: ub },
+      { data: rent }, { data: ownerPmt }, { data: exp }, { data: ub }, { data: salaries }, { data: staffSal },
       { data: prevRent }, { data: prevExp }, { data: prevOwner },
       { data: modes }, { data: bData }, { data: recentPay }
     ] = await Promise.all([
@@ -132,6 +132,8 @@ export default function Dashboard() {
         .gte('expense_date', `${m}-01`)
         .lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
       supabase.from('utility_bills').select('amount, building_id').eq('for_month', m),
+      supabase.from('staff_salaries').select('net_amount').eq('for_month', m),
+      supabase.from('staff_salaries').select('net_salary').eq('for_month', m),
       supabase.from('rent_collections').select('amount').eq('for_month', prevM),
       supabase.from('expenses').select('amount')
         .gte('expense_date', `${prevM}-01`)
@@ -148,7 +150,8 @@ export default function Dashboard() {
     const ownerRent = (ownerPmt || []).filter(p => p.payment_type !== 'security_deposit').reduce((s, r) => s + Number(r.amount), 0)
     const expTotal = (exp || []).reduce((s, r) => s + Number(r.amount), 0)
     const utilTotal = (ub || []).reduce((s, r) => s + Number(r.amount), 0)
-    const totalExpenses = ownerRent + expTotal + utilTotal
+    const staffSalTotal = (staffSal || []).reduce((s, r) => s + Number(r.net_salary), 0)
+    const totalExpenses = ownerRent + expTotal + utilTotal + staffSalTotal
     const grossProfit = income - ownerRent
     const netProfit = income - totalExpenses
     const margin = income > 0 ? Math.round((netProfit / income) * 100) : 0
@@ -161,7 +164,7 @@ export default function Dashboard() {
     setPrevStats({ income: prevIncome, net: prevNet })
     setStats({ buildings: buildings || 0, tenants: tenants || 0, vacant: vacant || 0, income, totalExpenses, netProfit, margin })
     setPnl({
-      income, ownerRent, expTotal, utilTotal, totalExpenses, grossProfit, netProfit, margin,
+      income, ownerRent, expTotal, utilTotal, staffSalTotal, totalExpenses, grossProfit, netProfit, margin,
       expByCategory: (exp || []).reduce((acc, e) => {
         acc[e.category] = (acc[e.category] || 0) + Number(e.amount); return acc
       }, {}),
@@ -199,15 +202,16 @@ export default function Dashboard() {
   async function loadTrend() {
     const rows = []
     for (const m of MONTHS) {
-      const [{ data: rc }, { data: op }, { data: ex }] = await Promise.all([
+      const [{ data: rc }, { data: op }, { data: ex }, { data: sal }] = await Promise.all([
         supabase.from('rent_collections').select('amount').eq('for_month', m),
         supabase.from('owner_payments').select('amount').eq('for_month', m),
         supabase.from('expenses').select('amount')
           .gte('expense_date', `${m}-01`)
           .lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
+        supabase.from('staff_salaries').select('net_amount').eq('for_month', m),
       ])
       const income = (rc || []).reduce((s, r) => s + Number(r.amount), 0)
-      const expenses = [...(op || []), ...(ex || [])].reduce((s, r) => s + Number(r.amount), 0)
+      const expenses = [...(op || []), ...(ex || [])].reduce((s, r) => s + Number(r.amount), 0) + (sal || []).reduce((s, r) => s + Number(r.net_amount), 0)
       rows.push({ month: fmtMonth(m), income, expenses, profit: income - expenses })
     }
     setTrend(rows)
@@ -296,6 +300,8 @@ export default function Dashboard() {
             </div>
             <p className="text-xs font-semibold text-surface-400 uppercase tracking-wider pt-1 pb-0.5">Operating Expenses</p>
             <PnLRow label="Utility Bills" value={sk ?? formatCurrency(pnl?.utilTotal)} indent={1} accent="red" />
+            <PnLRow label="Staff Salaries" value={sk ?? formatCurrency(pnl?.salaryTotal)} indent={1} accent="red" />
+            <PnLRow label="Staff Salaries" value={sk ?? formatCurrency(pnl?.staffSalTotal)} indent={1} accent="red" />
             {pnl?.expByCategory && Object.entries(pnl.expByCategory).map(([cat, amt]) => (
               <PnLRow key={cat} label={cat} value={formatCurrency(amt)} indent={1} accent="red" />
             ))}
