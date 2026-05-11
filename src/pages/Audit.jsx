@@ -7,7 +7,7 @@ import {
   ShieldCheck, Upload, Download, AlertTriangle, CheckCircle2,
   XCircle, FileText, Plus, Trash2, MessageSquare,
   X, RefreshCw, Zap, Send, CheckSquare, Save, Clock,
-  ChevronDown, ChevronRight, Eye, BarChart2, Users,
+  ChevronDown, ChevronRight, Eye, BarChart2, Users, TrendingDown,
 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -775,6 +775,81 @@ export default function Audit() {
     {id:'bank',label:`Bank (${allTxns.length})`},
   ]:[];
 
+  function downloadIssueReport(type) {
+    if (!results) return;
+    const wb = XLSX.utils.book_new();
+    const month = selectedMonth;
+
+    if (type === 'revenue_leakage') {
+      const unpaid = results.tenantStatus.filter(t => t.status !== 'paid');
+      const total = unpaid.reduce((s,t) => s + t.balance, 0);
+      const ws = XLSX.utils.json_to_sheet([
+        { 'REVENUE LEAKAGE REPORT': `Month: ${month}`, '': '', ' ': '', '  ': '', '   ': '', '    ': '' },
+        { 'REVENUE LEAKAGE REPORT': `Total Leakage: ₹${total.toLocaleString('en-IN')}`, '': `${unpaid.length} tenants`, ' ': '', '  ': '', '   ': '', '    ': '' },
+        {},
+        ...unpaid.map(t => ({
+          Building: t.building, Room: t.room, Tenant: t.name, Phone: t.phone,
+          'Expected (₹)': t.expected, 'Paid (₹)': t.paid, 'Leakage (₹)': t.balance,
+          Status: t.status.toUpperCase(),
+          'Team Note': notes.find(n => n.tenant_id === t.tenantId)?.team_note || 'No explanation',
+          'Note Status': notes.find(n => n.tenant_id === t.tenantId)?.status || 'PENDING',
+        }))
+      ]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Revenue Leakage');
+      XLSX.writeFile(wb, `Revenue_Leakage_${month}.xlsx`);
+      toast.success(`Revenue Leakage report: ${unpaid.length} tenants, ₹${total.toLocaleString('en-IN')}`);
+    }
+
+    else if (type === 'ghost_payments') {
+      const ghosts = results.fraudFlags.filter(f => f.type === 'ghost_payment');
+      const ws = XLSX.utils.json_to_sheet(ghosts.length ? ghosts.map(f => ({
+        Building: f.building, 'Flag': f.title, 'Details': f.detail,
+        'Team Explanation': notes.find(n => n.tenant_id === f.tenantId)?.team_note || 'NO EXPLANATION',
+        'Status': notes.find(n => n.tenant_id === f.tenantId)?.status || 'PENDING INVESTIGATION',
+      })) : [{ Message: 'No ghost payments detected' }]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Ghost Payments');
+      XLSX.writeFile(wb, `Ghost_Payments_${month}.xlsx`);
+      toast.success(ghosts.length ? `${ghosts.length} ghost payment flags exported` : 'No ghost payments found ✓');
+    }
+
+    else if (type === 'mode_fraud') {
+      const flags = results.fraudFlags.filter(f => f.type === 'mode_fraud' || f.type === 'amount_mismatch');
+      const ws = XLSX.utils.json_to_sheet(flags.length ? flags.map(f => ({
+        Severity: f.severity.toUpperCase(), Type: f.type, Building: f.building,
+        'Flag': f.title, 'Details': f.detail,
+        'Team Explanation': notes.find(n => n.tenant_id === f.tenantId)?.team_note || 'NO EXPLANATION',
+        'Status': notes.find(n => n.tenant_id === f.tenantId)?.status || 'PENDING',
+      })) : [{ Message: 'No mode fraud flags detected' }]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Mode Fraud');
+      XLSX.writeFile(wb, `Mode_Fraud_Flags_${month}.xlsx`);
+      toast.success(flags.length ? `${flags.length} mode fraud flags exported` : 'No mode fraud found ✓');
+    }
+
+    else if (type === 'unmatched_bank') {
+      const unmatched = results.unmatchedBank;
+      const ws = XLSX.utils.json_to_sheet(unmatched.length ? unmatched.map(t => ({
+        Date: t.date, Bank: t.bank, Narration: t.narration, 'Amount (₹)': t.credit,
+        'Team Explanation': notes.find(n => n.bank_narration === t.narration)?.team_note || 'NO EXPLANATION',
+        'Status': notes.find(n => n.bank_narration === t.narration)?.status || 'UNRESOLVED',
+      })) : [{ Message: 'All bank credits matched ✓' }]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Bank Unmatched');
+      XLSX.writeFile(wb, `Bank_Unmatched_${month}.xlsx`);
+      toast.success(unmatched.length ? `${unmatched.length} unmatched credits exported` : 'All bank credits matched ✓');
+    }
+
+    else if (type === 'all_flags') {
+      const ws = XLSX.utils.json_to_sheet(results.fraudFlags.map(f => ({
+        Severity: f.severity.toUpperCase(), Type: f.type.replace(/_/g,' ').toUpperCase(),
+        Building: f.building || '—', Title: f.title, Details: f.detail,
+        'Team Note': notes.find(n => n.tenant_id === f.tenantId || n.bank_narration === f.bankNarration)?.team_note || '—',
+        'Status': notes.find(n => n.tenant_id === f.tenantId || n.bank_narration === f.bankNarration)?.status || 'pending',
+      })));
+      XLSX.utils.book_append_sheet(wb, ws, 'All Flags');
+      XLSX.writeFile(wb, `All_Audit_Flags_${month}.xlsx`);
+      toast.success(`${results.fraudFlags.length} flags exported`);
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -791,12 +866,33 @@ export default function Audit() {
             <button onClick={saveSession} disabled={saving} className="btn-secondary flex items-center gap-2">
               {saving?<div className="w-4 h-4 border-2 border-surface-400 border-t-transparent rounded-full animate-spin"/>:<Save className="w-4 h-4"/>} Save
             </button>
-            <button onClick={()=>generateTeamExcel(results.tenantStatus,notes,selectedMonth)} className="btn-secondary flex items-center gap-2">
-              <Download className="w-4 h-4"/> Team Excel
-            </button>
-            <button onClick={()=>generatePDF(results,notes,selectedMonth)} className="btn-primary flex items-center gap-2">
-              <FileText className="w-4 h-4"/> PDF Report
-            </button>
+            <div className="relative group">
+              <button className="btn-secondary flex items-center gap-2">
+                <Download className="w-4 h-4"/> Downloads ▾
+              </button>
+              <div className="hidden group-hover:flex flex-col absolute right-0 top-full mt-1 bg-white border border-surface-200 rounded-lg shadow-lg z-50 min-w-[220px] py-1">
+                <button onClick={()=>generateTeamExcel(results.tenantStatus,notes,selectedMonth)} className="px-4 py-2.5 text-sm text-left hover:bg-surface-50 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5 text-brand-600"/> Team Excel (fill reasons)
+                </button>
+                <div className="border-t border-surface-100 my-1"/>
+                <button onClick={()=>downloadIssueReport('revenue_leakage','Revenue Leakage')} className="px-4 py-2.5 text-sm text-left hover:bg-red-50 text-red-700 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5"/> Rent Not Paid ({results.stats.unpaidCount + results.stats.partialCount} tenants)
+                </button>
+                <button onClick={()=>downloadIssueReport('ghost_payments','Ghost Payments & Fraud')} className="px-4 py-2.5 text-sm text-left hover:bg-red-50 text-red-700 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5"/> Ghost Payments & Mode Fraud ({results.stats.fraudHigh} high)
+                </button>
+                <button onClick={()=>downloadIssueReport('bank_unmatched','Bank Unmatched')} className="px-4 py-2.5 text-sm text-left hover:bg-amber-50 text-amber-700 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5"/> Bank Unmatched ({results.unmatchedBank.length})
+                </button>
+                <button onClick={()=>downloadIssueReport('all_flags','All Flags')} className="px-4 py-2.5 text-sm text-left hover:bg-surface-50 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5 text-surface-500"/> All Flags ({results.fraudFlags.length})
+                </button>
+                <div className="border-t border-surface-100 my-1"/>
+                <button onClick={()=>generatePDF(results,notes,selectedMonth)} className="px-4 py-2.5 text-sm text-left hover:bg-brand-50 text-brand-700 flex items-center gap-2">
+                  <FileText className="w-3.5 h-3.5"/> Full PDF Report
+                </button>
+              </div>
+            </div>
           </>)}
         </div>
       </div>
