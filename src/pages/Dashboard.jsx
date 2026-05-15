@@ -94,6 +94,10 @@ export default function Dashboard() {
         () => { setLastUpdated(new Date()) })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' },
         () => { setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_salaries' },
+        () => { setLastUpdated(new Date()) })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_advances' },
+        () => { setLastUpdated(new Date()) })
       .subscribe()
     channelRef.current = channel
 
@@ -133,7 +137,6 @@ export default function Dashboard() {
         .lte('expense_date', format(endOfMonth(parseISO(`${m}-01`)), 'yyyy-MM-dd')),
       supabase.from('utility_bills').select('amount, building_id').eq('for_month', m),
       supabase.from('staff_salaries').select('net_amount').eq('for_month', m),
-      supabase.from('staff_salaries').select('net_salary').eq('for_month', m),
       supabase.from('rent_collections').select('amount').eq('for_month', prevM),
       supabase.from('expenses').select('amount')
         .gte('expense_date', `${prevM}-01`)
@@ -150,7 +153,7 @@ export default function Dashboard() {
     const ownerRent = (ownerPmt || []).filter(p => p.payment_type !== 'security_deposit').reduce((s, r) => s + Number(r.amount), 0)
     const expTotal = (exp || []).reduce((s, r) => s + Number(r.amount), 0)
     const utilTotal = (ub || []).reduce((s, r) => s + Number(r.amount), 0)
-    const staffSalTotal = (staffSal || []).reduce((s, r) => s + Number(r.net_salary), 0)
+    const salaryTotal = (salaries || []).reduce((s, r) => s + Number(r.net_amount), 0)
     const totalExpenses = ownerRent + expTotal + utilTotal + staffSalTotal
     const grossProfit = income - ownerRent
     const netProfit = income - totalExpenses
