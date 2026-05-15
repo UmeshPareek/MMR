@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard, Building2, Users, CreditCard, TrendingDown,
   UserCog, BarChart3, ShieldCheck, Settings, X, LogOut,
-  Home, Banknote, Zap, Wallet, ListChecks, ClipboardList
+  Home, Banknote, Zap, Wallet, ListChecks, ClipboardList, Shield
 } from 'lucide-react'
 import { initials } from '@/utils/helpers'
 
