@@ -629,6 +629,94 @@ export default function Audit() {
     setParsing(false);
   }
 
+  // ── Property data (loads on mount for property tabs) ─────
+  const [propData, setPropData] = useState(null)
+  const [loadingProp, setLoadingProp] = useState(false)
+
+  useEffect(() => { loadPropertyData() }, [selectedMonth])
+
+  async function loadPropertyData() {
+    setLoadingProp(true)
+    try {
+      const [
+        { data: buildings },
+        { data: flats },
+        { data: tenants },
+        { data: collections },
+      ] = await Promise.all([
+        supabase.from('buildings').select('id, name').eq('is_active', true),
+        supabase.from('flats').select('id, building_id, door_number, monthly_rent, status'),
+        supabase.from('tenants').select('id, full_name, phone, flat_id, building_id, monthly_rent, status, move_in_date'),
+        supabase.from('rent_collections').select('flat_id, tenant_id, building_id, amount, payment_mode, for_month').eq('for_month', selectedMonth),
+      ])
+
+      const bMap = {}
+      ;(buildings||[]).forEach(b => { bMap[b.id] = b.name })
+
+      const collByTenant = {}
+      ;(collections||[]).forEach(c => {
+        collByTenant[c.tenant_id] = collByTenant[c.tenant_id] || []
+        collByTenant[c.tenant_id].push(c)
+      })
+
+      // Flat + tenant map
+      const flatMap = {}
+      ;(flats||[]).forEach(f => { flatMap[f.id] = f })
+
+      const activeTenants = (tenants||[]).filter(t => t.status === 'active')
+      const vacantFlats = (flats||[]).filter(f => f.status === 'vacant' || f.status === 'maintenance')
+      const occupiedFlats = (flats||[]).filter(f => f.status === 'occupied')
+
+      // Per tenant rent status
+      const tenantRentStatus = activeTenants.map(t => {
+        const colls = collByTenant[t.id] || []
+        const paid = colls.reduce((s, c) => s + Number(c.amount), 0)
+        const expected = Number(t.monthly_rent || 0)
+        const balance = expected - paid
+        const status = paid >= expected && expected > 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid'
+        const modes = [...new Set(colls.map(c => c.payment_mode))]
+        return {
+          ...t,
+          building: bMap[t.building_id] || '—',
+          flat: flatMap[t.flat_id]?.door_number || '—',
+          paid, expected, balance, status, modes, colls
+        }
+      })
+
+      // Building summary
+      const bSummary = {}
+      ;(buildings||[]).forEach(b => {
+        const bFlats = (flats||[]).filter(f => f.building_id === b.id)
+        const bTenants = tenantRentStatus.filter(t => t.building_id === b.id)
+        bSummary[b.id] = {
+          name: b.name,
+          total: bFlats.length,
+          occupied: bFlats.filter(f => f.status==='occupied').length,
+          vacant: bFlats.filter(f => f.status==='vacant').length,
+          demo: bFlats.filter(f => f.status==='maintenance').length,
+          paid: bTenants.filter(t => t.status==='paid').length,
+          partial: bTenants.filter(t => t.status==='partial').length,
+          unpaid: bTenants.filter(t => t.status==='unpaid').length,
+          expected: bTenants.reduce((s,t) => s+t.expected, 0),
+          collected: bTenants.reduce((s,t) => s+t.paid, 0),
+          vacantRevLoss: bFlats.filter(f=>f.status==='vacant').reduce((s,f) => s+Number(f.monthly_rent||0), 0),
+        }
+      })
+
+      setPropData({
+        buildings: buildings||[], flats: flats||[], vacantFlats,
+        occupiedFlats, tenantRentStatus, bSummary,
+        unpaid: tenantRentStatus.filter(t => t.status==='unpaid'),
+        partial: tenantRentStatus.filter(t => t.status==='partial'),
+        paid: tenantRentStatus.filter(t => t.status==='paid'),
+        totalExpected: tenantRentStatus.reduce((s,t)=>s+t.expected,0),
+        totalCollected: tenantRentStatus.reduce((s,t)=>s+t.paid,0),
+        totalVacantLoss: vacantFlats.reduce((s,f)=>s+Number(f.monthly_rent||0),0),
+      })
+    } catch(e) { console.error(e) }
+    finally { setLoadingProp(false) }
+  }
+
   async function runAudit() {
     if (!allTxns.length) return toast.error('Extract transactions first');
     setAnalyzing(true);
@@ -763,7 +851,25 @@ export default function Audit() {
   const statusBadge=s=>{const m={paid:'bg-emerald-50 text-emerald-700 border-emerald-200',partial:'bg-amber-50 text-amber-700 border-amber-200',unpaid:'bg-red-50 text-red-700 border-red-200'};return <span className={`badge border text-xs ${m[s]}`}>{s.toUpperCase()}</span>;};
   const flagBg={high:'border-l-red-500 bg-red-50/40',medium:'border-l-amber-400 bg-amber-50/40',low:'border-l-blue-400 bg-blue-50/40'};
 
-  const tabs=results?[
+  const propTabs = [
+    {id:'summary', label:'Summary'},
+    {id:'flats_overview', label:`Flats Overview`},
+    {id:'vacant', label:`Vacant (${propData?.vacantFlats?.length||0})`},
+    {id:'unpaid', label:`Unpaid (${propData?.unpaid?.length||0})`},
+    {id:'partial', label:`Partial (${propData?.partial?.length||0})`},
+  ]
+
+  const auditTabs = results ? [
+    {id:'flags', label:`🚨 Flags (${results.fraudFlags.length})`},
+    {id:'tenants', label:'All Tenants'},
+    {id:'unmatched', label:`Bank Unmatched (${results.unmatchedBank.length})`},
+    {id:'collectors', label:'Collectors'},
+    {id:'buildings', label:'By Building'},
+    {id:'notes', label:`Notes (${notes.length})`},
+    {id:'bank', label:`Bank (${allTxns.length})`},
+  ] : []
+
+  const allTabs = results ? [
     {id:'summary',label:'Summary'},
     {id:'flags',label:`🚨 Flags (${results.fraudFlags.length})`},
     {id:'unpaid',label:`Unpaid (${results.stats.unpaidCount+results.stats.partialCount})`},
@@ -1022,12 +1128,263 @@ export default function Audit() {
       {results&&(
         <>
           <div className="flex border-b border-surface-200 overflow-x-auto">
-            {tabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} className={`tab flex-shrink-0 ${activeTab===t.id?'active':''}`}>{t.label}</button>)}
+            {allTabs.map(t=><button key={t.id} onClick={()=>setActiveTab(t.id)} className={`tab flex-shrink-0 ${activeTab===t.id?'active':''}`}>{t.label}</button>)}
           </div>
+
+          {/* FLATS OVERVIEW */}
+          {activeTab==='flats_overview' && propData && (
+            <div className="space-y-4">
+              <div className="card overflow-hidden">
+                <div className="px-5 py-3 border-b border-surface-100 bg-surface-50">
+                  <h3 className="text-sm font-semibold text-surface-700">All Buildings — Flat Status Overview</h3>
+                  <p className="text-xs text-surface-400 mt-0.5">Total potential revenue loss from vacant flats: {formatCurrency(propData.totalVacantLoss)}/month</p>
+                </div>
+                <table className="data-table">
+                  <thead><tr><th>Building</th><th className="text-center">Total</th><th className="text-center">Occupied</th><th className="text-center">Vacant</th><th className="text-center">Demo</th><th className="text-right">Expected</th><th className="text-right">Collected</th><th className="text-right">Gap</th><th>Rate</th><th>Vacant Rev Loss</th></tr></thead>
+                  <tbody>
+                    {Object.values(propData.bSummary).map(b => {
+                      const rate = b.expected>0?Math.round(b.collected/b.expected*100):0
+                      return (
+                        <tr key={b.name}>
+                          <td className="font-medium text-surface-800">{b.name}</td>
+                          <td className="text-center font-semibold">{b.total}</td>
+                          <td className="text-center text-emerald-600 font-semibold">{b.occupied}</td>
+                          <td className="text-center font-semibold" style={{color:b.vacant>0?'#dc2626':'#94a3b8'}}>{b.vacant}</td>
+                          <td className="text-center text-amber-600">{b.demo||0}</td>
+                          <td className="text-right font-mono">{formatCurrency(b.expected)}</td>
+                          <td className="text-right font-mono text-emerald-700">{formatCurrency(b.collected)}</td>
+                          <td className="text-right font-mono text-red-600">{formatCurrency(b.expected-b.collected)}</td>
+                          <td>
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 h-1.5 bg-surface-100 rounded-full overflow-hidden">
+                                <div className="h-full rounded-full" style={{width:`${rate}%`,backgroundColor:rate>=90?'#0d9488':rate>=70?'#f59e0b':'#dc2626'}}/>
+                              </div>
+                              <span className="text-xs font-mono text-surface-500">{rate}%</span>
+                            </div>
+                          </td>
+                          <td className="text-right font-mono text-red-500 text-xs">{b.vacantRevLoss>0?formatCurrency(b.vacantRevLoss):'-'}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-50 border-t-2 border-surface-200">
+                      <td className="px-4 py-2 font-bold text-xs text-surface-600">TOTAL</td>
+                      <td className="px-4 py-2 text-center font-bold">{propData.flats.length}</td>
+                      <td className="px-4 py-2 text-center font-bold text-emerald-600">{propData.occupiedFlats.length}</td>
+                      <td className="px-4 py-2 text-center font-bold text-red-600">{propData.vacantFlats.filter(f=>f.status==='vacant').length}</td>
+                      <td className="px-4 py-2 text-center text-amber-600">{propData.vacantFlats.filter(f=>f.status==='maintenance').length}</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold">{formatCurrency(propData.totalExpected)}</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-emerald-700">{formatCurrency(propData.totalCollected)}</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-red-600">{formatCurrency(propData.totalExpected-propData.totalCollected)}</td>
+                      <td/>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-red-500">{formatCurrency(propData.totalVacantLoss)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* VACANT FLATS */}
+          {activeTab==='vacant' && propData && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="card p-4 border-l-4 border-red-400">
+                  <p className="text-xs text-surface-500 mb-1">Vacant Flats</p>
+                  <p className="text-2xl font-bold text-red-600">{propData.vacantFlats.filter(f=>f.status==='vacant').length}</p>
+                </div>
+                <div className="card p-4 border-l-4 border-amber-400">
+                  <p className="text-xs text-surface-500 mb-1">Demo / Maintenance</p>
+                  <p className="text-2xl font-bold text-amber-600">{propData.vacantFlats.filter(f=>f.status==='maintenance').length}</p>
+                </div>
+                <div className="card p-4 border-l-4 border-red-600">
+                  <p className="text-xs text-surface-500 mb-1">Monthly Revenue Loss</p>
+                  <p className="text-xl font-bold font-mono text-red-600">{formatCurrency(propData.totalVacantLoss)}</p>
+                  <p className="text-xs text-surface-400">if all vacant were filled</p>
+                </div>
+              </div>
+              <div className="card overflow-hidden">
+                <div className="flex items-center justify-between px-5 py-3 border-b border-surface-100 bg-surface-50">
+                  <h3 className="text-sm font-semibold text-surface-700">Vacant & Demo Flats</h3>
+                  <button onClick={() => {
+                    const wb = XLSX.utils.book_new()
+                    const ws = XLSX.utils.json_to_sheet(propData.vacantFlats.map(f => ({
+                      Building: Object.values(propData.bSummary).find(b => b.name)?.name || '—',
+                      'Flat No': f.door_number, Status: f.status,
+                      'Monthly Rent (₹)': f.monthly_rent, 'Revenue Loss (₹)': f.monthly_rent,
+                    })))
+                    XLSX.utils.book_append_sheet(wb, ws, 'Vacant Flats')
+                    XLSX.writeFile(wb, `Vacant_Flats_${selectedMonth}.xlsx`)
+                    toast.success('Downloaded')
+                  }} className="btn-secondary btn-sm flex items-center gap-1.5">
+                    <Download className="w-3.5 h-3.5"/> Download
+                  </button>
+                </div>
+                <table className="data-table">
+                  <thead><tr><th>Building</th><th>Flat No.</th><th>Status</th><th className="text-right">Potential Rent</th><th>Notes</th></tr></thead>
+                  <tbody>
+                    {propData.vacantFlats.map(f => {
+                      const bName = Object.values(propData.bSummary).find(b => Object.keys(propData.bSummary).some(id => propData.bSummary[id].name && f.building_id === Object.keys(propData.bSummary).find(k=>propData.bSummary[k].name===propData.bSummary[id].name)))?.name
+                      return (
+                        <tr key={f.id} className={f.status==='vacant'?'bg-red-50/20':'bg-amber-50/20'}>
+                          <td className="text-surface-600 text-xs">{Object.entries(propData.bSummary).find(([id])=>id===f.building_id)?.[1]?.name||'—'}</td>
+                          <td className="font-mono font-bold text-surface-800">{f.door_number}</td>
+                          <td><span className={`badge border text-xs ${f.status==='vacant'?'bg-red-50 text-red-700 border-red-200':'bg-amber-50 text-amber-700 border-amber-200'}`}>{f.status.toUpperCase()}</span></td>
+                          <td className="text-right font-mono text-red-600">{f.monthly_rent>0?formatCurrency(f.monthly_rent):'—'}</td>
+                          <td className="text-xs text-surface-400">—</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* UNPAID */}
+          {activeTab==='unpaid' && propData && (
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-surface-100 bg-red-50">
+                <div>
+                  <p className="text-sm font-semibold text-red-800">{propData.unpaid.length} tenants with ZERO payment — {formatCurrency(propData.unpaid.reduce((s,t)=>s+t.expected,0))} outstanding</p>
+                </div>
+                <button onClick={() => {
+                  const wb = XLSX.utils.book_new()
+                  const ws = XLSX.utils.json_to_sheet(propData.unpaid.map(t => ({
+                    Building:t.building, Room:t.flat, Tenant:t.full_name, Phone:t.phone,
+                    'Expected (₹)':t.expected, 'Paid (₹)':t.paid, 'Balance (₹)':t.balance,
+                    'Team Note': notes.find(n=>n.tenant_id===t.id)?.team_note||'No explanation',
+                  })))
+                  XLSX.utils.book_append_sheet(wb, ws, 'Unpaid')
+                  XLSX.writeFile(wb, `Unpaid_${selectedMonth}.xlsx`)
+                  toast.success('Unpaid report downloaded')
+                }} className="btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0">
+                  <Download className="w-3.5 h-3.5"/> Download
+                </button>
+              </div>
+              {propData.unpaid.length===0 ? (
+                <div className="p-10 text-center"><CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2"/><p className="text-surface-500">All tenants have made at least partial payment</p></div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr><th>Building</th><th>Room</th><th>Tenant</th><th>Phone</th><th className="text-right">Expected</th><th>Status</th><th>Team Response</th></tr></thead>
+                  <tbody>
+                    {propData.unpaid.map(t => {
+                      const existing = notes.find(n=>n.tenant_id===t.id&&n.note_type==='unpaid')
+                      return (
+                        <tr key={t.id} className="bg-red-50/20">
+                          <td className="text-xs text-surface-500">{t.building}</td>
+                          <td className="font-mono font-bold">{t.flat}</td>
+                          <td className="font-medium text-surface-800">{t.full_name}</td>
+                          <td className="text-xs text-surface-500">{t.phone}</td>
+                          <td className="text-right font-mono font-bold text-red-600">{formatCurrency(t.expected)}</td>
+                          <td><span className="badge bg-red-50 text-red-700 border border-red-200 text-xs">UNPAID</span></td>
+                          <td>
+                            {existing
+                              ? <button onClick={()=>openNote({type:'unpaid',tenantId:t.id,reason:`Unpaid - ${t.full_name} Room ${t.flat}`,noteId:existing.id})}
+                                  className={`badge border text-xs cursor-pointer ${STATUS_CFG[existing.status]?.cls}`}>{existing.status}</button>
+                              : <button onClick={()=>openNote({type:'unpaid',tenantId:t.id,reason:`Unpaid rent - ${t.full_name} Room ${t.flat} (${t.building})`})}
+                                  className="btn-secondary btn-sm text-xs flex items-center gap-1"><MessageSquare className="w-3 h-3"/>Note</button>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-50 border-t border-surface-200">
+                      <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-surface-500">Total Unpaid</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-red-600">{formatCurrency(propData.unpaid.reduce((s,t)=>s+t.expected,0))}</td>
+                      <td colSpan={2}/>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* PARTIAL */}
+          {activeTab==='partial' && propData && (
+            <div className="card overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-surface-100 bg-amber-50">
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">{propData.partial.length} tenants with PARTIAL payment — {formatCurrency(propData.partial.reduce((s,t)=>s+t.balance,0))} still due</p>
+                </div>
+                <button onClick={() => {
+                  const wb = XLSX.utils.book_new()
+                  const ws = XLSX.utils.json_to_sheet(propData.partial.map(t => ({
+                    Building:t.building, Room:t.flat, Tenant:t.full_name, Phone:t.phone,
+                    'Expected (₹)':t.expected, 'Paid (₹)':t.paid, 'Balance (₹)':t.balance,
+                    'Modes': t.modes.join(', ')||'—',
+                    'Team Note': notes.find(n=>n.tenant_id===t.id)?.team_note||'No explanation',
+                  })))
+                  XLSX.utils.book_append_sheet(wb, ws, 'Partial Payments')
+                  XLSX.writeFile(wb, `Partial_Payments_${selectedMonth}.xlsx`)
+                  toast.success('Partial payments report downloaded')
+                }} className="btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0">
+                  <Download className="w-3.5 h-3.5"/> Download
+                </button>
+              </div>
+              {propData.partial.length===0 ? (
+                <div className="p-10 text-center"><CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2"/><p className="text-surface-500">No partial payments this month</p></div>
+              ) : (
+                <table className="data-table">
+                  <thead><tr><th>Building</th><th>Room</th><th>Tenant</th><th>Phone</th><th className="text-right">Expected</th><th className="text-right">Paid</th><th className="text-right">Balance</th><th>Mode</th><th>Response</th></tr></thead>
+                  <tbody>
+                    {propData.partial.map(t => {
+                      const existing = notes.find(n=>n.tenant_id===t.id&&n.note_type==='unpaid')
+                      return (
+                        <tr key={t.id} className="bg-amber-50/20">
+                          <td className="text-xs text-surface-500">{t.building}</td>
+                          <td className="font-mono font-bold">{t.flat}</td>
+                          <td className="font-medium text-surface-800">{t.full_name}</td>
+                          <td className="text-xs text-surface-500">{t.phone}</td>
+                          <td className="text-right font-mono">{formatCurrency(t.expected)}</td>
+                          <td className="text-right font-mono text-emerald-700">{formatCurrency(t.paid)}</td>
+                          <td className="text-right font-mono font-bold text-amber-700">{formatCurrency(t.balance)}</td>
+                          <td className="text-xs text-surface-500">{t.modes.join(', ')||'—'}</td>
+                          <td>
+                            {existing
+                              ? <button onClick={()=>openNote({type:'unpaid',tenantId:t.id,reason:`Partial - ${t.full_name} Room ${t.flat}`,noteId:existing.id})}
+                                  className={`badge border text-xs cursor-pointer ${STATUS_CFG[existing.status]?.cls}`}>{existing.status}</button>
+                              : <button onClick={()=>openNote({type:'unpaid',tenantId:t.id,reason:`Partial payment - ${t.full_name} Room ${t.flat} (${t.building}) - Balance ₹${t.balance.toLocaleString()}`})}
+                                  className="btn-secondary btn-sm text-xs flex items-center gap-1"><MessageSquare className="w-3 h-3"/>Note</button>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-50 border-t border-surface-200">
+                      <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-surface-500">Total Balance Due</td>
+                      <td className="px-4 py-2 text-right font-mono">{formatCurrency(propData.partial.reduce((s,t)=>s+t.expected,0))}</td>
+                      <td className="px-4 py-2 text-right font-mono text-emerald-700">{formatCurrency(propData.partial.reduce((s,t)=>s+t.paid,0))}</td>
+                      <td className="px-4 py-2 text-right font-mono font-bold text-amber-700">{formatCurrency(propData.partial.reduce((s,t)=>s+t.balance,0))}</td>
+                      <td colSpan={2}/>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          )}
 
           {/* SUMMARY */}
           {activeTab==='summary'&&(
             <div className="space-y-4">
+              {propData && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                  {[
+                    {l:'Total Flats',v:propData.flats.length,c:'border-surface-300',vc:'text-surface-900'},
+                    {l:'Occupied',v:propData.occupiedFlats.length,c:'border-emerald-400',vc:'text-emerald-700'},
+                    {l:'Vacant',v:propData.vacantFlats.filter(f=>f.status==='vacant').length,c:'border-red-400',vc:'text-red-600'},
+                    {l:'Collection Rate',v:`${propData.totalExpected>0?Math.round(propData.totalCollected/propData.totalExpected*100):0}%`,c:'border-brand-500',vc:'text-brand-700'},
+                  ].map(({l,v,c,vc})=>(
+                    <div key={l} className={`card p-3 border-l-4 ${c}`}>
+                      <p className="text-xs text-surface-500 mb-1">{l}</p>
+                      <p className={`text-xl font-bold font-mono ${vc}`}>{v}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className={`card p-5 border-l-4 ${results.stats.fraudHigh>0?'border-l-red-500 bg-red-50/40':results.stats.fraudMedium>0?'border-l-amber-400':'border-l-emerald-500 bg-emerald-50/40'}`}>
                 <div className="flex items-start gap-3">
                   {results.stats.fraudHigh>0?<AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0"/>:<CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0"/>}
