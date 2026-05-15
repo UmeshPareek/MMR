@@ -188,6 +188,8 @@ export default function Buildings() {
     if (error) return toast.error(error.message)
     toast.success(editFlat ? 'Flat updated' : 'Flat added')
     setFlatModal({ open: false, buildingId: null })
+    // Force re-fetch flat list for this building
+    setFlats(prev => { const n = {...prev}; delete n[flatModal.buildingId]; return n })
     loadFlats(flatModal.buildingId)
     // Refresh counts immediately
     const { data: bList } = await supabase.from('buildings').select('id').eq('is_active', true)
