@@ -16,6 +16,7 @@ export default function Staff() {
   const [buildings, setBuildings] = useState([])
   const [salaries, setSalaries] = useState([])
   const [advances, setAdvances] = useState([])
+  const [monthAdvances, setMonthAdvances] = useState([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('staff')
   const [selectedStaff, setSelectedStaff] = useState(null)
@@ -61,11 +62,19 @@ export default function Staff() {
   }
 
   async function loadAdvances() {
+    // All unrecovered advances (for pending tab)
     const { data } = await supabase.from('staff_advances')
       .select('*, staff:staff(full_name)')
       .eq('recovered', false)
       .order('advance_date', { ascending: false })
     setAdvances(data || [])
+    // Advances given THIS selected month (for net payable calculation)
+    const { data: mAdv } = await supabase.from('staff_advances')
+      .select('*, staff:staff(full_name)')
+      .gte('advance_date', `${selectedMonth}-01`)
+      .lte('advance_date', `${selectedMonth}-31`)
+      .order('advance_date', { ascending: false })
+    setMonthAdvances(mAdv || [])
   }
 
   function openAddStaff() { setEditStaff(null); setStaffForm(defaultStaffForm()); setStaffModal(true) }
@@ -194,7 +203,7 @@ export default function Staff() {
 
       {/* Tabs */}
       <div className="flex border-b border-surface-200 overflow-x-auto">
-        {[['staff','Staff Members'],['salaries',`Salaries (${selectedMonth})`],['advances','Pending Advances']].map(([key, label]) => (
+        {[['staff','Staff Members'],['payroll','Monthly Payroll'],['salaries',`Salary History`],['advances','Pending Advances']].map(([key, label]) => (
           <button key={key} className={`tab flex-shrink-0 ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
         ))}
       </div>
@@ -272,6 +281,134 @@ export default function Staff() {
           </div>
         )
       )}
+
+      {/* MONTHLY PAYROLL TAB */}
+      {tab === 'payroll' && (() => {
+        // Per-staff payroll calculation for selected month
+        const payrollRows = activeStaff.map(s => {
+          const thisMonthAdvances = monthAdvances.filter(a => a.staff_id === s.id)
+          const advThisMonth = thisMonthAdvances.reduce((sum, a) => sum + Number(a.amount), 0)
+          const gross = Number(s.monthly_salary || 0)
+          const net = Math.max(gross - advThisMonth, 0)
+          const paid = paidStaffIds.has(s.id)
+          const paidRecord = paidThisMonth.find(p => p.staff_id === s.id)
+          return { ...s, advThisMonth, gross, net, paid, paidRecord, advList: thisMonthAdvances }
+        })
+        const totalGross = payrollRows.reduce((s, r) => s + r.gross, 0)
+        const totalAdvMonth = payrollRows.reduce((s, r) => s + r.advThisMonth, 0)
+        const totalNet = payrollRows.reduce((s, r) => s + r.net, 0)
+        const totalNetPaid = payrollRows.filter(r => r.paid).reduce((s, r) => s + Number(r.paidRecord?.net_amount || 0), 0)
+        const totalStillPending = payrollRows.filter(r => !r.paid).reduce((s, r) => s + r.net, 0)
+
+        return (
+          <div className="space-y-4">
+            {/* Summary strip */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="card p-4 border-l-4 border-brand-500">
+                <p className="text-xs text-surface-500 mb-0.5">Total Gross</p>
+                <p className="text-lg font-bold font-mono text-surface-900">{formatCurrency(totalGross)}</p>
+              </div>
+              <div className="card p-4 border-l-4 border-amber-400">
+                <p className="text-xs text-surface-500 mb-0.5">Advances This Month</p>
+                <p className="text-lg font-bold font-mono text-amber-700">{formatCurrency(totalAdvMonth)}</p>
+              </div>
+              <div className="card p-4 border-l-4 border-brand-600">
+                <p className="text-xs text-surface-500 mb-0.5">Net Payable</p>
+                <p className="text-lg font-bold font-mono text-brand-700">{formatCurrency(totalNet)}</p>
+              </div>
+              <div className="card p-4 border-l-4 border-red-400">
+                <p className="text-xs text-surface-500 mb-0.5">Still Pending</p>
+                <p className="text-lg font-bold font-mono text-red-600">{formatCurrency(totalStillPending)}</p>
+                <p className="text-xs text-surface-400">{payrollRows.filter(r => !r.paid).length} staff</p>
+              </div>
+            </div>
+
+            <div className="card overflow-hidden">
+              <div className="px-5 py-3 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-surface-700">Net Salary Payable — {selectedMonth}</h3>
+                  <p className="text-xs text-surface-400 mt-0.5">Gross − Advances Given This Month = Net Payable</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Staff</th>
+                      <th>Role</th>
+                      <th className="text-right">Gross Salary</th>
+                      <th className="text-right">Advances This Month</th>
+                      <th className="text-right font-bold">Net Payable</th>
+                      <th>Status</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {payrollRows.map(r => (
+                      <tr key={r.id} className={r.paid ? 'bg-emerald-50/20' : r.net > 0 ? 'bg-red-50/10' : ''}>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                              {r.full_name.charAt(0)}
+                            </div>
+                            <span className="font-medium text-surface-800">{r.full_name}</span>
+                          </div>
+                        </td>
+                        <td className="text-xs text-surface-500">{r.role || '—'}</td>
+                        <td className="text-right font-mono">{formatCurrency(r.gross)}</td>
+                        <td className="text-right font-mono">
+                          {r.advThisMonth > 0
+                            ? <span className="text-amber-600 font-semibold">−{formatCurrency(r.advThisMonth)}</span>
+                            : <span className="text-surface-300">—</span>}
+                          {r.advList.length > 0 && (
+                            <p className="text-xs text-surface-400">{r.advList.length} advance{r.advList.length>1?'s':''}</p>
+                          )}
+                        </td>
+                        <td className="text-right font-mono font-bold text-brand-700 text-base">
+                          {formatCurrency(r.net)}
+                        </td>
+                        <td>
+                          {r.paid
+                            ? <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">
+                                Paid {formatCurrency(r.paidRecord?.net_amount)}
+                              </span>
+                            : <span className="badge bg-red-50 text-red-600 border border-red-200 text-xs">Pending</span>}
+                        </td>
+                        <td>
+                          {!r.paid && r.status === 'active' && (
+                            <button onClick={() => openSalaryModal(r)}
+                              className="btn-primary btn-sm flex items-center gap-1">
+                              <Wallet size={12}/> Pay
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-surface-50 border-t-2 border-surface-200">
+                      <td colSpan={2} className="px-4 py-2.5 text-xs font-bold text-surface-600">TOTAL</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold">{formatCurrency(totalGross)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-amber-600">
+                        {totalAdvMonth > 0 ? `−${formatCurrency(totalAdvMonth)}` : '—'}
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-mono font-bold text-brand-700 text-base">
+                        {formatCurrency(totalNet)}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className="text-xs text-emerald-600">{payrollRows.filter(r=>r.paid).length} paid</span>
+                        {' · '}
+                        <span className="text-xs text-red-600">{payrollRows.filter(r=>!r.paid).length} pending</span>
+                      </td>
+                      <td/>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* SALARIES TABLE */}
       {tab === 'salaries' && (
