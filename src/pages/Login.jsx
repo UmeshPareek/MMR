@@ -75,7 +75,7 @@ export default function Login() {
     borderRadius: 10, fontSize: 15, color: '#fff',
     outline: 'none', transition: 'border-color .15s',
     fontFamily: 'inherit', background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(4px)',
+    backdropFilter: 'blur(2px)',
   }
 
   return (
