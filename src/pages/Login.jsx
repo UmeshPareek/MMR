@@ -2,100 +2,34 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
-// Animated mesh background using canvas
-function AnimatedBackground() {
-  const canvasRef = useRef(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    let animId
-    let w, h
-
-    const TEAL = { r: 13, g: 148, b: 136 }
-    const nodes = []
-    const COUNT = 55
-
-    function resize() {
-      w = canvas.width = canvas.offsetWidth
-      h = canvas.height = canvas.offsetHeight
-    }
-
-    function initNodes() {
-      nodes.length = 0
-      for (let i = 0; i < COUNT; i++) {
-        nodes.push({
-          x: Math.random() * w,
-          y: Math.random() * h,
-          vx: (Math.random() - 0.5) * 0.35,
-          vy: (Math.random() - 0.5) * 0.35,
-          r: Math.random() * 2.5 + 1,
-          opacity: Math.random() * 0.5 + 0.2,
-        })
-      }
-    }
-
-    resize()
-    initNodes()
-    window.addEventListener('resize', () => { resize(); initNodes() })
-
-    function draw() {
-      ctx.clearRect(0, 0, w, h)
-
-      // Draw connections
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[i].x - nodes[j].x
-          const dy = nodes[i].y - nodes[j].y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist < 140) {
-            const alpha = (1 - dist / 140) * 0.18
-            ctx.beginPath()
-            ctx.strokeStyle = `rgba(${TEAL.r},${TEAL.g},${TEAL.b},${alpha})`
-            ctx.lineWidth = 0.8
-            ctx.moveTo(nodes[i].x, nodes[i].y)
-            ctx.lineTo(nodes[j].x, nodes[j].y)
-            ctx.stroke()
-          }
-        }
-      }
-
-      // Draw nodes
-      nodes.forEach(n => {
-        ctx.beginPath()
-        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
-        ctx.fillStyle = `rgba(${TEAL.r},${TEAL.g},${TEAL.b},${n.opacity})`
-        ctx.fill()
-
-        // Move
-        n.x += n.vx
-        n.y += n.vy
-        if (n.x < -20) n.x = w + 20
-        if (n.x > w + 20) n.x = -20
-        if (n.y < -20) n.y = h + 20
-        if (n.y > h + 20) n.y = -20
-      })
-
-      animId = requestAnimationFrame(draw)
-    }
-
-    draw()
-    return () => {
-      cancelAnimationFrame(animId)
-      window.removeEventListener('resize', resize)
-    }
-  }, [])
-
+// Video/image background slot — drop your city video or image here
+// To use a video: place your .mp4 file in /public/city.mp4
+// To use an image: place your image in /public/city.jpg
+function MediaBackground() {
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
+    <>
+      {/* ─── DROP YOUR VIDEO FILE HERE ─────────────────────
+          Place a city aerial video at: /public/city.mp4
+          It will loop silently behind the content.
+          ─────────────────────────────────────────────── */}
+      <video
+        autoPlay muted loop playsInline
+        style={{
+          position: 'absolute', inset: 0,
+          width: '100%', height: '100%',
+          objectFit: 'cover',
+        }}
+        onError={e => e.target.style.display = 'none'}
+      >
+        <source src="/city.mp4" type="video/mp4" />
+      </video>
+
+      {/* Dark teal overlay so text stays readable */}
+      <div style={{
         position: 'absolute', inset: 0,
-        width: '100%', height: '100%',
-        display: 'block',
-      }}
-    />
+        background: 'linear-gradient(160deg, rgba(6,95,70,0.82) 0%, rgba(13,148,136,0.75) 100%)',
+      }} />
+    </>
   )
 }
 
@@ -133,7 +67,7 @@ export default function Login() {
         justifyContent: 'space-between',
         padding: '44px 48px',
       }} className="login-left">
-        <AnimatedBackground />
+        <MediaBackground />
 
         {/* Content over canvas */}
         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -163,24 +97,20 @@ export default function Login() {
             Collect rent, detect fraud, manage staff, and understand your P&amp;L — all in one place. Built for serious property managers.
           </p>
 
-          {/* Mini stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 36 }}>
-            {[
-              { val: '₹44L+', label: 'Monthly tracked' },
-              { val: '204+', label: 'Active tenants' },
-              { val: '98%', label: 'Collection rate' },
-              { val: '5 types', label: 'Fraud detection' },
-            ].map(({ val, label }) => (
-              <div key={label} style={{
-                background: 'rgba(255,255,255,0.08)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: 12, padding: '14px 16px',
-                backdropFilter: 'blur(4px)',
-              }}>
-                <p style={{ color: '#fff', fontWeight: 700, fontSize: 18, fontVariantNumeric: 'tabular-nums' }}>{val}</p>
-                <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>{label}</p>
-              </div>
-            ))}
+          {/* Subtle tagline instead of stats */}
+          <div style={{ marginTop: 36 }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(255,255,255,0.15)',
+              borderRadius: 100, padding: '8px 16px',
+              backdropFilter: 'blur(4px)',
+            }}>
+              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#5ECFCB' }} />
+              <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13, fontWeight: 500 }}>
+                Trusted by property managers across India
+              </p>
+            </div>
           </div>
         </div>
 
