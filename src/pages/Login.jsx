@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
@@ -55,6 +56,7 @@ export default function Login() {
   if (wasAutoLoggedOut) window.__cmrAutoLogout = false
 
   const { signIn } = useAuth()
+  const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -66,7 +68,11 @@ export default function Login() {
     setLoading(true)
     const { error } = await signIn(email, password)
     setLoading(false)
-    if (error) toast.error(error.message?.includes('Invalid') ? 'Incorrect email or password' : error.message || 'Login failed')
+    if (error) {
+      toast.error(error.message?.includes('Invalid') ? 'Incorrect email or password' : error.message || 'Login failed')
+    } else {
+      navigate('/', { replace: true })
+    }
   }
 
   const inputStyle = {
@@ -75,7 +81,7 @@ export default function Login() {
     borderRadius: 10, fontSize: 15, color: '#fff',
     outline: 'none', transition: 'border-color .15s',
     fontFamily: 'inherit', background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(2px)',
+    backdropFilter: 'blur(4px)',
   }
 
   return (
