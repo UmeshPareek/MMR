@@ -3,6 +3,9 @@ import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 export default function Login() {
+  const wasAutoLoggedOut = window.__cmrAutoLogout
+  if (wasAutoLoggedOut) { window.__cmrAutoLogout = false }
+
   const { signIn } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -27,7 +30,7 @@ export default function Login() {
           <div className="w-7 h-7 bg-white/20 rounded-md flex items-center justify-center">
             <span className="font-display font-bold text-white text-xs">M</span>
           </div>
-          <span className="font-display font-bold text-white text-sm">Manage My Rent</span>
+          <span className="font-display font-bold text-white text-sm">CashMyRent</span>
         </div>
 
         <div>
@@ -40,7 +43,7 @@ export default function Login() {
           </p>
         </div>
 
-        <p className="text-brand-300 text-xs">MMR v1.0 · © {new Date().getFullYear()} Rent N Stay</p>
+        <p className="text-brand-300 text-xs">CashMyRent v1.0 · © {new Date().getFullYear()} Rent N Stay</p>
       </div>
 
       {/* Right panel */}
@@ -52,7 +55,7 @@ export default function Login() {
             <div className="w-7 h-7 bg-brand-600 rounded-md flex items-center justify-center">
               <span className="font-display font-bold text-white text-xs">M</span>
             </div>
-            <span className="font-display font-bold text-surface-900 text-sm">Manage My Rent</span>
+            <span className="font-display font-bold text-surface-900 text-sm">CashMyRent</span>
           </div>
 
           <div className="mb-8">
