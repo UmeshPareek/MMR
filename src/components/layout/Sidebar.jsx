@@ -54,7 +54,7 @@ export default function Sidebar({ open, onClose }) {
               <span className="font-display font-bold text-white text-xs">M</span>
             </div>
             <div>
-              <p className="font-display font-bold text-surface-900 text-sm leading-tight">MMR</p>
+              <p className="font-display font-bold text-surface-900 text-sm leading-tight">CashMyRent</p>
               <p className="text-[10px] text-surface-400 leading-tight">Rent N Stay</p>
             </div>
           </div>
