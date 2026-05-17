@@ -11,7 +11,7 @@ const STATUS_MAP = { active: 'success', vacated: 'default', notice: 'warning' }
 
 const defaultForm = () => ({
   full_name: '', phone: '', email: '', id_type: '', id_number: '',
-  flat_id: '', building_id: '', move_in_date: '', monthly_rent: '',
+  flat_id: '', building_id: '', move_in_date: new Date().toISOString().slice(0,10), monthly_rent: '',
   security_deposit_paid: '', security_deposit_months: 2,
   emergency_contact: '', emergency_phone: '', status: 'active', notes: ''
 })
@@ -240,7 +240,7 @@ export default function Tenants() {
           </div>
           <div className="form-group">
             <label className="label">Flat</label>
-            <select className="select" value={form.flat_id} onChange={e => { const f = flats.find(fl => fl.id === e.target.value); setForm(p => ({ ...p, flat_id: e.target.value, monthly_rent: f?.monthly_rent || p.monthly_rent })) }}>
+            <select className="select" value={form.flat_id} onChange={e => { const f = flats.find(fl => fl.id === e.target.value); setForm(p => ({ ...p, flat_id: e.target.value, monthly_rent: f?.monthly_rent || p.monthly_rent, security_deposit_paid: f ? String(Number(f.monthly_rent||0) * 2) : p.security_deposit_paid })) }}>
               <option value="">— Select flat —</option>
               {flats.map(f => <option key={f.id} value={f.id}>{f.door_number} (₹{f.monthly_rent?.toLocaleString('en-IN')})</option>)}
             </select>
