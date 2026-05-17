@@ -166,7 +166,7 @@ export default function Buildings() {
     // Rent change requires admin permission
     if (editFlat && parseFloat(fForm.monthly_rent) !== parseFloat(editFlat.monthly_rent)) {
       if (!isAdmin && !isSuperAdmin) {
-        return toast.error('Only admin can change rent amount. Contact your admin.')
+        return toast.error('Only admin can change rent amount. Call 8217716904')
       }
       // Log the change
       await supabase.from('rent_change_log').insert({
@@ -434,7 +434,17 @@ export default function Buildings() {
                                 </td>
                                 <td>{flat.tenant?.full_name || <span className="text-surface-500">Vacant</span>}</td>
                                 <td>
-                                  <button className="btn-ghost btn-sm" onClick={() => openEditFlat(flat)}><Edit2 size={13} /></button>
+                                  <div className="flex items-center gap-1">
+                                    {flat.status === 'vacant' && (
+                                      <button
+                                        onClick={() => navigate(`/tenants?building=${building.id}&flat=${flat.id}&rent=${flat.monthly_rent}`)}
+                                        className="btn-primary btn-sm text-xs flex items-center gap-1"
+                                        title="Add tenant to this flat">
+                                        <Plus size={11} /> Tenant
+                                      </button>
+                                    )}
+                                    <button className="btn-ghost btn-sm" onClick={() => openEditFlat(flat)}><Edit2 size={13} /></button>
+                                  </div>
                                 </td>
                               </tr>
                             )
