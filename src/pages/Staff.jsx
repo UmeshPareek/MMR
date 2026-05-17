@@ -33,6 +33,8 @@ export default function Staff() {
   const [advanceForm, setAdvanceForm] = useState({ staff_id: '', amount: '', payment_mode: 'cash', advance_date: new Date().toISOString().split('T')[0], reason: '', notes: '' })
 
   const [saving, setSaving] = useState(false)
+  const [quickModal, setQuickModal] = useState(false)
+  const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
 
   useEffect(() => { loadAll() }, [])
   useEffect(() => { if (tab === 'salaries' || tab === 'summary') loadSalaries(); if (tab === 'advances' || tab === 'summary') loadAdvances() }, [tab, selectedMonth])
@@ -96,6 +98,20 @@ export default function Staff() {
 
   function netPayable(form) {
     return Math.max((parseFloat(form.gross_salary) || 0) - (parseFloat(form.advance_deduction) || 0) - (parseFloat(form.other_deduction) || 0), 0)
+  }
+
+  async function saveQuickStaff() {
+    if (!quickForm.full_name || !quickForm.monthly_salary) return toast.error('Name and salary required')
+    setSaving(true)
+    const payload = {...quickForm, status:'active', monthly_salary: parseFloat(quickForm.monthly_salary)||0, created_by: profile?.id}
+    if (!payload.assigned_building_id) delete payload.assigned_building_id
+    const { error } = await supabase.from('staff').insert(payload)
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success('Staff added ✓')
+    setQuickModal(false)
+    setQuickForm({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
+    loadStaff()
   }
 
   async function saveStaff() {
@@ -173,7 +189,8 @@ export default function Staff() {
           <select className="select w-auto py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
             {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-          <button className="btn-primary flex items-center gap-1.5" onClick={openAddStaff}><Plus size={16} /> Add Staff</button>
+          <button className="btn-secondary flex items-center gap-1.5" onClick={() => setQuickModal(true)}><Plus size={16} /> Quick Add</button>
+          <button className="btn-primary flex items-center gap-1.5" onClick={openAddStaff}><Plus size={16} /> Full Profile</button>
         </div>
       </div>
 
@@ -528,6 +545,47 @@ export default function Staff() {
           )}
         </div>
       )}
+
+      {/* QUICK ADD STAFF MODAL */}
+      <Modal open={quickModal} onClose={() => setQuickModal(false)} title="Quick Add Staff" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="form-group">
+            <label className="label">Full Name *</label>
+            <input className="input" value={quickForm.full_name} onChange={e => setQuickForm(p=>({...p,full_name:e.target.value}))} placeholder="Staff member name" autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Phone</label>
+              <input className="input" value={quickForm.phone} onChange={e => setQuickForm(p=>({...p,phone:e.target.value}))} placeholder="9876543210" />
+            </div>
+            <div className="form-group">
+              <label className="label">Role</label>
+              <select className="select" value={quickForm.role} onChange={e => setQuickForm(p=>({...p,role:e.target.value}))}>
+                <option value="">— Select —</option>
+                {['manager','caretaker','cleaner','security','maintenance','other'].map(r=><option key={r} value={r}>{r.charAt(0).toUpperCase()+r.slice(1)}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Monthly Salary (₹) *</label>
+              <input type="number" className="input" value={quickForm.monthly_salary} onChange={e => setQuickForm(p=>({...p,monthly_salary:e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Building</label>
+              <select className="select" value={quickForm.assigned_building_id} onChange={e => setQuickForm(p=>({...p,assigned_building_id:e.target.value}))}>
+                <option value="">All / General</option>
+                {buildings.map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-surface-400">Bank details and ID documents can be added later via Edit.</p>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => setQuickModal(false)}>Cancel</button>
+          <button className="btn-primary" onClick={saveQuickStaff} disabled={saving}>{saving ? <Spinner size={16}/> : 'Add Staff'}</button>
+        </div>
+      </Modal>
 
       {/* STAFF MODAL */}
       <Modal open={staffModal} onClose={() => setStaffModal(false)} title={editStaff ? 'Edit Staff' : 'Add Staff'} size="lg">
