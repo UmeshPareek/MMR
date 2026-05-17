@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
@@ -18,6 +19,7 @@ const defaultForm = () => ({
 
 export default function Tenants() {
   const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const location = useLocation()
   const [tenants, setTenants] = useState([])
   const [buildings, setBuildings] = useState([])
   const [flats, setFlats] = useState([])
@@ -99,7 +101,21 @@ export default function Tenants() {
       const { data: newTenant, error: e } = await supabase.from('tenants').insert(payload).select().single()
       error = e
       if (!error && form.flat_id && newTenant) {
+        // Mark flat occupied
         await supabase.from('flats').update({ status: 'occupied', current_tenant_id: newTenant.id }).eq('id', form.flat_id)
+        // Auto-create security deposit record
+        if (parseFloat(form.security_deposit_paid) > 0) {
+          await supabase.from('security_deposits').insert({
+            tenant_id: newTenant.id,
+            flat_id: form.flat_id,
+            building_id: form.building_id,
+            amount_expected: parseFloat(form.security_deposit_paid),
+            amount_paid: parseFloat(form.security_deposit_paid),
+            payment_date: form.move_in_date || new Date().toISOString().slice(0,10),
+            status: 'collected',
+            notes: 'Auto-created from tenant onboarding',
+          }).then(({ error: de }) => { if (!de) toast.success('Security deposit record created automatically') })
+        }
       }
     }
 
