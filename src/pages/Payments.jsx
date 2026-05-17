@@ -103,7 +103,9 @@ export default function Payments() {
   const channelRef = useRef(null);
 
   // View proofs
-  const [viewProofs, setViewProofs] = useState(null);
+  const [viewProofs, setViewProofs] = useState(null)
+  const [editModeId, setEditModeId] = useState(null)
+  const [editModeVal, setEditModeVal] = useState('');
 
   // History view
   const [viewMode, setViewMode] = useState('log'); // log | history
@@ -226,6 +228,15 @@ export default function Payments() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveMode(id) {
+    if (!editModeVal) return
+    const { error } = await supabase.from('rent_collections').update({ payment_mode: editModeVal }).eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Payment mode updated')
+    setEditModeId(null)
+    load()
   }
 
   async function handleDelete(id) {
@@ -500,7 +511,29 @@ export default function Payments() {
                       <td className="text-xs text-surface-500">{c.buildingName}</td>
                       <td className="font-mono font-semibold text-surface-800">{c.flatNumber}</td>
                       <td className="text-surface-700">{c.tenantName}</td>
-                      <td><span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span></td>
+                      <td>
+                        {editModeId === c.id ? (
+                          <div className="flex items-center gap-1">
+                            <select className="select py-0.5 text-xs w-24" value={editModeVal} onChange={e => setEditModeVal(e.target.value)}>
+                              {['rentok','upi','cash','bank_transfer','other'].map(m => (
+                                <option key={m} value={m}>{MODE_LABELS[m]||m}</option>
+                              ))}
+                            </select>
+                            <button onClick={() => saveMode(c.id)} className="btn-primary btn-sm px-2 py-0.5 text-xs">✓</button>
+                            <button onClick={() => setEditModeId(null)} className="btn-ghost btn-sm px-1 py-0.5 text-xs">✕</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 group">
+                            <span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span>
+                            {(isAdmin || isSuperAdmin) && (
+                              <button onClick={() => { setEditModeId(c.id); setEditModeVal(c.payment_mode) }}
+                                className="opacity-0 group-hover:opacity-100 btn-ghost p-0.5 text-surface-400 hover:text-brand-600 transition-opacity" title="Edit mode">
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(c.amount)}</td>
                       <td>
                         {c.payment_mode === 'cash' ? (
