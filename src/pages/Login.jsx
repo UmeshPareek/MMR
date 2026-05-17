@@ -248,8 +248,8 @@ export default function Login() {
           </form>
 
           <p style={{ marginTop: 24, textAlign: 'center', fontSize: 13, color: '#AAA' }}>
-            Need access?{' '}
-            <a href="mailto:hello@cashmyrent.com" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>Contact your admin</a>
+            Need access? 
+            <span style={{color:'#0D9488',fontWeight:500}}>cashmyrent@gmail.com</span> · <a href="tel:8217716904" style={{color:'#0D9488',fontWeight:500,textDecoration:'none'}}>8217716904</a>
           </p>
         </div>
       </div>
