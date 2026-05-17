@@ -231,12 +231,13 @@ export default function Payments() {
   }
 
   async function saveMode(id) {
-    if (!editModeVal) return
+    if (!editModeVal) return toast.error('Select a mode')
     const { error } = await supabase.from('rent_collections').update({ payment_mode: editModeVal }).eq('id', id)
     if (error) return toast.error(error.message)
-    toast.success('Payment mode updated')
+    toast.success('Payment mode updated ✓')
     setEditModeId(null)
-    load()
+    setEditModeVal('')
+    loadAll()
   }
 
   async function handleDelete(id) {
