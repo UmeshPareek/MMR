@@ -12,7 +12,7 @@ const CAT_COLORS = { marketing: '#f59e0b', wifi: '#3b82f6', maintenance: '#8b5cf
 
 const defaultForm = () => ({
   category: 'misc', description: '', amount: '', payment_mode: 'upi',
-  expense_date: new Date().toISOString().split('T')[0],
+  expense_date: new Date().toISOString().slice(0,10),
   building_id: '', vendor: '', transaction_ref: '', notes: ''
 })
 
@@ -32,6 +32,9 @@ export default function Expenses() {
   const [uForm, setUForm] = useState({ building_id: '', utility_type: 'electricity', vendor: '', bill_number: '', amount: '', payment_mode: 'online', bill_date: '', payment_date: new Date().toISOString().split('T')[0], for_month: currentMonth(), transaction_ref: '', notes: '' })
   const [saving, setSaving] = useState(false)
   const [chartData, setChartData] = useState([])
+  const [quickRow, setQuickRow] = useState({ category: 'misc', description: '', amount: '', mode: 'upi', building_id: '' })
+  const [bulkUtilModal, setBulkUtilModal] = useState(false)
+  const [bulkForm, setBulkForm] = useState({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: '', vendor: '', bill_number: '' })
 
   useEffect(() => { loadExpenses(); loadBuildings() }, [filterMonth, filterCategory, tab])
 
@@ -74,6 +77,37 @@ export default function Expenses() {
     setModal(false); loadExpenses()
   }
 
+  async function quickSave(row) {
+    if (!row.description || !row.amount) return toast.error('Description and amount required')
+    const { error } = await supabase.from('expenses').insert({
+      category: row.category, description: row.description,
+      amount: parseFloat(row.amount), payment_mode: row.mode,
+      expense_date: new Date().toISOString().slice(0,10),
+      building_id: row.building_id || null, paid_by: profile?.id
+    })
+    if (error) return toast.error(error.message)
+    toast.success('Added ✓')
+    loadExpenses()
+  }
+
+  async function bulkSaveUtility() {
+    if (!bulkForm.building_id || !bulkForm.amount) return toast.error('Building and amount required')
+    setSaving(true)
+    const { error } = await supabase.from('utility_bills').insert({
+      ...bulkForm,
+      amount: parseFloat(bulkForm.amount),
+      for_month: bulkForm.for_month || new Date().toISOString().slice(0,7),
+      payment_date: new Date().toISOString().slice(0,10),
+      paid_by: profile?.id
+    })
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success('Utility bill recorded for entire building ✓')
+    setBulkUtilModal(false)
+    setBulkForm({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: '', vendor: '', bill_number: '' })
+    loadExpenses()
+  }
+
   async function saveUtility() {
     if (!uForm.building_id || !uForm.amount) return toast.error('Building and amount required')
     setSaving(true)
@@ -101,7 +135,7 @@ export default function Expenses() {
           <p className="text-surface-500 text-sm mt-1">Total this month: {formatCurrency(expenses.reduce((s, e) => s + e.amount, 0) + utilityBills.reduce((s, e) => s + e.amount, 0))}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <button className="btn-secondary" onClick={() => setUtilityModal(true)}>+ Utility Bill</button>
+          <button className="btn-secondary" onClick={() => setBulkUtilModal(true)}>+ Utility Bill</button>
           <button className="btn-secondary" onClick={handleExport}><Download size={15} /> Export</button>
           <button className="btn-primary" onClick={() => { setForm(defaultForm()); setModal(true) }}><Plus size={16} /> Add Expense</button>
         </div>
@@ -124,6 +158,27 @@ export default function Expenses() {
             <button className={`tab ${tab === 'general' ? 'active' : ''}`} onClick={() => setTab('general')}>General Expenses ({expenses.length})</button>
             <button className={`tab ${tab === 'utility' ? 'active' : ''}`} onClick={() => setTab('utility')}>Utility Bills ({utilityBills.length})</button>
           </div>
+
+          {/* Quick add row — general expenses only */}
+          {tab === 'general' && (
+            <div className="flex items-center gap-2 mb-3 p-3 bg-surface-50 rounded-lg border border-surface-200">
+              <select className="select py-1.5 text-xs w-28" value={quickRow.category} onChange={e => setQuickRow(p=>({...p,category:e.target.value}))}>
+                {EXPENSE_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.icon} {c.label}</option>)}
+              </select>
+              <input className="input py-1.5 text-sm flex-1" placeholder="Description *" value={quickRow.description} onChange={e => setQuickRow(p=>({...p,description:e.target.value}))}
+                onKeyDown={e => e.key==='Enter' && quickSave(quickRow)} />
+              <input type="number" className="input py-1.5 text-sm w-28" placeholder="Amount ₹ *" value={quickRow.amount} onChange={e => setQuickRow(p=>({...p,amount:e.target.value}))}
+                onKeyDown={e => e.key==='Enter' && quickSave(quickRow)} />
+              <select className="select py-1.5 text-xs w-24" value={quickRow.mode} onChange={e => setQuickRow(p=>({...p,mode:e.target.value}))}>
+                {PAYMENT_MODES.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
+              </select>
+              <select className="select py-1.5 text-xs w-32" value={quickRow.building_id} onChange={e => setQuickRow(p=>({...p,building_id:e.target.value}))}>
+                <option value="">General</option>
+                {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+              <button onClick={() => quickSave(quickRow)} className="btn-primary btn-sm whitespace-nowrap">+ Add</button>
+            </div>
+          )}
 
           {/* Table */}
           {loading ? <div className="py-12 flex justify-center"><Spinner /></div> : filtered.length === 0 ? (
@@ -246,6 +301,64 @@ export default function Expenses() {
         <div className="px-6 pb-6 flex gap-3 justify-end">
           <button className="btn-secondary" onClick={() => setModal(false)}>Cancel</button>
           <button className="btn-primary" onClick={save} disabled={saving}>{saving ? <Spinner size={16} /> : 'Add Expense'}</button>
+        </div>
+      </Modal>
+
+      {/* BULK UTILITY BILL MODAL */}
+      <Modal open={bulkUtilModal} onClose={() => setBulkUtilModal(false)} title="Record Utility Bill — Building" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="p-3 bg-brand-50 rounded-lg border border-brand-200 text-xs text-brand-700">
+            Records one utility bill for the entire building (not per flat). Perfect for BESCOM/BWSSB bills.
+          </div>
+          <div className="form-group">
+            <label className="label">Building *</label>
+            <select className="select" value={bulkForm.building_id} onChange={e => setBulkForm(p=>({...p,building_id:e.target.value}))}>
+              <option value="">— Select building —</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Utility Type *</label>
+              <select className="select" value={bulkForm.utility_type} onChange={e => setBulkForm(p=>({...p,utility_type:e.target.value}))}>
+                <option value="electricity">⚡ Electricity</option>
+                <option value="water">💧 Water</option>
+                <option value="gas">🔥 Gas</option>
+                <option value="both">Both (Elec + Water)</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Amount (₹) *</label>
+              <input type="number" className="input" value={bulkForm.amount} onChange={e => setBulkForm(p=>({...p,amount:e.target.value}))} placeholder="Total bill amount" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">For Month</label>
+              <input type="month" className="input" value={bulkForm.for_month} onChange={e => setBulkForm(p=>({...p,for_month:e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Mode</label>
+              <select className="select" value={bulkForm.payment_mode} onChange={e => setBulkForm(p=>({...p,payment_mode:e.target.value}))}>
+                {['cash','upi','bank_transfer','online','other'].map(m=><option key={m} value={m}>{m.replace('_',' ').toUpperCase()}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Vendor</label>
+              <input className="input" value={bulkForm.vendor} onChange={e => setBulkForm(p=>({...p,vendor:e.target.value}))} placeholder="BESCOM, BWSSB…" />
+            </div>
+            <div className="form-group">
+              <label className="label">Bill Number</label>
+              <input className="input" value={bulkForm.bill_number} onChange={e => setBulkForm(p=>({...p,bill_number:e.target.value}))} />
+            </div>
+          </div>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => setBulkUtilModal(false)}>Cancel</button>
+          <button className="btn-primary" onClick={bulkSaveUtility} disabled={saving}>{saving ? <Spinner size={16}/> : 'Record Bill'}</button>
         </div>
       </Modal>
 
