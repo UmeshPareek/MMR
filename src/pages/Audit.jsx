@@ -242,259 +242,344 @@ async function processTeamResponse(file, tenantStatus, selectedMonth, profile, l
 // ── PDF Report ───────────────────────────────────────────
 function generatePDF(results, notes, month) {
   const doc = new jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
-  const { stats, tenantStatus, fraudFlags, bSummary, collectorStats, dayWiseArr } = results;
-  const teal = [13,148,136], red=[185,28,28], amber=[180,83,9], dark=[30,41,59], light=[248,250,252];
+  const { stats, tenantStatus, fraudFlags, bSummary } = results;
+  const TEAL = [13,148,136], RED = [185,28,28], AMBER = [180,83,9], DARK = [15,23,42];
+  const TEAL_LIGHT = [240,253,250], RED_LIGHT = [254,242,242];
 
-  const addPage = (title) => {
-    doc.addPage();
-    doc.setFillColor(...teal);
-    doc.rect(0,0,210,12,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(10); doc.setFont('helvetica','bold');
-    doc.text(`MMR — ${month} Audit`, 10, 8);
-    doc.text(title, 105, 8, {align:'center'});
-    doc.text(`Page ${doc.internal.getNumberOfPages()}`, 200, 8, {align:'right'});
-    doc.setTextColor(...dark);
-    return 20;
+  // Helper: section heading
+  const heading = (text, y, color=DARK) => {
+    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...color);
+    doc.text(text, 14, y);
+    doc.setDrawColor(...color); doc.setLineWidth(0.3);
+    doc.line(14, y+2, 196, y+2);
+    return y + 10;
   };
 
-  // ── Cover Page ─────────────────────────────────────────
-  doc.setFillColor(...teal);
-  doc.rect(0,0,210,80,'F');
-  doc.setFillColor(255,255,255); doc.setGState(doc.GState({opacity:0.05}));
-  doc.circle(170,20,60,'F'); doc.circle(40,70,40,'F');
-  doc.setGState(doc.GState({opacity:1}));
+  // Helper: footer
+  const footer = () => {
+    const pages = doc.internal.getNumberOfPages();
+    for (let i=1;i<=pages;i++) {
+      doc.setPage(i);
+      doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(180,180,180);
+      doc.text(`CashMyRent — ${month} Audit Report — Confidential`, 14, 290);
+      doc.text(`${i} / ${pages}`, 196, 290, {align:'right'});
+    }
+  };
 
+  // ══ PAGE 1: RENT COLLECTED ════════════════════════════
+  // Header bar
+  doc.setFillColor(...TEAL);
+  doc.rect(0, 0, 210, 28, 'F');
   doc.setTextColor(255,255,255);
-  doc.setFontSize(28); doc.setFont('helvetica','bold');
-  doc.text('MMR', 20, 35);
-  doc.setFontSize(13); doc.setFont('helvetica','normal');
-  doc.text('Rent N Stay — Monthly Audit Report', 20, 45);
-  doc.setFontSize(16); doc.setFont('helvetica','bold');
-  doc.text(month, 20, 58);
-  doc.setFontSize(9); doc.setFont('helvetica','normal');
-  doc.text(`Generated: ${new Date().toLocaleDateString('en-IN', {day:'2-digit',month:'long',year:'numeric'})}`, 20, 68);
-  doc.text(`Buildings: ${Object.keys(bSummary).length} | Active Tenants: ${tenantStatus.length}`, 20, 75);
+  doc.setFontSize(18); doc.setFont('helvetica','bold');
+  doc.text('CashMyRent', 14, 12);
+  doc.setFontSize(10); doc.setFont('helvetica','normal');
+  doc.text('Monthly Audit Report', 14, 20);
+  doc.setFontSize(10); doc.setFont('helvetica','bold');
+  doc.text(month, 196, 12, {align:'right'});
+  doc.setFontSize(8); doc.setFont('helvetica','normal');
+  doc.text(`Generated ${new Date().toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}`, 196, 20, {align:'right'});
 
-  // Fraud banner
-  if (stats.fraudHigh > 0) {
-    doc.setFillColor(...red); doc.rect(0,82,210,20,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(12); doc.setFont('helvetica','bold');
-    doc.text(`⚠  ${stats.fraudHigh} HIGH-RISK FLAGS — IMMEDIATE ACTION REQUIRED`, 105, 92, {align:'center'});
-    doc.setFontSize(9); doc.setFont('helvetica','normal');
-    doc.text(`${stats.fraudMedium} Medium severity · ${stats.fraudLow} Low severity`, 105, 99, {align:'center'});
-  } else {
-    doc.setFillColor(16,185,129); doc.rect(0,82,210,16,'F');
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(11); doc.setFont('helvetica','bold');
-    doc.text('✓  Clean Audit — No High-Risk Flags Detected', 105, 92, {align:'center'});
-  }
+  let y = 40;
 
-  // KPI boxes on cover
-  let y = 115;
-  doc.setTextColor(...dark);
-  doc.setFontSize(11); doc.setFont('helvetica','bold');
-  doc.text('Executive Summary', 20, y); y += 8;
+  // ── Section 1: Rent Collected ──
+  y = heading('1.  RENT COLLECTED', y, TEAL);
 
+  // 3 big KPI boxes
+  const rate = stats.collectionRate;
+  const rateColor = rate>=90?TEAL:rate>=70?AMBER:RED;
   const kpis = [
-    {label:'Expected Revenue', value:formatCurrency(stats.totalExpected), color:teal},
-    {label:'Collected in App', value:formatCurrency(stats.totalCollected), color:[16,185,129]},
-    {label:'Bank Credits', value:formatCurrency(stats.totalBankCredits), color:[99,102,241]},
-    {label:'App vs Bank Gap', value:formatCurrency(stats.bankGap), color:stats.bankGap>1000?red:teal},
-    {label:'Collection Rate', value:`${stats.collectionRate}%`, color:stats.collectionRate>=90?teal:stats.collectionRate>=70?[180,83,9]:red},
-    {label:'Tenants Paid', value:`${stats.paidCount}/${tenantStatus.length}`, color:teal},
-    {label:'Unpaid Tenants', value:`${stats.unpaidCount}`, color:stats.unpaidCount>0?red:teal},
-    {label:'Partial Payment', value:`${stats.partialCount}`, color:stats.partialCount>0?amber:teal},
+    {label:'Total Collected', val: formatCurrency(stats.totalCollected), color: TEAL},
+    {label:'Expected', val: formatCurrency(stats.totalExpected), color: DARK},
+    {label:'Collection Rate', val: `${rate}%`, color: rateColor},
   ];
-
-  kpis.forEach((kpi, i) => {
-    const col = i % 4, row = Math.floor(i/4);
-    const x = 10 + col * 48, ky = y + row * 28;
-    doc.setFillColor(...light); doc.roundedRect(x, ky, 44, 24, 2, 2, 'F');
-    doc.setDrawColor(...kpi.color); doc.setLineWidth(0.5);
-    doc.roundedRect(x, ky, 44, 24, 2, 2, 'S');
-    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(100,116,139);
-    doc.text(kpi.label, x+4, ky+7);
-    doc.setFontSize(13); doc.setFont('helvetica','bold'); doc.setTextColor(...kpi.color);
-    doc.text(kpi.value, x+4, ky+18);
+  kpis.forEach(({label,val,color}, i) => {
+    const x = 14 + i * 62;
+    doc.setFillColor(248,250,252); doc.roundedRect(x, y, 58, 22, 2, 2, 'F');
+    doc.setDrawColor(...color); doc.setLineWidth(0.5);
+    doc.roundedRect(x, y, 58, 22, 2, 2, 'S');
+    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(120,130,145);
+    doc.text(label, x+4, y+7);
+    doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(...color);
+    doc.text(val, x+4, y+17);
   });
-  y += 70;
 
   // Collection rate bar
-  doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(...dark);
-  doc.text('Collection Rate', 10, y+4);
-  doc.setFillColor(226,232,240); doc.roundedRect(10, y+7, 130, 6, 3, 3, 'F');
-  const rate = stats.collectionRate;
-  const barColor = rate>=90?teal:rate>=70?[245,158,11]:red;
-  doc.setFillColor(...barColor); doc.roundedRect(10, y+7, Math.max(rate*1.3,2), 6, 3, 3, 'F');
-  doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...barColor);
-  doc.text(`${rate}%`, 145, y+12);
+  y += 28;
+  doc.setFillColor(226,232,240); doc.roundedRect(14, y, 130, 5, 2, 2, 'F');
+  doc.setFillColor(...rateColor); doc.roundedRect(14, y, Math.max(rate*1.3,2), 5, 2, 2, 'F');
+  doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...rateColor);
+  doc.text(`${rate}% collected`, 150, y+4);
+  y += 14;
 
-  // ── Page 2: Fraud Flags ────────────────────────────────
-  if (fraudFlags.length > 0) {
-    y = addPage('Fraud & Anomaly Flags');
-    const highFlags = fraudFlags.filter(f=>f.severity==='high');
-    const medFlags = fraudFlags.filter(f=>f.severity==='medium');
-    const lowFlags = fraudFlags.filter(f=>f.severity==='low');
-
-    [[highFlags,'HIGH','HIGH-RISK FLAGS',[185,28,28]],[medFlags,'MEDIUM','MEDIUM FLAGS',[180,83,9]],[lowFlags,'LOW','LOW FLAGS',[37,99,235]]].forEach(([flags,sev,title,color])=>{
-      if (!flags.length) return;
-      doc.setFillColor(...color); doc.rect(10,y,190,7,'F');
-      doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
-      doc.text(`${title} (${flags.length})`, 14, y+5);
-      y += 10;
-      autoTable(doc, {
-        startY:y, margin:{left:10,right:10},
-        body: flags.map(f=>[f.type.replace(/_/g,' ').toUpperCase(), f.detail]),
-        styles:{fontSize:8, cellPadding:3},
-        columnStyles:{0:{cellWidth:40, fontStyle:'bold'},1:{cellWidth:148}},
-        alternateRowStyles:{fillColor:[249,250,251]},
-        tableLineColor:[220,220,220], tableLineWidth:0.1,
-      });
-      y = doc.lastAutoTable.finalY + 6;
+  // Mode breakdown
+  const modeBreakdown = {};
+  tenantStatus.forEach(t => t.modes.forEach(m => {
+    modeBreakdown[m] = (modeBreakdown[m]||0) + 1;
+  }));
+  const modeRows = Object.entries(modeBreakdown).map(([mode,count]) => {
+    const amt = tenantStatus.filter(t=>t.modes.includes(mode)).reduce((s,t)=>s+t.paid,0);
+    return [mode.toUpperCase(), `${count} tenants`, formatCurrency(amt)];
+  });
+  if (modeRows.length > 0) {
+    doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...DARK);
+    doc.text('Collection by Payment Mode', 14, y); y += 4;
+    autoTable(doc, {
+      startY:y, margin:{left:14,right:14},
+      head:[['Payment Mode','Tenants','Amount']],
+      body: modeRows,
+      styles:{fontSize:9,cellPadding:3},
+      headStyles:{fillColor:TEAL,textColor:[255,255,255],fontStyle:'bold'},
+      alternateRowStyles:{fillColor:TEAL_LIGHT},
+      tableWidth:100,
     });
-
-    // Notes/resolutions
-    const resolvedNotes = notes.filter(n=>n.status==='resolved'||n.status==='explained');
-    if (resolvedNotes.length > 0) {
-      doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...dark);
-      doc.text('Team Responses & Resolutions', 10, y); y+=4;
-      autoTable(doc,{
-        startY:y, margin:{left:10,right:10},
-        head:[['Type','Issue','Team Response','Status']],
-        body:resolvedNotes.map(n=>[n.note_type,n.flag_reason?.slice(0,30)||'—',n.team_note?.slice(0,60)||'—',n.status.toUpperCase()]),
-        styles:{fontSize:8}, headStyles:{fillColor:[...teal]},
-        alternateRowStyles:{fillColor:[240,253,250]},
-      });
-    }
+    y = doc.lastAutoTable.finalY + 8;
   }
 
-  // ── Page 3: Unpaid & Dues ─────────────────────────────
-  const unpaid = tenantStatus.filter(t=>t.status!=='paid');
-  if (unpaid.length > 0) {
-    y = addPage('Unpaid & Dues');
-    const totalDue = unpaid.reduce((s,t)=>s+t.balance,0);
-    doc.setFillColor(254,226,226); doc.roundedRect(10,y,190,12,2,2,'F');
-    doc.setTextColor(...red); doc.setFontSize(10); doc.setFont('helvetica','bold');
-    doc.text(`Total Outstanding: ${formatCurrency(totalDue)} across ${unpaid.length} tenants`, 14, y+8);
-    y += 18;
-
-    autoTable(doc,{
-      startY:y, margin:{left:10,right:10},
-      head:[['Building','Room','Tenant','Phone','Expected','Paid','Balance','Status','Team Note']],
-      body: unpaid.map(t=>{
-        const note=notes.find(n=>n.tenant_id===t.tenantId&&n.note_type==='unpaid');
-        return [t.building,t.room,t.name,t.phone||'—',`₹${t.expected.toLocaleString()}`,`₹${t.paid.toLocaleString()}`,`₹${t.balance.toLocaleString()}`,t.status.toUpperCase(),note?.team_note?.slice(0,40)||'—'];
-      }),
-      styles:{fontSize:8}, headStyles:{fillColor:[...red]},
-      alternateRowStyles:{fillColor:[255,250,250]},
-      columnStyles:{7:{fontStyle:'bold'},8:{fontSize:7,textColor:[100,116,139]}},
-      didParseCell:(d)=>{
-        if(d.column.index===7){
-          if(d.cell.raw==='UNPAID') d.cell.styles.textColor=[...red];
-          if(d.cell.raw==='PARTIAL') d.cell.styles.textColor=[...amber];
-        }
-        if(d.column.index===6) d.cell.styles.textColor=[...red];
-      }
-    });
-  }
-
-  // ── Page 4: Building Performance ─────────────────────
-  y = addPage('Building-wise Performance');
-  autoTable(doc,{
-    startY:y, margin:{left:10,right:10},
-    head:[['Building','Expected','Collected','Gap','Rate','Paid','Partial','Unpaid','Flags']],
-    body: Object.entries(bSummary).map(([name,b])=>{
-      const rate=b.expected>0?Math.round(b.collected/b.expected*100):0;
-      return [name,`₹${b.expected.toLocaleString()}`,`₹${b.collected.toLocaleString()}`,`₹${(b.expected-b.collected).toLocaleString()}`,`${rate}%`,b.paid,b.partial,b.unpaid,b.flags>0?`⚠ ${b.flags}`:'✓'];
+  // Building breakdown
+  doc.setFontSize(8); doc.setFont('helvetica','bold'); doc.setTextColor(...DARK);
+  doc.text('Building-wise Collection', 14, y); y += 4;
+  autoTable(doc, {
+    startY:y, margin:{left:14,right:14},
+    head:[['Building','Paid','Partial','Unpaid','Collected','Rate']],
+    body: Object.entries(bSummary).map(([name,b]) => {
+      const r = b.expected>0?Math.round(b.collected/b.expected*100):0;
+      return [name, b.paid, b.partial, b.unpaid, formatCurrency(b.collected), `${r}%`];
     }),
-    styles:{fontSize:8,cellPadding:3}, headStyles:{fillColor:[...teal]},
-    alternateRowStyles:{fillColor:[240,253,250]},
+    styles:{fontSize:8,cellPadding:3},
+    headStyles:{fillColor:TEAL,textColor:[255,255,255],fontStyle:'bold'},
+    alternateRowStyles:{fillColor:TEAL_LIGHT},
     didParseCell:(d)=>{
-      if(d.column.index===4){
-        const r=parseInt(d.cell.raw);
-        d.cell.styles.textColor=r>=90?teal:r>=70?amber:red;
+      if(d.column.index===5 && d.section==='body') {
+        const r = parseInt(d.cell.raw);
+        d.cell.styles.textColor = r>=90?TEAL:r>=70?AMBER:RED;
         d.cell.styles.fontStyle='bold';
       }
-      if(d.column.index===8&&d.cell.raw!=='✓') d.cell.styles.textColor=[...red];
     }
   });
-  y = doc.lastAutoTable.finalY + 10;
 
-  // Day-wise bar (simple table version)
-  if (results.dayWiseArr?.length > 0) {
-    doc.setFontSize(11); doc.setFont('helvetica','bold'); doc.setTextColor(...dark);
-    doc.text('Day-wise Collection Pattern', 10, y); y+=6;
-    const maxAmt = Math.max(...results.dayWiseArr.map(d=>d.amount));
-    autoTable(doc,{
-      startY:y, margin:{left:10,right:10},
-      body: results.dayWiseArr.map(d=>[d.date,`₹${d.amount.toLocaleString()}`,d.count,`${maxAmt>0?Math.round(d.amount/maxAmt*100):0}%`]),
-      styles:{fontSize:8}, columnStyles:{0:{cellWidth:25},1:{cellWidth:40,fontStyle:'bold'},2:{cellWidth:15},3:{cellWidth:20}},
-      alternateRowStyles:{fillColor:[240,253,250]},
-    });
-  }
+  // ══ PAGE 2: RENT NOT PAID ══════════════════════════════
+  doc.addPage();
+  // Repeat header bar
+  doc.setFillColor(...TEAL); doc.rect(0,0,210,14,'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text(`CashMyRent — ${month} Audit`, 14, 9);
+  doc.text(`Page 2`, 196, 9, {align:'right'});
+  y = 22;
 
-  // ── Page 5: Collector Analysis ────────────────────────
-  if (collectorStats?.length > 0) {
-    y = addPage('Collector Analysis');
-    autoTable(doc,{
-      startY:y, margin:{left:10,right:10},
-      head:[['Collector','Total Collected','Cash','Digital','Transactions','Cash %','Risk']],
-      body: collectorStats.map(c=>{
-        const cashPct=c.total>0?Math.round(c.cash/c.total*100):0;
-        return [c.name,`₹${c.total.toLocaleString()}`,`₹${c.cash.toLocaleString()}`,`₹${c.digital.toLocaleString()}`,c.count,`${cashPct}%`,cashPct>70&&c.cash>50000?'HIGH CASH':'Normal'];
+  const unpaid = tenantStatus.filter(t=>t.status!=='paid');
+  const totalDue = unpaid.reduce((s,t)=>s+t.balance,0);
+  y = heading('2.  RENT NOT PAID — RECOVERY REQUIRED', y, RED);
+
+  if (unpaid.length === 0) {
+    doc.setFillColor(...TEAL_LIGHT); doc.roundedRect(14,y,182,16,2,2,'F');
+    doc.setFontSize(10); doc.setFont('helvetica','bold'); doc.setTextColor(...TEAL);
+    doc.text('✓  All tenants have paid — no outstanding dues', 14, y+10);
+    y += 22;
+  } else {
+    // Summary box
+    doc.setFillColor(...RED_LIGHT); doc.roundedRect(14,y,182,16,2,2,'F');
+    doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...RED);
+    doc.text(`${unpaid.length} tenants with outstanding dues — Total: ${formatCurrency(totalDue)}`, 18, y+10);
+    y += 20;
+
+    autoTable(doc, {
+      startY:y, margin:{left:14,right:14},
+      head:[['Building','Room','Tenant','Phone','Expected','Paid','Balance Due','Status','Note']],
+      body: unpaid.map(t => {
+        const note = notes.find(n=>n.tenant_id===t.tenantId&&n.note_type==='unpaid');
+        return [
+          t.building, t.room, t.name, t.phone||'—',
+          formatCurrency(t.expected), formatCurrency(t.paid),
+          formatCurrency(t.balance), t.status.toUpperCase(),
+          note?.team_note?.slice(0,35)||'—'
+        ];
       }),
-      styles:{fontSize:9,cellPadding:4}, headStyles:{fillColor:[...teal]},
-      alternateRowStyles:{fillColor:[240,253,250]},
+      styles:{fontSize:7.5,cellPadding:2.5},
+      headStyles:{fillColor:RED,textColor:[255,255,255],fontStyle:'bold'},
+      alternateRowStyles:{fillColor:RED_LIGHT},
+      columnStyles:{8:{fontSize:7,textColor:[120,130,145]}},
       didParseCell:(d)=>{
-        if(d.column.index===6&&d.cell.raw==='HIGH CASH'){d.cell.styles.textColor=[...red];d.cell.styles.fontStyle='bold';}
+        if(d.column.index===7&&d.section==='body'){
+          d.cell.styles.textColor=d.cell.raw==='UNPAID'?RED:AMBER;
+          d.cell.styles.fontStyle='bold';
+        }
+        if(d.column.index===6&&d.section==='body') d.cell.styles.textColor=RED;
       }
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 8;
 
-    doc.setFontSize(9); doc.setFont('helvetica','normal'); doc.setTextColor(100,116,139);
-    doc.text('Note: Collectors handling >70% cash with >₹50,000 are flagged as HIGH CASH risk. Verify physically.', 10, y);
+    // Total row
+    doc.setFillColor(254,226,226); doc.roundedRect(14,y,182,12,2,2,'F');
+    doc.setFontSize(9); doc.setFont('helvetica','bold'); doc.setTextColor(...RED);
+    doc.text('Total outstanding dues to recover:', 18, y+8);
+    doc.text(formatCurrency(totalDue), 192, y+8, {align:'right'});
   }
 
-  // ── Page 6: Bank Reconciliation ───────────────────────
-  y = addPage('Bank Reconciliation Summary');
-  const unmatchedTotal = results.unmatchedBank.reduce((s,t)=>s+t.credit,0);
-  if (results.unmatchedBank.length > 0) {
-    doc.setFillColor(254,226,226); doc.roundedRect(10,y,190,14,2,2,'F');
-    doc.setTextColor(...red); doc.setFontSize(10); doc.setFont('helvetica','bold');
-    doc.text(`${results.unmatchedBank.length} unmatched bank credits totalling ${formatCurrency(unmatchedTotal)}`, 14, y+9);
-    y += 20;
-    autoTable(doc,{
-      startY:y, margin:{left:10,right:10},
-      head:[['Date','Bank','Narration','Amount','Note']],
-      body: results.unmatchedBank.map(t=>{
-        const note=notes.find(n=>n.bank_narration===t.narration);
-        return [t.date,t.bank,t.narration.slice(0,60),`₹${t.credit.toLocaleString()}`,note?.team_note?.slice(0,40)||'UNEXPLAINED'];
-      }),
-      styles:{fontSize:8}, headStyles:{fillColor:[...red]},
-      columnStyles:{4:{fontStyle:'bold'}},
-      didParseCell:(d)=>{if(d.column.index===4&&d.cell.raw==='UNEXPLAINED')d.cell.styles.textColor=[...red];}
-    });
-  } else {
-    doc.setFillColor(240,253,250); doc.roundedRect(10,y,190,20,2,2,'F');
-    doc.setTextColor(...teal); doc.setFontSize(12); doc.setFont('helvetica','bold');
-    doc.text('✓ All bank credits matched to collection entries', 105, y+13, {align:'center'});
-  }
+  // ══ PAGE 3: PATTERNS & ALERTS ══════════════════════════
+  doc.addPage();
+  doc.setFillColor(...TEAL); doc.rect(0,0,210,14,'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text(`CashMyRent — ${month} Audit`, 14, 9);
+  doc.text(`Page 3`, 196, 9, {align:'right'});
+  y = 22;
 
-  // ── Footer all pages ──────────────────────────────────
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i=1;i<=pageCount;i++) {
-    doc.setPage(i);
-    doc.setFillColor(248,250,252); doc.rect(0,285,210,12,'F');
-    doc.setDrawColor(226,232,240); doc.setLineWidth(0.3); doc.line(0,285,210,285);
-    doc.setFontSize(7); doc.setFont('helvetica','normal'); doc.setTextColor(148,163,184);
-    doc.text('CONFIDENTIAL — MMR / Rent N Stay — Internal Audit Document', 10, 291);
-    doc.text(`${month} | ${new Date().toLocaleDateString('en-IN')} | Page ${i} of ${pageCount}`, 200, 291, {align:'right'});
-  }
+  // Section 3: Patterns
+  y = heading('3.  PATTERNS NOTICED', y, DARK);
 
-  doc.save(`MMR_Audit_${month}.pdf`);
-  toast.success('Professional PDF report downloaded');
+  const patterns = [];
+  // Cash concentration
+  const cashTotal = tenantStatus.filter(t=>t.modes.includes('cash')).reduce((s,t)=>s+t.paid,0);
+  const totalColl = stats.totalCollected;
+  if (cashTotal > 0) {
+    const cashPct = Math.round(cashTotal/totalColl*100);
+    patterns.push([
+      cashPct > 50 ? '⚠ HIGH CASH' : '📊 Cash split',
+      `${cashPct}% of collections (${formatCurrency(cashTotal)}) were in cash. ${cashPct>50?'High cash concentration — verify with daily reconciliation.':'Normal split.'}`
+    ]);
+  }
+  // Late payers (partial)
+  if (stats.partialCount > 0) {
+    patterns.push(['📊 Partial payments', `${stats.partialCount} tenant(s) made partial payments. Total balance pending: ${formatCurrency(tenantStatus.filter(t=>t.status==='partial').reduce((s,t)=>s+t.balance,0))}`]);
+  }
+  // Building with lowest collection rate
+  const lowestBuilding = Object.entries(bSummary).sort((a,b)=>{
+    const ra = a[1].expected>0?a[1].collected/a[1].expected:1;
+    const rb = b[1].expected>0?b[1].collected/b[1].expected:1;
+    return ra-rb;
+  })[0];
+  if (lowestBuilding) {
+    const [bName, bData] = lowestBuilding;
+    const bRate = bData.expected>0?Math.round(bData.collected/bData.expected*100):100;
+    if (bRate < 95) patterns.push(['📍 Attention building', `${bName} has the lowest collection rate at ${bRate}%. ${bData.unpaid} unpaid, ${bData.partial} partial.`]);
+  }
+  // Mode fraud
+  const modeFraud = fraudFlags.filter(f=>f.type==='mode_fraud');
+  if (modeFraud.length > 0) patterns.push(['🔴 Mode mismatch', `${modeFraud.length} payment(s) logged as cash but found in bank statement. Needs investigation.`]);
+  // Ghost
+  const ghosts = fraudFlags.filter(f=>f.type==='ghost_payment');
+  if (ghosts.length > 0) patterns.push(['🔴 Ghost payments', `${ghosts.length} digital payment(s) logged in app but NOT found in bank. Possible fabrication.`]);
+  // Clean
+  if (patterns.length === 0) patterns.push(['✓ All clear', 'No unusual patterns detected this month.']);
+
+  autoTable(doc, {
+    startY:y, margin:{left:14,right:14},
+    body: patterns,
+    styles:{fontSize:9,cellPadding:4},
+    columnStyles:{0:{cellWidth:40,fontStyle:'bold'},1:{cellWidth:142}},
+    alternateRowStyles:{fillColor:[248,250,252]},
+    didParseCell:(d)=>{
+      if(d.column.index===0&&d.section==='body'){
+        if(d.cell.raw.includes('🔴')) d.cell.styles.textColor=RED;
+        else if(d.cell.raw.includes('⚠')) d.cell.styles.textColor=AMBER;
+        else if(d.cell.raw.includes('✓')) d.cell.styles.textColor=TEAL;
+      }
+    }
+  });
+  y = doc.lastAutoTable.finalY + 12;
+
+  // Section 4: Alerts
+  y = heading('4.  ALERTS', y, AMBER);
+
+  const alerts = [];
+  const highFlags = fraudFlags.filter(f=>f.severity==='high');
+  if (highFlags.length > 0) {
+    highFlags.forEach(f => alerts.push(['🔴 HIGH', f.title, f.detail.slice(0,80)]));
+  }
+  const medFlags = fraudFlags.filter(f=>f.severity==='medium');
+  if (medFlags.length > 0) {
+    medFlags.forEach(f => alerts.push(['🟡 MEDIUM', f.title, f.detail.slice(0,80)]));
+  }
+  if (results.unmatchedBank?.length > 0) {
+    alerts.push(['🔴 HIGH', 'Unmatched bank credits', `${results.unmatchedBank.length} credit(s) in bank with no matching collection entry`]);
+  }
+  if (alerts.length === 0) alerts.push(['✓ None', 'No alerts this month', 'Audit looks clean.']);
+
+  autoTable(doc, {
+    startY:y, margin:{left:14,right:14},
+    head:[['Severity','Alert','Detail']],
+    body: alerts,
+    styles:{fontSize:8,cellPadding:3},
+    headStyles:{fillColor:AMBER,textColor:[255,255,255],fontStyle:'bold'},
+    columnStyles:{0:{cellWidth:24},1:{cellWidth:52},2:{cellWidth:106}},
+    alternateRowStyles:{fillColor:[255,251,235]},
+    didParseCell:(d)=>{
+      if(d.column.index===0&&d.section==='body'){
+        if(d.cell.raw.includes('HIGH')) d.cell.styles.textColor=RED;
+        else if(d.cell.raw.includes('MEDIUM')) d.cell.styles.textColor=AMBER;
+        else d.cell.styles.textColor=TEAL;
+        d.cell.styles.fontStyle='bold';
+      }
+    }
+  });
+
+  footer();
+  doc.save(`CashMyRent_Audit_${month}.pdf`);
+  toast.success('Audit report downloaded');
+}
+
+
+// ── Building-wise Mode Collection Excel ──────────────
+function downloadModeCollectionExcel(tenantStatus, month) {
+  const wb = XLSX.utils.book_new();
+
+  // Group by building
+  const byBuilding = {};
+  tenantStatus.forEach(t => {
+    if (!byBuilding[t.building]) byBuilding[t.building] = [];
+    byBuilding[t.building].push(t);
+  });
+
+  // One sheet per building
+  Object.entries(byBuilding).forEach(([building, tenants]) => {
+    const rows = [
+      [`${building} — Payment Mode Report — ${month}`, '', '', '', '', '', ''],
+      ['Room', 'Tenant', 'Phone', 'Rent (₹)', 'Paid (₹)', 'Balance (₹)', 'Payment Mode', 'In Bank', 'Status'],
+      ...tenants.map(t => [
+        t.room, t.name, t.phone || '—',
+        t.expected, t.paid,
+        t.balance > 0 ? t.balance : 0,
+        t.modes.join(', ') || '—',
+        t.inBank ? `Yes — ₹${t.bankAmount?.toLocaleString('en-IN')||0}` : t.modes.includes('cash') ? 'Cash (offline)' : '—',
+        t.status.toUpperCase(),
+      ]),
+      // Totals
+      ['TOTAL', '', '',
+        tenants.reduce((s,t)=>s+t.expected,0),
+        tenants.reduce((s,t)=>s+t.paid,0),
+        tenants.reduce((s,t)=>s+t.balance,0),
+        '', '', ''
+      ],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+
+    // Column widths
+    ws['!cols'] = [{wch:8},{wch:22},{wch:13},{wch:12},{wch:12},{wch:12},{wch:18},{wch:20},{wch:10}];
+    // Merge title row
+    ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:8}}];
+
+    XLSX.utils.book_append_sheet(wb, ws, building.slice(0,28));
+  });
+
+  // Summary sheet
+  const summaryRows = [
+    [`Payment Mode Summary — ${month}`, '', '', '', ''],
+    ['Building', 'RentOK', 'Cash', 'Other/Bank', 'Total Collected'],
+    ...Object.entries(byBuilding).map(([b, tenants]) => {
+      const rentok = tenants.filter(t=>t.modes.includes('rentok')).reduce((s,t)=>s+t.paid,0);
+      const cash = tenants.filter(t=>t.modes.includes('cash')&&!t.modes.includes('rentok')).reduce((s,t)=>s+t.paid,0);
+      const other = tenants.filter(t=>!t.modes.includes('rentok')&&!t.modes.includes('cash')&&t.paid>0).reduce((s,t)=>s+t.paid,0);
+      return [b, rentok||'—', cash||'—', other||'—', tenants.reduce((s,t)=>s+t.paid,0)];
+    }),
+  ];
+  const summaryWs = XLSX.utils.aoa_to_sheet(summaryRows);
+  summaryWs['!cols'] = [{wch:28},{wch:14},{wch:14},{wch:14},{wch:16}];
+  summaryWs['!merges'] = [{s:{r:0,c:0},e:{r:0,c:4}}];
+  XLSX.utils.book_append_sheet(wb, summaryWs, 'Mode Summary');
+
+  XLSX.writeFile(wb, `CashMyRent_ModeCollection_${month}.xlsx`);
+  toast.success('Mode collection report downloaded');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -994,6 +1079,9 @@ export default function Audit() {
                   <Download className="w-3.5 h-3.5 text-surface-500"/> All Flags ({results.fraudFlags.length})
                 </button>
                 <div className="border-t border-surface-100 my-1"/>
+                <button onClick={()=>downloadModeCollectionExcel(results.tenantStatus,selectedMonth)} className="px-4 py-2.5 text-sm text-left hover:bg-emerald-50 text-emerald-700 flex items-center gap-2">
+                  <Download className="w-3.5 h-3.5"/> Mode Collection (Building-wise)
+                </button>
                 <button onClick={()=>generatePDF(results,notes,selectedMonth)} className="px-4 py-2.5 text-sm text-left hover:bg-brand-50 text-brand-700 flex items-center gap-2">
                   <FileText className="w-3.5 h-3.5"/> Full PDF Report
                 </button>
