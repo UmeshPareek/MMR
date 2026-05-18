@@ -20,7 +20,8 @@ const TITLES = {
   '/security-deposits': 'Security Deposits',
   '/audit': 'Audit',
   '/platform-admin': 'Platform Admin',
-  '/checkinout': 'Check In / Check Out',
+  '/checkin': 'Check In',
+  '/checkout': 'Check Out',
   '/settings': 'Settings',
 }
 
