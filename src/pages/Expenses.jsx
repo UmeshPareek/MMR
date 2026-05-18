@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, fmtDate, currentMonth, EXPENSE_CATEGORIES, exportToExcel } from '@/utils/helpers'
+import { formatCurrency, fmtDate, currentMonth, exportToExcel } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, SearchInput } from '@/components/ui'
 import { TrendingDown, Plus, Download, Filter } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -8,7 +8,25 @@ import { useAuth } from '@/contexts/AuthContext'
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 
 const PAYMENT_MODES = ['cash', 'upi', 'bank_transfer', 'card', 'other']
-const CAT_COLORS = { marketing: '#f59e0b', wifi: '#3b82f6', maintenance: '#8b5cf6', cleaning: '#10b981', transport: '#f97316', office: '#06b6d4', legal: '#ec4899', misc: '#94a3b8' }
+const EXPENSE_CATEGORIES = [
+  { value:'marketing_leads', label:'Marketing - Leads', icon:'📣' },
+  { value:'garbage', label:'Garbage Collection', icon:'🗑️' },
+  { value:'power_bill', label:'Power Bill', icon:'⚡' },
+  { value:'water_bill', label:'Water Bill', icon:'💧' },
+  { value:'wifi', label:'WiFi Bill', icon:'📶' },
+  { value:'generator_diesel', label:'Generator Diesel', icon:'⛽' },
+  { value:'generator_rent', label:'Generator Rent', icon:'🔌' },
+  { value:'maintenance', label:'Repair & Maintenance', icon:'🔧' },
+  { value:'incentives', label:'Incentives', icon:'🎯' },
+  { value:'parking', label:'Car Parking Rent', icon:'🅿️' },
+  { value:'staff_expenses', label:'Staff Reimbursements', icon:'👤' },
+  { value:'transport', label:'Transportation', icon:'🚗' },
+  { value:'painting', label:'Painting Charges', icon:'🖌️' },
+  { value:'other_expenses', label:'Other Expenses', icon:'📦' },
+  { value:'misc', label:'Others', icon:'🔹' },
+]
+
+const CAT_COLORS = { marketing_leads:'#f59e0b', wifi:'#3b82f6', maintenance:'#8b5cf6', garbage:'#6b7280', power_bill:'#eab308', water_bill:'#3b82f6', generator_diesel:'#f97316', generator_rent:'#fb923c', incentives:'#10b981', parking:'#64748b', staff_expenses:'#a855f7', transport:'#f97316', painting:'#ec4899', other_expenses:'#94a3b8', misc:'#94a3b8' }
 
 const defaultForm = () => ({
   category: 'misc', description: '', amount: '', payment_mode: 'upi',
