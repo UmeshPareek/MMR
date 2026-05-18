@@ -39,6 +39,15 @@ export default function CheckIn() {
     setLoading(false)
   }
 
+  async function deleteCheckin(t) {
+    if (!window.confirm(`Delete check-in for ${t.full_name}? Flat will be restored to vacant.`)) return
+    const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+    if (error) return toast.error(error.message)
+    if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+    toast.success('Check-in deleted ✓')
+    loadAll()
+  }
+
   async function loadVacantFlats(buildingId) {
     const { data } = await supabase.from('flats')
       .select('id,door_number,monthly_rent')
@@ -94,7 +103,7 @@ export default function CheckIn() {
           ? <EmptyState icon={Home} title="No active tenants" description="Check in your first tenant to get started" />
           : (
             <table className="data-table">
-              <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Move In</th><th>Rent</th><th>Deposit</th><th>Type</th></tr></thead>
+              <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Move In</th><th>Rent</th><th>Deposit</th><th>Type</th><th></th></tr></thead>
               <tbody>
                 {activeTenants.map(t => (
                   <tr key={t.id}>
@@ -110,6 +119,12 @@ export default function CheckIn() {
                     <td className="font-mono">{formatCurrency(t.monthly_rent)}</td>
                     <td className="font-mono text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
                     <td><span className={`badge border text-xs ${t.rent_type==='postpaid'?'bg-amber-50 text-amber-700 border-amber-200':'bg-brand-50 text-brand-700 border-brand-200'}`}>{t.rent_type==='postpaid'?'Postpaid':'Prepaid'}</span></td>
+                    <td>
+                      <button onClick={() => deleteCheckin(t)} title="Delete wrong check-in"
+                        className="btn-ghost p-1.5 text-surface-300 hover:text-red-500 transition-colors">
+                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
