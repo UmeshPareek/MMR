@@ -25,18 +25,34 @@ export default function CheckOut() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: b }, { data: t }, { data: ex }] = await Promise.all([
-      supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
-      supabase.from('tenants')
-        .select('id,full_name,phone,monthly_rent,security_deposit_paid,move_in_date,flat_id,building_id,flat:flats(door_number),building:buildings(name)')
-        .eq('status','active').order('full_name'),
-      supabase.from('tenants')
-        .select('id,full_name,phone,move_out_date,flat_id,building_id,notes,flat:flats(door_number),building:buildings(name)')
-        .eq('status','inactive').order('move_out_date', { ascending: false }).limit(50),
-    ])
-    setBuildings(b || [])
-    setTenants(t || [])
-    setRecentExits(ex || [])
+    try {
+      // Use same pattern as working Tenants page — select * then join manually
+      const [{ data: b }, { data: t }, { data: ex }, { data: allFlats }, { data: allBuildings }] = await Promise.all([
+        supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
+        supabase.from('tenants').select('*').eq('status','active').order('full_name'),
+        supabase.from('tenants').select('*').eq('status','inactive').order('move_out_date', { ascending: false }).limit(50),
+        supabase.from('flats').select('id,door_number'),
+        supabase.from('buildings').select('id,name'),
+      ])
+
+      const flatMap = {}
+      ;(allFlats||[]).forEach(f => { flatMap[f.id] = f })
+      const buildingMap = {}
+      ;(allBuildings||[]).forEach(b => { buildingMap[b.id] = b })
+
+      const enrich = arr => (arr||[]).map(t => ({
+        ...t,
+        flat: flatMap[t.flat_id] || null,
+        building: buildingMap[t.building_id] || null,
+      }))
+
+      setBuildings(b || [])
+      setTenants(enrich(t))
+      setRecentExits(enrich(ex))
+    } catch(e) {
+      console.error('CheckOut loadAll error:', e)
+      toast.error('Failed to load tenants')
+    }
     setLoading(false)
   }
 
