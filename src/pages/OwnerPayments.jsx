@@ -66,9 +66,11 @@ export default function OwnerPayments() {
   }
 
   async function save() {
-    if (!form.owner_id || !form.building_id || !form.amount) return toast.error('Owner, building and amount are required')
+    if (!form.building_id || !form.amount) return toast.error('Building and amount are required')
     setSaving(true)
-    const { error } = await supabase.from('owner_payments').insert({ ...form, amount: parseFloat(form.amount), paid_by: profile?.id })
+    const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id }
+    if (!payload.owner_id) delete payload.owner_id
+    const { error } = await supabase.from('owner_payments').insert(payload)
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Owner payment recorded ✓')
