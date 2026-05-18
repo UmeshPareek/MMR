@@ -22,14 +22,20 @@ export default function CheckIn() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: b }, { data: t }] = await Promise.all([
-      supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
-      supabase.from('tenants')
-        .select('id,full_name,phone,monthly_rent,security_deposit_paid,move_in_date,rent_type,flat_id,building_id,flat:flats(door_number),building:buildings(name)')
-        .eq('status','active').order('full_name'),
-    ])
-    setBuildings(b || [])
-    setActiveTenants(t || [])
+    try {
+      const [{ data: b }, { data: t }, { data: allFlats }, { data: allBuildings }] = await Promise.all([
+        supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
+        supabase.from('tenants').select('*').eq('status','active').order('full_name'),
+        supabase.from('flats').select('id,door_number'),
+        supabase.from('buildings').select('id,name'),
+      ])
+      const flatMap = {}
+      ;(allFlats||[]).forEach(f => { flatMap[f.id] = f })
+      const buildingMap = {}
+      ;(allBuildings||[]).forEach(b => { buildingMap[b.id] = b })
+      setBuildings(b || [])
+      setActiveTenants((t||[]).map(t => ({ ...t, flat: flatMap[t.flat_id]||null, building: buildingMap[t.building_id]||null })))
+    } catch(e) { console.error(e) }
     setLoading(false)
   }
 
