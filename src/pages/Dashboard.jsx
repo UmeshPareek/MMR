@@ -28,8 +28,12 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_salaries' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_advances' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meter_readings' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'security_deposits' }, () => load())
       .subscribe()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [month])
