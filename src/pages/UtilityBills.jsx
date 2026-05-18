@@ -23,7 +23,8 @@ export default function UtilityBills() {
 
   // Reading modal
   const [readingModal, setReadingModal] = useState(false)
-  const [rForm, setRForm] = useState({ building_id: '', flat_id: '', reading_type: 'electricity', reading_value: '', reading_date: new Date().toISOString().slice(0,10), for_month: currentMonth(), is_common_area: false, notes: '' })
+  const [rForm, setRForm] = useState({ building_id: '', flat_id: '', reading_type: 'electricity', reading_value: '', reading_date: new Date().toISOString().slice(0,10), for_month: currentMonth(), is_common_area: false, notes: '', payment_collected: false, payment_mode: 'cash' })
+  const [isFirstReading, setIsFirstReading] = useState(false)
   const [prevReading, setPrevReading] = useState(null)
   const [rFlats, setRFlats] = useState([])
   const [saving, setSaving] = useState(false)
@@ -70,7 +71,14 @@ export default function UtilityBills() {
       .eq('flat_id', flatId).eq('reading_type', type)
       .lt('for_month', month)
       .order('for_month', { ascending: false }).limit(1)
-    setPrevReading(data?.[0] || null)
+    if (data && data.length > 0) {
+      setPrevReading(data[0])
+      setIsFirstReading(false)
+    } else {
+      // First reading ever — start from 0, allow manual entry
+      setPrevReading({ reading_value: '0', for_month: 'first reading' })
+      setIsFirstReading(true)
+    }
   }
 
   async function saveReading() {
@@ -88,6 +96,7 @@ export default function UtilityBills() {
       rate_per_unit: rate,
       is_common_area: rForm.is_common_area,
       notes: rForm.notes,
+      payment_collected: rForm.payment_collected,
       created_by: profile?.id
     }
     const { error } = editReading
@@ -97,8 +106,8 @@ export default function UtilityBills() {
     if (error) return toast.error(error.message)
     toast.success(editReading ? 'Reading updated' : 'Reading saved ✓')
     setReadingModal(false); setEditReading(null)
-    setRForm({ building_id:'', flat_id:'', reading_type:'electricity', reading_value:'', reading_date:new Date().toISOString().slice(0,10), for_month:currentMonth(), is_common_area:false, notes:'' })
-    setPrevReading(null); loadAll()
+    setRForm({ building_id:'', flat_id:'', reading_type:'electricity', reading_value:'', reading_date:new Date().toISOString().slice(0,10), for_month:currentMonth(), is_common_area:false, notes:'', payment_collected:false, payment_mode:'cash' })
+    setPrevReading(null); setIsFirstReading(false); loadAll()
   }
 
   async function saveBill() {
@@ -247,6 +256,7 @@ export default function UtilityBills() {
                     <td className="text-xs text-surface-500">₹{r.rate_per_unit}/u</td>
                     <td className="text-right font-mono font-semibold text-amber-700">{formatCurrency(r.amount_charged)}</td>
                     <td className="text-xs text-surface-500">{fmtDate(r.reading_date)}</td>
+                    <td>{r.payment_collected ? <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">Paid</span> : r.is_common_area ? <span className="text-surface-300 text-xs">—</span> : <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">Pending</span>}</td>
                     <td>
                       <div className="flex gap-1">
                         <button onClick={() => { setEditReading(r); setRForm({ building_id:r.building_id, flat_id:r.flat_id||'', reading_type:r.reading_type, reading_value:r.reading_value, reading_date:r.reading_date, for_month:r.for_month, is_common_area:r.is_common_area, notes:r.notes||'' }); setPrevReading({ reading_value:r.previous_reading }); loadFlats(r.building_id); setReadingModal(true) }}
@@ -314,7 +324,12 @@ export default function UtilityBills() {
             <label className="label">Building *</label>
             <select className="select" value={rForm.building_id} onChange={e => { setRForm(p=>({...p,building_id:e.target.value,flat_id:''})); loadFlats(e.target.value) }}>
               <option value="">— Select building —</option>
-              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {buildings
+                .filter(b => rForm.reading_type === 'electricity' ? b.electricity_reading_enabled : b.water_reading_enabled)
+                .map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {buildings.filter(b => rForm.reading_type === 'electricity' ? b.electricity_reading_enabled : b.water_reading_enabled).length === 0 && (
+                <option disabled>No buildings have {rForm.reading_type} readings enabled — enable in Settings</option>
+              )}
             </select>
           </div>
           <div className="form-group">
@@ -335,16 +350,26 @@ export default function UtilityBills() {
 
           {/* Previous reading display */}
           {prevReading && (
-            <div className="col-span-2 p-3 bg-surface-50 rounded-lg border border-surface-200 text-sm">
-              <span className="text-surface-500">Previous reading ({prevReading.for_month || 'last month'}): </span>
-              <span className="font-mono font-bold text-surface-800">{prevReading.reading_value} units</span>
+            <div className={`col-span-2 p-3 rounded-lg border text-sm ${isFirstReading ? 'bg-amber-50 border-amber-200' : 'bg-surface-50 border-surface-200'}`}>
+              {isFirstReading ? (
+                <p className="text-amber-700 font-medium">⚡ First reading for this flat — enter the opening meter reading below. It will be used as the baseline going forward.</p>
+              ) : (
+                <>
+                  <span className="text-surface-500">Previous reading ({prevReading.for_month}): </span>
+                  <span className="font-mono font-bold text-surface-800">{prevReading.reading_value} units</span>
+                </>
+              )}
             </div>
           )}
 
           <div className="form-group">
-            <label className="label">Previous Reading {!prevReading ? '(manual)' : '(auto-filled)'}</label>
-            <input type="number" className="input font-mono" value={prevReading?.reading_value || '0'} readOnly={!!prevReading}
-              onChange={e => !prevReading && setPrevReading({ reading_value: e.target.value })} />
+            <label className="label">
+              Previous Reading {isFirstReading ? '— enter opening reading' : '(auto-filled from last month)'}
+            </label>
+            <input type="number" className={`input font-mono ${!isFirstReading && prevReading ? 'bg-surface-50 text-surface-500' : ''}`}
+              value={prevReading?.reading_value || '0'}
+              readOnly={!isFirstReading && !!prevReading}
+              onChange={e => (isFirstReading || !prevReading) && setPrevReading({ reading_value: e.target.value, for_month: 'opening' })} />
           </div>
           <div className="form-group">
             <label className="label">Current Reading *</label>
@@ -358,6 +383,31 @@ export default function UtilityBills() {
             <label className="label">Notes</label>
             <input className="input" value={rForm.notes} onChange={e => setRForm(p=>({...p,notes:e.target.value}))} placeholder="Optional" />
           </div>
+
+          {/* Payment status */}
+          {!rForm.is_common_area && (
+            <div className="col-span-2">
+              <label className="label mb-2">Payment Status</label>
+              <div className="flex gap-3">
+                <button type="button" onClick={() => setRForm(p=>({...p,payment_collected:false}))}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border-2 transition-all ${!rForm.payment_collected?'border-amber-400 bg-amber-50 text-amber-700':'border-surface-200 text-surface-500'}`}>
+                  ⏳ Payment Pending
+                </button>
+                <button type="button" onClick={() => setRForm(p=>({...p,payment_collected:true}))}
+                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium border-2 transition-all ${rForm.payment_collected?'border-emerald-400 bg-emerald-50 text-emerald-700':'border-surface-200 text-surface-500'}`}>
+                  ✓ Payment Collected
+                </button>
+              </div>
+              {rForm.payment_collected && (
+                <div className="mt-2">
+                  <label className="label">Payment Mode</label>
+                  <select className="select" value={rForm.payment_mode} onChange={e => setRForm(p=>({...p,payment_mode:e.target.value}))}>
+                    {['cash','upi','bank_transfer','other'].map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
+                  </select>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Live calculation preview */}
           {rForm.reading_value && (prevReading || rForm.reading_value > 0) && (
