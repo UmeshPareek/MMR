@@ -50,7 +50,7 @@ export default function Expenses() {
   const [uForm, setUForm] = useState({ building_id: '', utility_type: 'electricity', vendor: '', bill_number: '', amount: '', payment_mode: 'online', bill_date: '', payment_date: new Date().toISOString().split('T')[0], for_month: currentMonth(), transaction_ref: '', notes: '' })
   const [saving, setSaving] = useState(false)
   const [chartData, setChartData] = useState([])
-  const [quickRow, setQuickRow] = useState({ category: 'misc', description: '', amount: '', mode: 'upi', building_id: '' })
+  const [quickRow, setQuickRow] = useState({ category: 'misc', description: '', amount: '', mode: 'upi', building_id: '', date: new Date().toISOString().slice(0,10) })
   const [bulkUtilModal, setBulkUtilModal] = useState(false)
   const [bulkForm, setBulkForm] = useState({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: '', vendor: '', bill_number: '' })
 
@@ -100,7 +100,7 @@ export default function Expenses() {
     const { error } = await supabase.from('expenses').insert({
       category: row.category, description: row.description,
       amount: parseFloat(row.amount), payment_mode: row.mode,
-      expense_date: new Date().toISOString().slice(0,10),
+      expense_date: row.date || new Date().toISOString().slice(0,10),
       building_id: row.building_id || null, paid_by: profile?.id
     })
     if (error) return toast.error(error.message)
@@ -187,6 +187,7 @@ export default function Expenses() {
                 onKeyDown={e => e.key==='Enter' && quickSave(quickRow)} />
               <input type="number" className="input py-1.5 text-sm w-28" placeholder="Amount ₹ *" value={quickRow.amount} onChange={e => setQuickRow(p=>({...p,amount:e.target.value}))}
                 onKeyDown={e => e.key==='Enter' && quickSave(quickRow)} />
+              <input type="date" className="input py-1.5 text-sm w-36" value={quickRow.date} onChange={e => setQuickRow(p=>({...p,date:e.target.value}))} />
               <select className="select py-1.5 text-xs w-24" value={quickRow.mode} onChange={e => setQuickRow(p=>({...p,mode:e.target.value}))}>
                 {PAYMENT_MODES.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
               </select>
