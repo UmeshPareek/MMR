@@ -20,6 +20,7 @@ import UtilityBills from '@/pages/UtilityBills'
 import SecurityDeposits from '@/pages/SecurityDeposits'
 import DailyCollection from '@/pages/DailyCollection'
 import SuperAdmin from '@/pages/SuperAdmin'
+import CheckInOut from '@/pages/CheckInOut'
 import DailyReconciliation from '@/pages/DailyReconciliation'
 
 function ProtectedRoute({ children, adminOnly = false, superOnly = false }) {
@@ -75,6 +76,7 @@ function AppRoutes() {
         <Route path="/security-deposits" element={<SecurityDeposits />} />
         <Route path="/daily-collection" element={<DailyCollection />} />
         <Route path="/platform-admin" element={<SuperAdmin />} />
+        <Route path="/checkinout" element={<CheckInOut />} />
         <Route path="/daily-reconciliation" element={<DailyReconciliation />} />
         <Route path="/audit" element={<ProtectedRoute superOnly><Audit /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
