@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth, exportToExcel } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, SearchInput } from '@/components/ui'
@@ -36,6 +36,7 @@ const defaultForm = () => ({
 
 export default function Expenses() {
   const { profile } = useAuth()
+  const channelRef = useRef(null)
   const [expenses, setExpenses] = useState([])
   const [utilityBills, setUtilityBills] = useState([])
   const [buildings, setBuildings] = useState([])
@@ -54,7 +55,15 @@ export default function Expenses() {
   const [bulkUtilModal, setBulkUtilModal] = useState(false)
   const [bulkForm, setBulkForm] = useState({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: '', vendor: '', bill_number: '' })
 
-  useEffect(() => { loadExpenses(); loadBuildings() }, [filterMonth, filterCategory, tab])
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('expenses-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_groups' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [filterMonth, filterCategory, tab])
 
   async function loadExpenses() {
     setLoading(true)
