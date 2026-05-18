@@ -1,400 +1,231 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
-import { initials } from '../utils/helpers';
-import toast from 'react-hot-toast';
-import {
-  Settings as SettingsIcon, Users, UserPlus, Pencil, Trash2,
-  Key, User, Shield, Eye, EyeOff, RefreshCw, CheckCircle2
-} from 'lucide-react';
-
-const ROLES = [
-  { value: 'super_admin', label: 'Super Admin', desc: 'Full access including Audit', color: 'text-brand-500' },
-  { value: 'admin', label: 'Admin', desc: 'All features except Audit', color: 'text-blue-400' },
-  { value: 'team', label: 'Team', desc: 'Data entry only', color: 'text-green-400' },
-];
-
-function RoleBadge({ role }) {
-  const map = {
-    super_admin: 'bg-brand-500/20 text-brand-500 border border-brand-500/30',
-    admin: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-    team: 'bg-green-500/20 text-green-400 border border-green-500/30',
-  };
-  const labels = { super_admin: 'Super Admin', admin: 'Admin', team: 'Team' };
-  return <span className={`badge ${map[role] || 'badge'}`}>{labels[role] || role}</span>;
-}
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { formatCurrency } from '@/utils/helpers'
+import { Modal, Spinner } from '@/components/ui'
+import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useAuth } from '@/contexts/AuthContext'
 
 export default function Settings() {
-  const { profile, isSuperAdmin, isAdmin } = useAuth();
-  const [activeTab, setActiveTab] = useState('users');
-  const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [showPass, setShowPass] = useState(false);
+  const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const [tab, setTab] = useState('rates')
+  const [settings, setSettings] = useState({})
+  const [buildings, setBuildings] = useState([])
+  const [expGroups, setExpGroups] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-  // Add user form
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [addForm, setAddForm] = useState({ email: '', full_name: '', role: 'team', password: '' });
+  // Modals
+  const [groupModal, setGroupModal] = useState(false)
+  const [groupForm, setGroupForm] = useState({ name: '', icon: '📌', color: '#94a3b8' })
+  const [editGroup, setEditGroup] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  // Edit user
-  const [editingId, setEditingId] = useState(null);
-  const [editRole, setEditRole] = useState('team');
+  useEffect(() => { loadAll() }, [])
 
-  // Password change
-  const [pwdForm, setPwdForm] = useState({ newPwd: '', confirm: '' });
-
-  useEffect(() => {
-    if (isSuperAdmin || isAdmin) fetchUsers();
-  }, [isSuperAdmin, isAdmin]);
-
-  async function fetchUsers() {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, full_name, email, role, is_active, created_at')
-      .order('created_at', { ascending: false });
-    if (error) toast.error('Failed to load users: ' + error.message);
-    else setUsers(data || []);
-    setLoading(false);
+  async function loadAll() {
+    setLoading(true)
+    const [{ data: s }, { data: b }, { data: g }] = await Promise.all([
+      supabase.from('master_settings').select('*'),
+      supabase.from('buildings').select('id, name, is_active, electricity_reading_enabled, water_reading_enabled').order('name'),
+      supabase.from('expense_groups').select('*').eq('is_active', true).order('name'),
+    ])
+    const settingsMap = {}
+    ;(s || []).forEach(r => { settingsMap[r.setting_key] = r.setting_value })
+    setSettings(settingsMap)
+    setBuildings(b || [])
+    setExpGroups(g || [])
+    setLoading(false)
   }
 
-  async function handleAddUser(e) {
-    e.preventDefault();
-    if (!addForm.email || !addForm.full_name || !addForm.password) return toast.error('All fields required');
-    if (addForm.password.length < 6) return toast.error('Password must be at least 6 characters');
-    setSaving(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: addForm.email,
-        password: addForm.password,
-        options: { data: { full_name: addForm.full_name, role: addForm.role } },
-      });
-      if (error) throw error;
-      if (data.user) {
-        // Upsert profile directly
-        const { error: profileError } = await supabase.from('profiles').upsert({
-          id: data.user.id,
-          email: addForm.email,
-          full_name: addForm.full_name,
-          role: addForm.role,
-          is_active: true,
-        });
-        if (profileError) console.warn('Profile upsert warning:', profileError.message);
-      }
-      toast.success('User created successfully');
-      setShowAddUser(false);
-      setAddForm({ email: '', full_name: '', role: 'team', password: '' });
-      setTimeout(fetchUsers, 1000);
-    } catch (err) {
-      toast.error(err.message || 'Failed to create user');
-    } finally {
-      setSaving(false);
-    }
+  async function saveSetting(key, value) {
+    const { error } = await supabase.from('master_settings')
+      .upsert({ setting_key: key, setting_value: String(value), updated_by: profile?.id, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' })
+    if (error) return toast.error(error.message)
+    toast.success('Setting saved ✓')
+    setSettings(p => ({ ...p, [key]: String(value) }))
   }
 
-  async function handleRoleChange(userId, newRole) {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: newRole })
-      .eq('id', userId);
-    if (error) toast.error('Failed to update role: ' + error.message);
-    else {
-      toast.success('Role updated');
-      setEditingId(null);
-      fetchUsers();
-    }
+  async function toggleBuildingReading(buildingId, type, current) {
+    const field = type === 'electricity' ? 'electricity_reading_enabled' : 'water_reading_enabled'
+    const { error } = await supabase.from('buildings').update({ [field]: !current }).eq('id', buildingId)
+    if (error) return toast.error(error.message)
+    toast.success(`${type} readings ${!current ? 'enabled' : 'disabled'}`)
+    loadAll()
   }
 
-  async function handleToggleActive(user) {
-    const newStatus = !user.is_active;
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_active: newStatus })
-      .eq('id', user.id);
-    if (error) toast.error('Failed: ' + error.message);
-    else {
-      toast.success(newStatus ? 'User reactivated' : 'User deactivated');
-      fetchUsers();
-    }
+  async function saveGroup() {
+    if (!groupForm.name) return toast.error('Name required')
+    setSaving(true)
+    const payload = { ...groupForm, created_by: profile?.id }
+    const { error } = editGroup
+      ? await supabase.from('expense_groups').update(payload).eq('id', editGroup.id)
+      : await supabase.from('expense_groups').insert(payload)
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success(editGroup ? 'Group updated' : 'Group added ✓')
+    setGroupModal(false); setEditGroup(null)
+    setGroupForm({ name: '', icon: '📌', color: '#94a3b8' })
+    loadAll()
   }
 
-  async function handleChangePwd(e) {
-    e.preventDefault();
-    if (pwdForm.newPwd !== pwdForm.confirm) return toast.error('Passwords do not match');
-    if (pwdForm.newPwd.length < 6) return toast.error('Minimum 6 characters');
-    setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password: pwdForm.newPwd });
-    if (error) toast.error(error.message);
-    else {
-      toast.success('Password updated');
-      setPwdForm({ newPwd: '', confirm: '' });
-    }
-    setSaving(false);
+  async function deleteGroup(id) {
+    await supabase.from('expense_groups').update({ is_active: false }).eq('id', id)
+    toast.success('Group removed')
+    setDeleteConfirm(null); loadAll()
   }
 
-  async function handleProfileUpdate(e) {
-    e.preventDefault();
-    const full_name = e.target.full_name.value.trim();
-    if (!full_name) return toast.error('Name required');
-    setSaving(true);
-    const { error } = await supabase.from('profiles').update({ full_name }).eq('id', profile.id);
-    if (error) toast.error(error.message);
-    else toast.success('Profile updated');
-    setSaving(false);
-  }
-
-  const tabs = [
-    ...(isSuperAdmin || isAdmin ? [{ id: 'users', label: 'Users', icon: Users }] : []),
-    { id: 'profile', label: 'My Profile', icon: User },
-    { id: 'security', label: 'Password', icon: Key },
-  ];
+  const RATE_SETTINGS = [
+    { key: 'electricity_rate', label: 'Electricity Rate', unit: '₹ per unit', icon: <Zap className="w-4 h-4 text-amber-500" />, desc: 'Used to calculate electricity charges from meter readings' },
+    { key: 'water_rate', label: 'Water Rate', unit: '₹ per litre', icon: <Droplets className="w-4 h-4 text-blue-500" />, desc: 'Used to calculate water charges from meter readings' },
+    { key: 'incentive_per_flat', label: 'Incentive Per Flat', unit: '₹ per flat filled', icon: <Star className="w-4 h-4 text-emerald-500" />, desc: 'Paid to staff for filling a vacant flat' },
+    { key: 'incentive_bonus_threshold', label: 'Bonus Threshold', unit: 'flats', icon: <Star className="w-4 h-4 text-amber-500" />, desc: 'Number of flats to trigger bonus incentive' },
+    { key: 'incentive_bonus_amount', label: 'Bonus Amount', unit: '₹ flat bonus', icon: <Star className="w-4 h-4 text-amber-600" />, desc: 'Extra bonus when threshold is crossed' },
+  ]
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-display font-bold text-surface-900 flex items-center gap-2">
-          <SettingsIcon className="w-6 h-6 text-brand-500" /> Settings
-        </h1>
-        <p className="text-surface-400 text-sm mt-0.5">Manage users, roles and your account</p>
+    <div className="space-y-5">
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Master Settings</h2>
+          <p className="text-surface-500 text-sm mt-1">Platform-wide configuration — rates, buildings, expense groups</p>
+        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b border-surface-200">
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
-            className={`tab flex items-center gap-2 ${activeTab === t.id ? 'active' : ''}`}>
-            <t.icon className="w-3.5 h-3.5" />{t.label}
-          </button>
+      <div className="flex border-b border-surface-200">
+        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups']].map(([k,l]) => (
+          <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
 
-      {/* ── USERS TAB ── */}
-      {activeTab === 'users' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-surface-400">{users.length} team members</p>
-            <div className="flex gap-2">
-              <button onClick={fetchUsers} className="btn-ghost flex items-center gap-1.5 text-sm">
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
-              {isSuperAdmin && (
-                <button onClick={() => setShowAddUser(true)} className="btn-primary flex items-center gap-2">
-                  <UserPlus className="w-4 h-4" /> Add User
-                </button>
-              )}
-            </div>
+      {/* RATES */}
+      {tab === 'rates' && (
+        <div className="space-y-3 max-w-2xl">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+            ⚠️ Rate changes apply to future records only — historical entries are not affected.
           </div>
+          {RATE_SETTINGS.map(({ key, label, unit, icon, desc }) => (
+            <div key={key} className="card p-5 flex items-center gap-4">
+              <div className="w-10 h-10 bg-surface-100 rounded-xl flex items-center justify-center flex-shrink-0">{icon}</div>
+              <div className="flex-1">
+                <p className="font-medium text-surface-800">{label}</p>
+                <p className="text-xs text-surface-400 mt-0.5">{desc}</p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <input type="number" className="input w-24 py-1.5 text-right font-mono"
+                  defaultValue={settings[key] || ''}
+                  onBlur={e => saveSetting(key, e.target.value)}
+                />
+                <span className="text-xs text-surface-400 whitespace-nowrap">{unit}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
-          {/* Add User Form */}
-          {showAddUser && (
-            <div className="card p-5 border border-brand-500/30">
-              <h3 className="font-semibold text-surface-800 mb-4 flex items-center gap-2">
-                <UserPlus className="w-4 h-4 text-brand-500" /> New Team Member
-              </h3>
-              <form onSubmit={handleAddUser} className="grid sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Full Name *</label>
-                  <input className="input" placeholder="e.g. Rahul Sharma"
-                    value={addForm.full_name}
-                    onChange={e => setAddForm(p => ({ ...p, full_name: e.target.value }))} required />
-                </div>
-                <div>
-                  <label className="label">Email *</label>
-                  <input type="email" className="input" placeholder="email@example.com"
-                    value={addForm.email}
-                    onChange={e => setAddForm(p => ({ ...p, email: e.target.value }))} required />
-                </div>
-                <div>
-                  <label className="label">Role *</label>
-                  <select className="select" value={addForm.role}
-                    onChange={e => setAddForm(p => ({ ...p, role: e.target.value }))}>
-                    {ROLES.map(r => <option key={r.value} value={r.value}>{r.label} — {r.desc}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="label">Password *</label>
-                  <div className="relative">
-                    <input type={showPass ? 'text' : 'password'} className="input pr-10"
-                      placeholder="Min. 6 characters"
-                      value={addForm.password}
-                      onChange={e => setAddForm(p => ({ ...p, password: e.target.value }))} required />
-                    <button type="button" onClick={() => setShowPass(!showPass)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400">
-                      {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+      {/* BUILDINGS CONFIG */}
+      {tab === 'buildings' && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-3 border-b border-surface-100 bg-surface-50">
+            <h3 className="text-sm font-semibold text-surface-700">Enable Meter Readings per Building</h3>
+            <p className="text-xs text-surface-400 mt-0.5">Toggle to enable electricity/water reading entry for each building</p>
+          </div>
+          <table className="data-table">
+            <thead><tr><th>Building</th><th className="text-center">Electricity Readings</th><th className="text-center">Water Readings</th></tr></thead>
+            <tbody>
+              {buildings.map(b => (
+                <tr key={b.id}>
+                  <td className="font-medium text-surface-800">{b.name}</td>
+                  <td className="text-center">
+                    <button onClick={() => toggleBuildingReading(b.id, 'electricity', b.electricity_reading_enabled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${b.electricity_reading_enabled ? 'bg-brand-500' : 'bg-surface-200'}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${b.electricity_reading_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
-                  </div>
-                </div>
-                <div className="sm:col-span-2 flex justify-end gap-3">
-                  <button type="button" onClick={() => setShowAddUser(false)} className="btn-secondary">Cancel</button>
-                  <button type="submit" disabled={saving} className="btn-primary flex items-center gap-2">
-                    {saving ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                    Create User
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
+                  </td>
+                  <td className="text-center">
+                    <button onClick={() => toggleBuildingReading(b.id, 'water', b.water_reading_enabled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${b.water_reading_enabled ? 'bg-blue-500' : 'bg-surface-200'}`}>
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${b.water_reading_enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-          {/* Users List */}
-          {loading ? (
-            <div className="flex justify-center py-8">
-              <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="card overflow-hidden">
+      {/* EXPENSE GROUPS */}
+      {tab === 'groups' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button onClick={() => { setEditGroup(null); setGroupForm({ name:'', icon:'📌', color:'#94a3b8' }); setGroupModal(true) }}
+              className="btn-primary flex items-center gap-2"><Plus className="w-4 h-4"/> Add Group</button>
+          </div>
+          <div className="card overflow-hidden">
+            {expGroups.length === 0 ? (
+              <div className="p-10 text-center text-surface-400 text-sm">No custom groups yet</div>
+            ) : (
               <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>User</th>
-                    <th>Role</th>
-                    <th>Status</th>
-                    {isSuperAdmin && <th>Actions</th>}
-                  </tr>
-                </thead>
+                <thead><tr><th>Icon</th><th>Group Name</th><th>Color</th><th></th></tr></thead>
                 <tbody>
-                  {users.map(u => (
-                    <tr key={u.id} className={!u.is_active ? 'opacity-40' : ''}>
+                  {expGroups.map(g => (
+                    <tr key={g.id}>
+                      <td className="text-xl">{g.icon}</td>
+                      <td className="font-medium text-surface-800">{g.name}</td>
+                      <td><div className="w-6 h-6 rounded-full border border-surface-200" style={{ background: g.color }} /></td>
                       <td>
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xs flex-shrink-0">
-                            {initials(u.full_name || u.email)}
-                          </div>
-                          <div>
-                            <div className="font-medium text-surface-800 flex items-center gap-2">
-                              {u.full_name || '—'}
-                              {u.id === profile?.id && <span className="badge bg-brand-500/10 text-brand-500 text-xs">You</span>}
-                            </div>
-                            <div className="text-xs text-surface-500">{u.email}</div>
-                          </div>
+                        <div className="flex gap-1">
+                          <button onClick={() => { setEditGroup(g); setGroupForm({ name:g.name, icon:g.icon, color:g.color }); setGroupModal(true) }} className="btn-ghost btn-sm p-1.5"><Edit2 className="w-3.5 h-3.5"/></button>
+                          <button onClick={() => setDeleteConfirm(g.id)} className="btn-ghost btn-sm p-1.5 text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
                         </div>
                       </td>
-                      <td>
-                        {isSuperAdmin && editingId === u.id ? (
-                          <div className="flex items-center gap-2">
-                            <select className="select text-xs py-1" value={editRole}
-                              onChange={e => setEditRole(e.target.value)}>
-                              {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                            </select>
-                            <button onClick={() => handleRoleChange(u.id, editRole)}
-                              className="btn-primary text-xs px-2 py-1">Save</button>
-                            <button onClick={() => setEditingId(null)}
-                              className="btn-ghost text-xs px-2 py-1">Cancel</button>
-                          </div>
-                        ) : (
-                          <RoleBadge role={u.role} />
-                        )}
-                      </td>
-                      <td>
-                        <span className={`badge ${u.is_active ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 'bg-surface-700 text-surface-400'}`}>
-                          {u.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      {isSuperAdmin && (
-                        <td>
-                          {u.id !== profile?.id && (
-                            <div className="flex items-center gap-2">
-                              <button onClick={() => { setEditingId(u.id); setEditRole(u.role); }}
-                                className="btn-ghost p-1.5 text-surface-400 hover:text-brand-500" title="Change role">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => handleToggleActive(u)}
-                                className={`btn-ghost p-1.5 ${u.is_active ? 'text-surface-400 hover:text-red-400' : 'text-surface-400 hover:text-green-400'}`}
-                                title={u.is_active ? 'Deactivate' : 'Reactivate'}>
-                                {u.is_active ? <Trash2 className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* Role Legend */}
-          <div className="card p-4">
-            <h4 className="text-sm font-semibold text-surface-300 mb-3 flex items-center gap-2">
-              <Shield className="w-4 h-4 text-brand-500" /> Role Permissions
-            </h4>
-            <div className="space-y-2">
-              {ROLES.map(r => (
-                <div key={r.value} className="flex items-start gap-3">
-                  <span className={`text-sm font-semibold w-28 flex-shrink-0 ${r.color}`}>{r.label}</span>
-                  <span className="text-sm text-surface-400">{r.desc}</span>
-                </div>
-              ))}
-            </div>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── PROFILE TAB ── */}
-      {activeTab === 'profile' && (
-        <div className="max-w-md">
-          <div className="card p-6">
-            <div className="flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 rounded-2xl bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold text-xl">
-                {initials(profile?.full_name || profile?.email || 'U')}
-              </div>
-              <div>
-                <p className="font-semibold text-surface-800">{profile?.full_name}</p>
-                <p className="text-sm text-surface-400">{profile?.email}</p>
-                <div className="mt-1"><RoleBadge role={profile?.role} /></div>
-              </div>
+      {/* GROUP MODAL */}
+      <Modal open={groupModal} onClose={() => setGroupModal(false)} title={editGroup ? 'Edit Group' : 'Add Expense Group'} size="sm">
+        <div className="p-6 space-y-4">
+          <div className="form-group">
+            <label className="label">Group Name *</label>
+            <input className="input" value={groupForm.name} onChange={e => setGroupForm(p=>({...p,name:e.target.value}))} placeholder="e.g. Festival Expenses" autoFocus />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Icon (emoji)</label>
+              <input className="input text-center text-2xl" value={groupForm.icon} onChange={e => setGroupForm(p=>({...p,icon:e.target.value}))} maxLength={2} />
             </div>
-            <form onSubmit={handleProfileUpdate} className="space-y-4">
-              <div>
-                <label className="label">Full Name</label>
-                <input name="full_name" defaultValue={profile?.full_name} className="input" required />
-              </div>
-              <div>
-                <label className="label">Email</label>
-                <input value={profile?.email || ''} className="input opacity-50 cursor-not-allowed" readOnly />
-                <p className="text-xs text-surface-500 mt-1">Email cannot be changed here</p>
-              </div>
-              <button type="submit" disabled={saving} className="btn-primary w-full">
-                {saving ? 'Saving…' : 'Save Changes'}
-              </button>
-            </form>
+            <div className="form-group">
+              <label className="label">Color</label>
+              <input type="color" className="input h-10 p-1 cursor-pointer" value={groupForm.color} onChange={e => setGroupForm(p=>({...p,color:e.target.value}))} />
+            </div>
           </div>
         </div>
-      )}
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => setGroupModal(false)}>Cancel</button>
+          <button className="btn-primary" onClick={saveGroup} disabled={saving}>{saving ? <Spinner size={16}/> : 'Save'}</button>
+        </div>
+      </Modal>
 
-      {/* ── PASSWORD TAB ── */}
-      {activeTab === 'security' && (
-        <div className="max-w-md">
-          <div className="card p-6 space-y-4">
-            <h3 className="font-semibold text-surface-700">Change Password</h3>
-            <form onSubmit={handleChangePwd} className="space-y-4">
-              <div>
-                <label className="label">New Password</label>
-                <div className="relative">
-                  <input type={showPass ? 'text' : 'password'} className="input pr-10"
-                    placeholder="Minimum 6 characters"
-                    value={pwdForm.newPwd}
-                    onChange={e => setPwdForm(p => ({ ...p, newPwd: e.target.value }))} required />
-                  <button type="button" onClick={() => setShowPass(!showPass)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400">
-                    {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="label">Confirm Password</label>
-                <input type={showPass ? 'text' : 'password'} className="input"
-                  placeholder="Repeat new password"
-                  value={pwdForm.confirm}
-                  onChange={e => setPwdForm(p => ({ ...p, confirm: e.target.value }))} required />
-              </div>
-              <button type="submit" disabled={saving} className="btn-primary w-full">
-                {saving ? 'Updating…' : 'Update Password'}
-              </button>
-            </form>
+      {/* DELETE CONFIRM */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-semibold mb-2">Delete group?</h3>
+            <p className="text-surface-500 text-sm mb-5">Existing expenses in this group are not affected.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => deleteGroup(deleteConfirm)} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium">Delete</button>
+            </div>
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }
