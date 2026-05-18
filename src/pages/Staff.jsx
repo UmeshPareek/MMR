@@ -33,6 +33,9 @@ export default function Staff() {
   const [advanceForm, setAdvanceForm] = useState({ staff_id: '', amount: '', payment_mode: 'cash', advance_date: new Date().toISOString().split('T')[0], reason: '', notes: '' })
 
   const [saving, setSaving] = useState(false)
+  const [deleteStaffId, setDeleteStaffId] = useState(null)
+  const [editSalaryRecord, setEditSalaryRecord] = useState(null)
+  const [editAdvanceRecord, setEditAdvanceRecord] = useState(null)
   const [quickModal, setQuickModal] = useState(false)
   const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
 
@@ -157,6 +160,24 @@ export default function Staff() {
     setSalaryModal(false); loadSalaries(); loadAdvances()
   }
 
+  async function deleteStaff(id) {
+    const { error } = await supabase.from('staff').update({ status: 'inactive' }).eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Staff removed ✓'); setDeleteStaffId(null); loadStaff()
+  }
+
+  async function updateSalary(id, field, value) {
+    const { error } = await supabase.from('staff_salaries').update({ [field]: value }).eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Updated ✓'); setEditSalaryRecord(null); loadSalaries()
+  }
+
+  async function updateAdvance(id, field, value) {
+    const { error } = await supabase.from('staff_advances').update({ [field]: value }).eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Updated ✓'); setEditAdvanceRecord(null); loadAdvances()
+  }
+
   async function deleteSalary(id) {
     if (!window.confirm('Delete this salary record?')) return
     const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
@@ -266,6 +287,7 @@ export default function Staff() {
                       </div>
                     </div>
                     <button className="btn-ghost btn-sm" onClick={() => openEditStaff(s)}><Edit2 size={13} /></button>
+                                  <button onClick={() => setDeleteStaffId(s.id)} className="btn-ghost btn-sm p-1" title="Remove staff"><svg className="w-3.5 h-3.5 text-red-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
                   </div>
 
                   {s.phone && <p className="text-surface-500 text-sm">{s.phone}</p>}
@@ -750,6 +772,19 @@ export default function Staff() {
           <button className="btn-primary" onClick={saveAdvance} disabled={saving}>{saving ? <Spinner size={16} /> : 'Record Advance'}</button>
         </div>
       </Modal>
+      {/* DELETE STAFF CONFIRM */}
+      {deleteStaffId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-semibold mb-2 text-surface-900">Remove staff member?</h3>
+            <p className="text-surface-500 text-sm mb-5">They will be marked inactive. All salary and advance records are preserved.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteStaffId(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => deleteStaff(deleteStaffId)} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
