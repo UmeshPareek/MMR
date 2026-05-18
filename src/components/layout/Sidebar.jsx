@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import {
   LayoutDashboard, Building2, Users, CreditCard, TrendingDown,
   UserCog, BarChart3, ShieldCheck, Settings, X, LogOut,
-  Home, Banknote, Zap, Wallet, ListChecks, ClipboardList, Shield, LogIn
+  Home, Banknote, Zap, Wallet, ListChecks, ClipboardList, Shield, LogIn, LogOut
 } from 'lucide-react'
 import { initials } from '@/utils/helpers'
 
@@ -97,7 +97,8 @@ export default function Sidebar({ open, onClose }) {
           {(isSuperAdmin || isAdmin) && (
             <Section label="Admin">
               {isSuperAdmin && <Item to="/audit" icon={ShieldCheck} label="Audit" />}
-            <Item to="/checkinout" icon={LogIn} label="Check In/Out" />
+            <Item to="/checkin" icon={LogIn} label="Check In" />
+            <Item to="/checkout" icon={LogOut} label="Check Out" />
               <Item to="/settings" icon={Settings} label="Settings" />
             </Section>
           )}
