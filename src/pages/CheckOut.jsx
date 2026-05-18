@@ -28,8 +28,8 @@ export default function CheckOut() {
     const [{ data: b }, { data: t }, { data: ex }] = await Promise.all([
       supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
       supabase.from('tenants')
-        .select('id,full_name,phone,monthly_rent,security_deposit_paid,move_in_date,rent_type,flat_id,building_id,flat:flats(door_number),building:buildings(name)')
-        .eq('status','active').order('building_id').order('full_name'),
+        .select('id,full_name,phone,monthly_rent,security_deposit_paid,move_in_date,flat_id,building_id,flat:flats(door_number),building:buildings(name)')
+        .eq('status','active').order('full_name'),
       supabase.from('tenants')
         .select('id,full_name,phone,move_out_date,flat_id,building_id,notes,flat:flats(door_number),building:buildings(name)')
         .eq('status','inactive').order('move_out_date', { ascending: false }).limit(50),
@@ -132,7 +132,7 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
             ? <EmptyState icon={LogOut} title="No active tenants" />
             : (
               <table className="data-table">
-                <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Move In</th><th>Rent</th><th>Deposit Held</th><th>Type</th><th>Action</th></tr></thead>
+                <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Move In</th><th>Monthly Rent</th><th>Deposit Held</th><th>Action</th></tr></thead>
                 <tbody>
                   {filtered.map(t=>(
                     <tr key={t.id}>
@@ -147,7 +147,6 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
                       <td className="text-xs text-surface-500">{fmtDate(t.move_in_date)}</td>
                       <td className="font-mono">{formatCurrency(t.monthly_rent)}</td>
                       <td className="font-mono text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
-                      <td><span className={`badge border text-xs ${t.rent_type==='postpaid'?'bg-amber-50 text-amber-700 border-amber-200':'bg-brand-50 text-brand-700 border-brand-200'}`}>{t.rent_type==='postpaid'?'Postpaid':'Prepaid'}</span></td>
                       <td>
                         <button onClick={()=>openCheckout(t)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
                           <LogOut className="w-3.5 h-3.5"/> Check Out
