@@ -59,16 +59,25 @@ export default function CheckIn() {
     if (!form.full_name || !form.phone || !form.flat_id || !form.building_id)
       return toast.error('Name, phone, building and flat are required')
     setSaving(true)
-    const { data: t, error } = await supabase.from('tenants').insert({
-      full_name: form.full_name, phone: form.phone, email: form.email || null,
-      building_id: form.building_id, flat_id: form.flat_id,
-      monthly_rent: parseFloat(form.monthly_rent)||0,
+    const payload = {
+      full_name: form.full_name,
+      phone: form.phone,
+      email: form.email || null,
+      building_id: form.building_id,
+      flat_id: form.flat_id,
+      monthly_rent: parseFloat(form.monthly_rent) || 0,
       move_in_date: form.move_in_date,
-      security_deposit_paid: parseFloat(form.security_deposit_paid)||0,
-      rent_type: form.rent_type, id_type: form.id_type,
-      id_number: form.id_number || null, notes: form.notes || null,
-      status: 'active', created_by: profile?.id
-    }).select().single()
+      security_deposit_paid: parseFloat(form.security_deposit_paid) || 0,
+      security_deposit_months: 2,
+      id_type: form.id_type || null,
+      id_number: form.id_number || null,
+      notes: form.notes || null,
+      status: 'active',
+    }
+    // Remove nulls that DB might reject
+    Object.keys(payload).forEach(k => { if (payload[k] === null || payload[k] === '') delete payload[k] })
+
+    const { data: t, error } = await supabase.from('tenants').insert(payload).select().single()
     if (error) { setSaving(false); return toast.error(error.message) }
     await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', form.flat_id)
     if (parseFloat(form.security_deposit_paid) > 0) {
