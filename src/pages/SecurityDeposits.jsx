@@ -13,7 +13,8 @@ const MODES = ['cash', 'upi', 'bank_transfer', 'cheque', 'other'];
 const MODE_LABELS = { cash: 'Cash', upi: 'UPI', bank_transfer: 'Bank Transfer', cheque: 'Cheque', other: 'Other' };
 
 export default function SecurityDeposits() {
-  const { profile, isAdmin, isSuperAdmin } = useAuth();
+  const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const channelRef = useRef(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [loading, setLoading] = useState(false);
 
@@ -44,7 +45,15 @@ export default function SecurityDeposits() {
   });
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('deposits-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'security_deposits' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, []);
   useEffect(() => { loadAll(); }, [selectedBuilding]);
 
   async function loadAll() {
