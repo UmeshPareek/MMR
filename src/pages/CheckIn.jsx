@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate } from '@/utils/helpers'
 import { Modal, Spinner, EmptyState } from '@/components/ui'
@@ -19,6 +19,7 @@ function getFloor(doorNumber) {
 
 export default function CheckIn() {
   const { profile } = useAuth()
+  const channelRef = useRef(null)
   const [buildings, setBuildings] = useState([])
   const [activeTenants, setActiveTenants] = useState([])
   const [vacantFlats, setVacantFlats] = useState([])
@@ -27,7 +28,15 @@ export default function CheckIn() {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('checkin-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [])
 
   async function loadAll() {
     setLoading(true)
