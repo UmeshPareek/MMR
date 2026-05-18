@@ -1,277 +1,449 @@
-import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { formatCurrency, lastNMonths } from '../utils/helpers';
-import toast from 'react-hot-toast';
-import { Zap, Droplets, Building2, Save, AlertTriangle, CheckCircle2, Filter, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { supabase } from '@/lib/supabase'
+import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
+import { Modal, Spinner, EmptyState } from '@/components/ui'
+import { Zap, Droplets, Plus, Download, Edit2, Trash2, TrendingUp, TrendingDown } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { useAuth } from '@/contexts/AuthContext'
+import * as XLSX from 'xlsx'
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 export default function UtilityBills() {
-  const months = lastNMonths(6);
-  const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1]);
-  const [buildings, setBuildings] = useState([]);
-  const [selectedBuilding, setSelectedBuilding] = useState('all');
-  const [flats, setFlats] = useState([]);
-  const [entries, setEntries] = useState({}); // { flatId: { electricity_amount, water_amount, other_charges, notes, id } }
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState({});
+  const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const [tab, setTab] = useState('readings')
+  const [buildings, setBuildings] = useState([])
+  const [flats, setFlats] = useState([])
+  const [readings, setReadings] = useState([])
+  const [bills, setBills] = useState([])
+  const [settings, setSettings] = useState({ electricity_rate: 10, water_rate: 20 })
+  const [loading, setLoading] = useState(true)
+  const [filterBuilding, setFilterBuilding] = useState('')
+  const [filterMonth, setFilterMonth] = useState(currentMonth())
+  const [filterType, setFilterType] = useState('electricity')
 
-  useEffect(() => { loadBuildings(); }, []);
-  useEffect(() => { loadFlats(); }, [selectedMonth, selectedBuilding]);
+  // Reading modal
+  const [readingModal, setReadingModal] = useState(false)
+  const [rForm, setRForm] = useState({ building_id: '', flat_id: '', reading_type: 'electricity', reading_value: '', reading_date: new Date().toISOString().slice(0,10), for_month: currentMonth(), is_common_area: false, notes: '' })
+  const [prevReading, setPrevReading] = useState(null)
+  const [rFlats, setRFlats] = useState([])
+  const [saving, setSaving] = useState(false)
 
-  async function loadBuildings() {
-    const { data } = await supabase.from('buildings').select('id, name').eq('is_active', true).order('name');
-    setBuildings(data || []);
+  // Bill modal (bulk building payment)
+  const [billModal, setBillModal] = useState(false)
+  const [bForm, setBForm] = useState({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: currentMonth(), vendor: '', bill_number: '', payment_date: new Date().toISOString().slice(0,10) })
+
+  const [editReading, setEditReading] = useState(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(null)
+
+  useEffect(() => { loadAll() }, [filterMonth, filterBuilding, filterType])
+
+  async function loadAll() {
+    setLoading(true)
+    const [{ data: b }, { data: s }, { data: r }, { data: bl }] = await Promise.all([
+      supabase.from('buildings').select('id, name, electricity_reading_enabled, water_reading_enabled').eq('is_active', true).order('name'),
+      supabase.from('master_settings').select('setting_key, setting_value'),
+      supabase.from('meter_readings').select('*, flat:flats(door_number), building:buildings(name)')
+        .eq('for_month', filterMonth)
+        .order('reading_date', { ascending: false }),
+      supabase.from('utility_bills').select('*, building:buildings(name)')
+        .eq('for_month', filterMonth)
+        .order('payment_date', { ascending: false }),
+    ])
+    setBuildings(b || [])
+    const sm = {}; (s||[]).forEach(r => { sm[r.setting_key] = parseFloat(r.setting_value) })
+    setSettings(sm)
+    const filteredR = filterBuilding ? (r||[]).filter(x=>x.building_id===filterBuilding) : (r||[])
+    setReadings(filteredR.filter(x => !filterType || x.reading_type === filterType))
+    const filteredBl = filterBuilding ? (bl||[]).filter(x=>x.building_id===filterBuilding) : (bl||[])
+    setBills(filteredBl)
+    setLoading(false)
   }
 
-  async function loadFlats() {
-    setLoading(true);
-    try {
-      let q = supabase
-        .from('flats')
-        .select('id, door_number, monthly_rent, building_id, buildings(name)')
-        .eq('status', 'occupied');
-      if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
-      const { data: flatData, error } = await q;
-      if (error) throw error;
+  async function loadFlats(buildingId) {
+    const { data } = await supabase.from('flats').select('id, door_number, status').eq('building_id', buildingId).order('door_number')
+    setRFlats(data || [])
+  }
 
-      // Fetch active tenants separately
-      const flatIds2 = (flatData || []).map(f => f.id);
-      const { data: tenantData } = flatIds2.length
-        ? await supabase.from('tenants').select('id, full_name, flat_id').eq('status', 'active').in('flat_id', flatIds2)
-        : { data: [] };
-      const tenantByFlat = {};
-      (tenantData || []).forEach(t => { tenantByFlat[t.flat_id] = t; });
-      // Attach tenant to each flat
-      flatData && flatData.forEach(f => { f._tenant = tenantByFlat[f.id] || null; });
+  async function loadPrevReading(flatId, type, month) {
+    const { data } = await supabase.from('meter_readings')
+      .select('reading_value, reading_date, for_month')
+      .eq('flat_id', flatId).eq('reading_type', type)
+      .lt('for_month', month)
+      .order('for_month', { ascending: false }).limit(1)
+    setPrevReading(data?.[0] || null)
+  }
 
-      const flatIds = (flatData || []).map(f => f.id);
-      let existingEntries = {};
-      if (flatIds.length > 0) {
-        const { data: utils } = await supabase
-          .from('flat_utilities')
-          .select('*')
-          .eq('for_month', selectedMonth)
-          .in('flat_id', flatIds);
-        (utils || []).forEach(u => { existingEntries[u.flat_id] = u; });
-      }
-
-      setFlats(flatData || []);
-      // Pre-populate form state
-      const init = {};
-      (flatData || []).forEach(f => {
-        const ex = existingEntries[f.id];
-        init[f.id] = {
-          id: ex?.id || null,
-          electricity_amount: ex?.electricity_amount ?? '',
-          water_amount: ex?.water_amount ?? '',
-          other_charges: ex?.other_charges ?? '',
-          notes: ex?.notes ?? '',
-          saved: !!ex,
-        };
-      });
-      setEntries(init);
-    } catch (e) {
-      toast.error('Failed to load: ' + e.message);
-    } finally {
-      setLoading(false);
+  async function saveReading() {
+    if (!rForm.building_id || (!rForm.flat_id && !rForm.is_common_area) || !rForm.reading_value) return toast.error('Fill all required fields')
+    setSaving(true)
+    const rate = rForm.reading_type === 'electricity' ? (settings.electricity_rate || 10) : (settings.water_rate || 20)
+    const payload = {
+      building_id: rForm.building_id,
+      flat_id: rForm.is_common_area ? null : rForm.flat_id,
+      reading_type: rForm.reading_type,
+      reading_value: parseFloat(rForm.reading_value),
+      previous_reading: parseFloat(prevReading?.reading_value || 0),
+      reading_date: rForm.reading_date,
+      for_month: rForm.for_month,
+      rate_per_unit: rate,
+      is_common_area: rForm.is_common_area,
+      notes: rForm.notes,
+      created_by: profile?.id
     }
+    const { error } = editReading
+      ? await supabase.from('meter_readings').update(payload).eq('id', editReading.id)
+      : await supabase.from('meter_readings').insert(payload)
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success(editReading ? 'Reading updated' : 'Reading saved ✓')
+    setReadingModal(false); setEditReading(null)
+    setRForm({ building_id:'', flat_id:'', reading_type:'electricity', reading_value:'', reading_date:new Date().toISOString().slice(0,10), for_month:currentMonth(), is_common_area:false, notes:'' })
+    setPrevReading(null); loadAll()
   }
 
-  function update(flatId, field, value) {
-    setEntries(p => ({ ...p, [flatId]: { ...p[flatId], [field]: value, saved: false } }));
+  async function saveBill() {
+    if (!bForm.building_id || !bForm.amount) return toast.error('Building and amount required')
+    setSaving(true)
+    const { error } = await supabase.from('utility_bills').insert({ ...bForm, amount: parseFloat(bForm.amount), paid_by: profile?.id })
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success('Bill recorded ✓')
+    setBillModal(false)
+    setBForm({ building_id:'', utility_type:'electricity', amount:'', payment_mode:'upi', for_month:currentMonth(), vendor:'', bill_number:'', payment_date:new Date().toISOString().slice(0,10) })
+    loadAll()
   }
 
-  async function saveFlat(flat) {
-    const entry = entries[flat.id];
-    if (!entry) return;
-    setSaving(p => ({ ...p, [flat.id]: true }));
-    try {
-      const payload = {
-        flat_id: flat.id,
-        building_id: flat.building_id,
-        for_month: selectedMonth,
-        electricity_amount: Number(entry.electricity_amount) || 0,
-        water_amount: Number(entry.water_amount) || 0,
-        other_charges: Number(entry.other_charges) || 0,
-        notes: entry.notes || null,
-      };
-
-      if (entry.id) {
-        const { error } = await supabase.from('flat_utilities').update(payload).eq('id', entry.id);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from('flat_utilities').insert(payload).select().single();
-        if (error) throw error;
-        setEntries(p => ({ ...p, [flat.id]: { ...p[flat.id], id: data.id } }));
-      }
-      setEntries(p => ({ ...p, [flat.id]: { ...p[flat.id], saved: true } }));
-      toast.success(`Saved ${flat.door_number}`);
-    } catch (e) {
-      toast.error('Save failed: ' + e.message);
-    } finally {
-      setSaving(p => ({ ...p, [flat.id]: false }));
-    }
+  async function deleteReading(id) {
+    const { error } = await supabase.from('meter_readings').delete().eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Deleted'); setDeleteConfirm(null); loadAll()
   }
 
-  async function saveAll() {
-    const unsaved = flats.filter(f => !entries[f.id]?.saved);
-    if (!unsaved.length) return toast.success('All already saved');
-    for (const f of unsaved) await saveFlat(f);
+  function downloadExcel() {
+    const wb = XLSX.utils.book_new()
+    // Readings sheet
+    const rRows = readings.map(r => ({
+      Building: r.building?.name, Flat: r.is_common_area ? 'Common Area' : r.flat?.door_number,
+      Type: r.reading_type, Month: r.for_month, Date: r.reading_date,
+      'Previous Reading': r.previous_reading, 'Current Reading': r.reading_value,
+      'Units Consumed': r.units_consumed, 'Rate/Unit': r.rate_per_unit, 'Amount (₹)': r.amount_charged
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rRows), 'Meter Readings')
+    // Bills sheet
+    const bRows = bills.map(b => ({
+      Building: b.building?.name, Type: b.utility_type, 'Amount Paid (₹)': b.amount,
+      Mode: b.payment_mode, Month: b.for_month, Vendor: b.vendor || '—', 'Bill No': b.bill_number || '—'
+    }))
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bRows), 'Bills Paid')
+    XLSX.writeFile(wb, `Utility_${filterMonth}.xlsx`)
+    toast.success('Downloaded')
   }
 
-  const savedCount = Object.values(entries).filter(e => e.saved).length;
-  const totalElec = Object.values(entries).reduce((s, e) => s + (Number(e.electricity_amount) || 0), 0);
-  const totalWater = Object.values(entries).reduce((s, e) => s + (Number(e.water_amount) || 0), 0);
+  // Dashboard stats
+  const totalCharged = readings.reduce((s, r) => s + Number(r.amount_charged || 0), 0)
+  const totalPaid = bills.reduce((s, b) => s + Number(b.amount || 0), 0)
+  const byBuilding = {}
+  readings.forEach(r => {
+    const bn = r.building?.name || '—'
+    if (!byBuilding[bn]) byBuilding[bn] = { charged: 0, units: 0 }
+    byBuilding[bn].charged += Number(r.amount_charged || 0)
+    byBuilding[bn].units += Number(r.units_consumed || 0)
+  })
+  const chartData = Object.entries(byBuilding).map(([name, d]) => ({ name: name.slice(0, 10), charged: d.charged }))
+
+  const units = readings.reduce((s, r) => s + Number(r.units_consumed || 0), 0)
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="page-header">
         <div>
-          <h1 className="text-xl font-bold text-surface-900">Utility Bills</h1>
-          <p className="text-sm text-surface-500 mt-0.5">Enter electricity & water charges per flat per month</p>
+          <h2 className="page-title">Utility Bills</h2>
+          <p className="text-surface-500 text-sm mt-1">Meter readings, charges & payments — {filterMonth}</p>
         </div>
-        <button onClick={saveAll} className="btn-primary flex items-center gap-2 self-start">
-          <Save className="w-4 h-4" /> Save All
-        </button>
-      </div>
-
-      {/* Filters */}
-      <div className="card p-3 flex flex-wrap gap-3 items-end">
-        <Filter className="w-4 h-4 text-surface-400 self-center" />
-        <div>
-          <label className="label text-xs mb-0.5">Month</label>
-          <select className="select py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
-            {months.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label text-xs mb-0.5">Building</label>
-          <select className="select py-1.5 text-sm" value={selectedBuilding} onChange={e => setSelectedBuilding(e.target.value)}>
-            <option value="all">All Buildings</option>
+        <div className="flex gap-2 items-center flex-wrap">
+          <input type="month" className="input py-1.5 text-sm" value={filterMonth} onChange={e => setFilterMonth(e.target.value)} />
+          <select className="select py-1.5 text-sm w-36" value={filterBuilding} onChange={e => setFilterBuilding(e.target.value)}>
+            <option value="">All Buildings</option>
             {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-        </div>
-        <button onClick={loadFlats} className="btn-ghost btn-sm flex items-center gap-1.5">
-          <RefreshCw className="w-3.5 h-3.5" /> Refresh
-        </button>
-        <div className="ml-auto flex items-center gap-2 text-xs text-surface-500">
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-          {savedCount}/{flats.length} saved
+          <button onClick={downloadExcel} className="btn-secondary flex items-center gap-2"><Download className="w-4 h-4"/> Excel</button>
+          <button onClick={() => setBillModal(true)} className="btn-secondary flex items-center gap-2">+ Bill Paid</button>
+          <button onClick={() => { setEditReading(null); setRForm({ building_id:'', flat_id:'', reading_type:'electricity', reading_value:'', reading_date:new Date().toISOString().slice(0,10), for_month:filterMonth, is_common_area:false, notes:'' }); setPrevReading(null); setReadingModal(true) }} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4"/> Add Reading
+          </button>
         </div>
       </div>
 
-      {/* Summary */}
+      {/* KPI strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="card p-4 border-l-4 border-yellow-400">
-          <p className="text-xs text-surface-500 mb-1">Total Flats</p>
-          <p className="text-xl font-bold text-surface-900">{flats.length}</p>
+        <div className="card p-4 border-l-4 border-amber-400">
+          <p className="text-xs text-surface-500 mb-1">Total Charged to Tenants</p>
+          <p className="text-xl font-bold font-mono text-amber-700">{formatCurrency(totalCharged)}</p>
+          <p className="text-xs text-surface-400">{units.toFixed(0)} units consumed</p>
+        </div>
+        <div className="card p-4 border-l-4 border-red-400">
+          <p className="text-xs text-surface-500 mb-1">Bills Paid (to vendors)</p>
+          <p className="text-xl font-bold font-mono text-red-600">{formatCurrency(totalPaid)}</p>
         </div>
         <div className="card p-4 border-l-4 border-emerald-400">
-          <p className="text-xs text-surface-500 mb-1">Entries Done</p>
-          <p className="text-xl font-bold text-emerald-700">{savedCount}</p>
+          <p className="text-xs text-surface-500 mb-1">Net Position</p>
+          <p className={`text-xl font-bold font-mono ${totalCharged - totalPaid >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatCurrency(Math.abs(totalCharged - totalPaid))}</p>
+          <p className="text-xs text-surface-400">{totalCharged - totalPaid >= 0 ? 'surplus' : 'deficit'}</p>
         </div>
-        <div className="card p-4 border-l-4 border-blue-400">
-          <p className="text-xs text-surface-500 mb-1 flex items-center gap-1"><Zap className="w-3 h-3" />Total Electricity</p>
-          <p className="text-xl font-bold text-surface-900 font-mono">{formatCurrency(totalElec)}</p>
-        </div>
-        <div className="card p-4 border-l-4 border-cyan-400">
-          <p className="text-xs text-surface-500 mb-1 flex items-center gap-1"><Droplets className="w-3 h-3" />Total Water</p>
-          <p className="text-xl font-bold text-surface-900 font-mono">{formatCurrency(totalWater)}</p>
+        <div className="card p-4 border-l-4 border-brand-400">
+          <p className="text-xs text-surface-500 mb-1">Readings This Month</p>
+          <p className="text-xl font-bold text-surface-900">{readings.length}</p>
         </div>
       </div>
 
-      {/* Flat entry table */}
-      <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
-          <span className="text-sm font-medium text-surface-700">Flat-wise Entry — {selectedMonth}</span>
-          {flats.length - savedCount > 0 && (
-            <span className="badge bg-amber-50 text-amber-700 border border-amber-200">
-              <AlertTriangle className="w-3 h-3" />
-              {flats.length - savedCount} pending
-            </span>
-          )}
+      {/* Chart */}
+      {chartData.length > 0 && (
+        <div className="card p-5">
+          <h3 className="text-sm font-semibold text-surface-700 mb-4">Charges by Building</h3>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={chartData}>
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `₹${(v/1000).toFixed(0)}k`} />
+              <Tooltip formatter={v => formatCurrency(v)} />
+              <Bar dataKey="charged" fill="#0D9488" radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
+      )}
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : flats.length === 0 ? (
-          <div className="text-center py-12">
-            <Building2 className="w-8 h-8 text-surface-300 mx-auto mb-2" />
-            <p className="text-surface-400 text-sm">No occupied flats found</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
+      {/* Tabs */}
+      <div className="flex border-b border-surface-200">
+        {[['readings','Meter Readings'],['bills','Bills Paid']].map(([k,l]) => (
+          <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
+        ))}
+      </div>
+
+      {/* Type filter */}
+      <div className="flex gap-2">
+        {[['electricity','⚡ Electricity'],['water','💧 Water']].map(([v,l]) => (
+          <button key={v} onClick={() => setFilterType(v)} className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-all ${filterType===v?'bg-brand-600 text-white border-brand-600':'border-surface-200 text-surface-600 hover:border-brand-300'}`}>{l}</button>
+        ))}
+      </div>
+
+      {/* READINGS TABLE */}
+      {tab === 'readings' && (
+        <div className="card overflow-hidden">
+          {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
+          : readings.length === 0 ? <EmptyState icon={Zap} title="No readings" description="Add meter readings to calculate consumption" />
+          : (
             <table className="data-table">
               <thead>
-                <tr>
-                  <th>Building</th>
-                  <th>Flat</th>
-                  <th>Tenant</th>
-                  <th>Electricity (₹)</th>
-                  <th>Water (₹)</th>
-                  <th>Other (₹)</th>
-                  <th>Notes</th>
-                  <th>Action</th>
-                </tr>
+                <tr><th>Building</th><th>Flat</th><th>Type</th><th>Prev Reading</th><th>Current</th><th>Units</th><th>Rate</th><th className="text-right">Amount</th><th>Date</th><th></th></tr>
               </thead>
               <tbody>
-                {flats.map(flat => {
-                  const e = entries[flat.id] || {};
-                  const isSaving = saving[flat.id];
-                  return (
-                    <tr key={flat.id} className={e.saved ? 'bg-emerald-50/30' : ''}>
-                      <td className="text-xs text-surface-500">{flat.buildings?.name || '—'}</td>
-                      <td className="font-mono font-medium text-surface-800">{flat.door_number}</td>
-                      <td className="text-surface-600 text-sm">{flat._tenant?.full_name || '—'}</td>
-                      <td>
-                        <div className="relative">
-                          <Zap className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-yellow-400" />
-                          <input type="number" min="0" step="0.01" placeholder="0.00"
-                            value={e.electricity_amount ?? ''}
-                            onChange={ev => update(flat.id, 'electricity_amount', ev.target.value)}
-                            className="input pl-7 py-1.5 text-sm w-28" />
-                        </div>
-                      </td>
-                      <td>
-                        <div className="relative">
-                          <Droplets className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-blue-400" />
-                          <input type="number" min="0" step="0.01" placeholder="0.00"
-                            value={e.water_amount ?? ''}
-                            onChange={ev => update(flat.id, 'water_amount', ev.target.value)}
-                            className="input pl-7 py-1.5 text-sm w-28" />
-                        </div>
-                      </td>
-                      <td>
-                        <input type="number" min="0" step="0.01" placeholder="0.00"
-                          value={e.other_charges ?? ''}
-                          onChange={ev => update(flat.id, 'other_charges', ev.target.value)}
-                          className="input py-1.5 text-sm w-24" />
-                      </td>
-                      <td>
-                        <input type="text" placeholder="Optional note"
-                          value={e.notes ?? ''}
-                          onChange={ev => update(flat.id, 'notes', ev.target.value)}
-                          className="input py-1.5 text-sm w-32" />
-                      </td>
-                      <td>
-                        <button onClick={() => saveFlat(flat)} disabled={isSaving || e.saved}
-                          className={`btn btn-sm flex items-center gap-1.5 ${e.saved ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'btn-primary'}`}>
-                          {isSaving
-                            ? <div className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                            : e.saved
-                              ? <><CheckCircle2 className="w-3.5 h-3.5" />Saved</>
-                              : <><Save className="w-3.5 h-3.5" />Save</>}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {readings.map(r => (
+                  <tr key={r.id}>
+                    <td className="text-xs text-surface-500">{r.building?.name}</td>
+                    <td className="font-mono font-semibold">{r.is_common_area ? <span className="badge bg-surface-100 text-surface-600 text-xs">Common</span> : r.flat?.door_number}</td>
+                    <td>{r.reading_type === 'electricity' ? '⚡' : '💧'}</td>
+                    <td className="font-mono text-surface-400">{r.previous_reading}</td>
+                    <td className="font-mono font-semibold">{r.reading_value}</td>
+                    <td className="font-mono text-brand-700 font-semibold">{Number(r.units_consumed).toFixed(1)}</td>
+                    <td className="text-xs text-surface-500">₹{r.rate_per_unit}/u</td>
+                    <td className="text-right font-mono font-semibold text-amber-700">{formatCurrency(r.amount_charged)}</td>
+                    <td className="text-xs text-surface-500">{fmtDate(r.reading_date)}</td>
+                    <td>
+                      <div className="flex gap-1">
+                        <button onClick={() => { setEditReading(r); setRForm({ building_id:r.building_id, flat_id:r.flat_id||'', reading_type:r.reading_type, reading_value:r.reading_value, reading_date:r.reading_date, for_month:r.for_month, is_common_area:r.is_common_area, notes:r.notes||'' }); setPrevReading({ reading_value:r.previous_reading }); loadFlats(r.building_id); setReadingModal(true) }}
+                          className="btn-ghost p-1.5"><Edit2 className="w-3.5 h-3.5"/></button>
+                        <button onClick={() => setDeleteConfirm({ id: r.id, type: 'reading' })} className="btn-ghost p-1.5 text-red-400"><Trash2 className="w-3.5 h-3.5"/></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-surface-50 border-t-2 border-surface-200">
+                  <td colSpan={7} className="px-4 py-2 text-xs font-bold text-surface-600">TOTAL</td>
+                  <td className="px-4 py-2 text-right font-mono font-bold text-amber-700">{formatCurrency(totalCharged)}</td>
+                  <td colSpan={2}/>
+                </tr>
+              </tfoot>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* BILLS TABLE */}
+      {tab === 'bills' && (
+        <div className="card overflow-hidden">
+          {bills.length === 0 ? <EmptyState icon={Droplets} title="No bills recorded" description="Record utility bills paid to vendors" />
+          : (
+            <table className="data-table">
+              <thead><tr><th>Building</th><th>Type</th><th>Vendor</th><th>Bill No.</th><th>Mode</th><th>Month</th><th className="text-right">Amount</th></tr></thead>
+              <tbody>
+                {bills.map(b => (
+                  <tr key={b.id}>
+                    <td>{b.building?.name}</td>
+                    <td>{b.utility_type === 'electricity' ? '⚡ Electricity' : b.utility_type === 'water' ? '💧 Water' : b.utility_type}</td>
+                    <td className="text-xs text-surface-500">{b.vendor || '—'}</td>
+                    <td className="font-mono text-xs">{b.bill_number || '—'}</td>
+                    <td><span className="badge badge-surface text-xs">{b.payment_mode?.toUpperCase()}</span></td>
+                    <td className="text-xs text-surface-500">{b.for_month}</td>
+                    <td className="text-right font-mono font-bold text-red-600">{formatCurrency(b.amount)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* READING MODAL */}
+      <Modal open={readingModal} onClose={() => { setReadingModal(false); setEditReading(null) }} title={editReading ? 'Edit Meter Reading' : 'Add Meter Reading'} size="md">
+        <div className="p-6 grid sm:grid-cols-2 gap-4">
+          <div className="form-group">
+            <label className="label">Utility Type</label>
+            <div className="flex gap-2">
+              {[['electricity','⚡ Electricity'],['water','💧 Water']].map(([v,l]) => (
+                <button key={v} type="button" onClick={() => setRForm(p=>({...p,reading_type:v}))}
+                  className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-all ${rForm.reading_type===v?'bg-brand-600 text-white border-brand-600':'border-surface-200 text-surface-600'}`}>{l}</button>
+              ))}
+            </div>
           </div>
-        )}
-      </div>
+          <div className="form-group">
+            <label className="label">For Month</label>
+            <input type="month" className="input" value={rForm.for_month} onChange={e => setRForm(p=>({...p,for_month:e.target.value}))} />
+          </div>
+          <div className="form-group">
+            <label className="label">Building *</label>
+            <select className="select" value={rForm.building_id} onChange={e => { setRForm(p=>({...p,building_id:e.target.value,flat_id:''})); loadFlats(e.target.value) }}>
+              <option value="">— Select building —</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="label">Flat</label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm text-surface-600">
+                <input type="checkbox" checked={rForm.is_common_area} onChange={e => setRForm(p=>({...p,is_common_area:e.target.checked,flat_id:''}))} className="rounded" />
+                Common Area
+              </label>
+              {!rForm.is_common_area && (
+                <select className="select" value={rForm.flat_id} onChange={e => { setRForm(p=>({...p,flat_id:e.target.value})); if(e.target.value) loadPrevReading(e.target.value,rForm.reading_type,rForm.for_month) }}>
+                  <option value="">— Select flat —</option>
+                  {rFlats.map(f => <option key={f.id} value={f.id}>{f.door_number}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+
+          {/* Previous reading display */}
+          {prevReading && (
+            <div className="col-span-2 p-3 bg-surface-50 rounded-lg border border-surface-200 text-sm">
+              <span className="text-surface-500">Previous reading ({prevReading.for_month || 'last month'}): </span>
+              <span className="font-mono font-bold text-surface-800">{prevReading.reading_value} units</span>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label className="label">Previous Reading {!prevReading ? '(manual)' : '(auto-filled)'}</label>
+            <input type="number" className="input font-mono" value={prevReading?.reading_value || '0'} readOnly={!!prevReading}
+              onChange={e => !prevReading && setPrevReading({ reading_value: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label className="label">Current Reading *</label>
+            <input type="number" className="input font-mono" value={rForm.reading_value} onChange={e => setRForm(p=>({...p,reading_value:e.target.value}))} placeholder="Enter meter reading" autoFocus={!editReading} />
+          </div>
+          <div className="form-group">
+            <label className="label">Reading Date</label>
+            <input type="date" className="input" value={rForm.reading_date} onChange={e => setRForm(p=>({...p,reading_date:e.target.value}))} />
+          </div>
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <input className="input" value={rForm.notes} onChange={e => setRForm(p=>({...p,notes:e.target.value}))} placeholder="Optional" />
+          </div>
+
+          {/* Live calculation preview */}
+          {rForm.reading_value && (prevReading || rForm.reading_value > 0) && (
+            <div className="col-span-2 p-4 bg-brand-50 rounded-xl border border-brand-200">
+              <p className="text-sm font-semibold text-brand-800 mb-2">Calculation Preview</p>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                {(() => {
+                  const units = Math.max(0, parseFloat(rForm.reading_value || 0) - parseFloat(prevReading?.reading_value || 0))
+                  const rate = rForm.reading_type === 'electricity' ? (settings.electricity_rate || 10) : (settings.water_rate || 20)
+                  const amount = units * rate
+                  return <>
+                    <div><span className="text-brand-600">Units:</span> <span className="font-mono font-bold">{units.toFixed(1)}</span></div>
+                    <div><span className="text-brand-600">Rate:</span> <span className="font-mono font-bold">₹{rate}/unit</span></div>
+                    <div><span className="text-brand-600">Amount:</span> <span className="font-mono font-bold text-brand-700">{formatCurrency(amount)}</span></div>
+                  </>
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => { setReadingModal(false); setEditReading(null) }}>Cancel</button>
+          <button className="btn-primary" onClick={saveReading} disabled={saving}>{saving ? <Spinner size={16}/> : editReading ? 'Update' : 'Save Reading'}</button>
+        </div>
+      </Modal>
+
+      {/* BILL MODAL */}
+      <Modal open={billModal} onClose={() => setBillModal(false)} title="Record Utility Bill Paid" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="form-group">
+            <label className="label">Building *</label>
+            <select className="select" value={bForm.building_id} onChange={e => setBForm(p=>({...p,building_id:e.target.value}))}>
+              <option value="">— Select —</option>
+              {buildings.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Type *</label>
+              <select className="select" value={bForm.utility_type} onChange={e => setBForm(p=>({...p,utility_type:e.target.value}))}>
+                <option value="electricity">⚡ Electricity</option>
+                <option value="water">💧 Water</option>
+                <option value="both">Both</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Amount (₹) *</label>
+              <input type="number" className="input" value={bForm.amount} onChange={e => setBForm(p=>({...p,amount:e.target.value}))} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Month</label>
+              <input type="month" className="input" value={bForm.for_month} onChange={e => setBForm(p=>({...p,for_month:e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Mode</label>
+              <select className="select" value={bForm.payment_mode} onChange={e => setBForm(p=>({...p,payment_mode:e.target.value}))}>
+                {['cash','upi','bank_transfer','online','other'].map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group"><label className="label">Vendor</label><input className="input" value={bForm.vendor} onChange={e => setBForm(p=>({...p,vendor:e.target.value}))} placeholder="BESCOM, BWSSB…"/></div>
+            <div className="form-group"><label className="label">Bill Number</label><input className="input" value={bForm.bill_number} onChange={e => setBForm(p=>({...p,bill_number:e.target.value}))} /></div>
+          </div>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => setBillModal(false)}>Cancel</button>
+          <button className="btn-primary" onClick={saveBill} disabled={saving}>{saving ? <Spinner size={16}/> : 'Record Bill'}</button>
+        </div>
+      </Modal>
+
+      {/* DELETE CONFIRM */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
+            <h3 className="text-lg font-semibold mb-2">Delete reading?</h3>
+            <p className="text-surface-500 text-sm mb-5">This cannot be undone. Future month carry-forward will be affected.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">Cancel</button>
+              <button onClick={() => deleteReading(deleteConfirm.id)} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  );
+  )
 }
