@@ -67,9 +67,17 @@ export default function Settings() {
     setUForm(p=>({...p, password: Array.from({length:10}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('')}))
   }
 
-  async function deactivateUser(id) {
-    await supabase.from('profiles').update({ role: 'inactive' }).eq('id', id)
-    toast.success('User deactivated'); loadAll()
+  async function updateUserRole(id, currentRole, newRole) {
+    // Only platform admin can touch super_admins
+    if (currentRole === 'super_admin' && !profile?.is_platform_admin) {
+      return toast.error('Only Platform Admin can modify Super Admin accounts')
+    }
+    if (newRole === 'super_admin' && !profile?.is_platform_admin) {
+      return toast.error('Only Platform Admin can grant Super Admin role')
+    }
+    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success(`Role updated to ${newRole} ✓`); loadAll()
   }
 
   async function saveSetting(key, value) {
@@ -233,9 +241,15 @@ export default function Settings() {
           </div>
           <div className="card overflow-hidden">
             <table className="data-table">
-              <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+              <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th>Change Role</th></tr></thead>
               <tbody>
-                {users.map(u => (
+                {users
+                  .filter(u => {
+                    // Non-platform admins cannot see super_admin users
+                    if (u.role === 'super_admin' && !profile?.is_platform_admin) return false
+                    return true
+                  })
+                  .map(u => (
                   <tr key={u.id}>
                     <td>
                       <div className="flex items-center gap-2">
@@ -251,8 +265,15 @@ export default function Settings() {
                     </td>
                     <td className="text-xs text-surface-400">{u.created_at?.slice(0,10)}</td>
                     <td>
-                      {u.role !== 'inactive' && u.id !== profile?.id && (
-                        <button onClick={() => deactivateUser(u.id)} className="text-xs text-red-400 hover:text-red-600">Deactivate</button>
+                      {u.id !== profile?.id && (
+                        <select className="select py-0.5 text-xs w-32"
+                          value={u.role}
+                          onChange={e => updateUserRole(u.id, u.role, e.target.value)}>
+                          {profile?.is_platform_admin && <option value="super_admin">Super Admin</option>}
+                          <option value="admin">Admin</option>
+                          <option value="team">Team</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
                       )}
                     </td>
                   </tr>
