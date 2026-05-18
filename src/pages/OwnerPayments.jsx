@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, fmtMonth, currentMonth } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge } from '@/components/ui'
@@ -23,6 +23,7 @@ const defaultForm = () => ({
 
 export default function OwnerPayments() {
   const { profile } = useAuth()
+  const channelRef = useRef(null)
   const [payments, setPayments] = useState([])
   const [owners, setOwners] = useState([])
   const [buildings, setBuildings] = useState([])
@@ -33,7 +34,15 @@ export default function OwnerPayments() {
   const [form, setForm] = useState(defaultForm())
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { load(); loadOwners(); loadBuildings() }, [filterMonth])
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('owner-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [filterMonth])
 
   async function load() {
     setLoading(true)
