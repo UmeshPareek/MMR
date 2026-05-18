@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate } from '@/utils/helpers'
 import { Modal, Spinner, EmptyState } from '@/components/ui'
@@ -18,6 +18,7 @@ function getFloor(doorNumber) {
 
 export default function CheckOut() {
   const { profile } = useAuth()
+  const channelRef = useRef(null)
   const [tenants, setTenants] = useState([])
   const [recentExits, setRecentExits] = useState([])
   const [tab, setTab] = useState('active')
@@ -29,10 +30,20 @@ export default function CheckOut() {
   const [coType, setCoType] = useState('good')
   const [form, setForm] = useState({ cleaning:'0', painting:'0', repair:'0', other:'0', outstanding_rent:'0', collected_at_exit:'0', exit_date: new Date().toISOString().slice(0,10), notes:'' })
   const [saving, setSaving] = useState(false)
+  const [outstandingRent, setOutstandingRent] = useState(0)
+  const [loadingOutstanding, setLoadingOutstanding] = useState(false)
   const [filterBuilding, setFilterBuilding] = useState('')
   const [buildings, setBuildings] = useState([])
 
-  useEffect(() => { loadAll() }, [filterMonth])
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('checkout-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [filterMonth])
 
   async function loadAll() {
     setLoading(true)
@@ -99,11 +110,37 @@ export default function CheckOut() {
     loadAll()
   }
 
+  async function fetchOutstandingRent(tenantId) {
+    setLoadingOutstanding(true)
+    const currentMonth = new Date().toISOString().slice(0,7)
+    const prevMonth = new Date(new Date().setMonth(new Date().getMonth()-1)).toISOString().slice(0,7)
+    // Check if rent collected for current and previous month
+    const { data: paid } = await supabase.from('rent_collections')
+      .select('amount, for_month')
+      .eq('tenant_id', tenantId)
+      .in('for_month', [currentMonth, prevMonth])
+    const { data: tenant } = await supabase.from('tenants').select('monthly_rent').eq('id', tenantId).single()
+    const monthlyRent = parseFloat(tenant?.monthly_rent || 0)
+    // Calculate unpaid months
+    const paidMonths = new Set((paid||[]).map(p => p.for_month))
+    let unpaid = 0
+    if (!paidMonths.has(currentMonth)) unpaid += monthlyRent
+    if (!paidMonths.has(prevMonth)) unpaid += monthlyRent
+    setOutstandingRent(unpaid)
+    setLoadingOutstanding(false)
+    return unpaid
+  }
+
   function openCheckout(t) {
     setSelected(t)
     setCoType('good')
-    setForm({ cleaning:'0', painting:'0', repair:'0', other:'0', outstanding_rent:'0', collected_at_exit:'0', exit_date: new Date().toISOString().slice(0,10), notes:'' })
+    setOutstandingRent(0)
     setModal(true)
+    // Async fetch outstanding rent and auto-fill
+    fetchOutstandingRent(t.id).then(unpaid => {
+      setForm(p => ({ ...p, outstanding_rent: String(unpaid) }))
+    })
+    setForm({ cleaning:'0', painting:'0', repair:'0', other:'0', outstanding_rent:'0', collected_at_exit:'0', exit_date: new Date().toISOString().slice(0,10), notes:'' })
   }
 
   async function saveCheckout() {
@@ -116,9 +153,28 @@ export default function CheckOut() {
     
     const { error } = await supabase.from('tenants').update({ status:'inactive', move_out_date: form.exit_date, notes: exitNotes }).eq('id', selected.id)
     if (error) { setSaving(false); return toast.error(error.message) }
+
+    // Free the flat
     await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', selected.flat_id)
+
+    // Insert a refund/settlement record in security_deposits page
+    await supabase.from('security_deposits').insert({
+      tenant_id: selected.id,
+      flat_id: selected.flat_id || null,
+      building_id: selected.building_id,
+      amount: Math.abs(netRefund),
+      payment_mode: 'adjustment',
+      deposit_date: form.exit_date,
+      deposit_type: 'refund',
+      notes: `EXIT SETTLEMENT | Deposit held: ₹${(selected.security_deposit_paid||0).toLocaleString('en-IN')} | Deductions: ₹${deductions.toLocaleString('en-IN')} | Net: ${netRefund >= 0 ? 'Refund' : 'Loss'} ₹${Math.abs(netRefund).toLocaleString('en-IN')} | ${form.notes || ''}`.trim(),
+      collected_by: null,
+    })
+
     setSaving(false)
-    toast.success('Checkout done — flat is now vacant ✓')
+    const msg = netRefund >= 0
+      ? `Checkout done ✓ — Refund ₹${netRefund.toLocaleString('en-IN')} to tenant`
+      : `Checkout done ✓ — Net loss ₹${Math.abs(netRefund).toLocaleString('en-IN')} (deposit forfeited)`
+    toast.success(msg)
     if (coType === 'bad') generateLegalNotice(selected, deductions, netRefund)
     setModal(false); setSelected(null); loadAll()
   }
@@ -350,6 +406,17 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
                 ))}
               </div>
               {coType==='bad'&&<div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">⚠️ Legal notice PDF auto-generated with 15-day deadline + police complaint warning.</div>}
+              {/* Outstanding rent auto-detected banner */}
+              {loadingOutstanding && <div className="p-3 bg-surface-50 rounded-lg text-xs text-surface-500 animate-pulse">Checking outstanding rent...</div>}
+              {!loadingOutstanding && outstandingRent > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700 flex items-center gap-2">
+                  <span>⚠️</span>
+                  <span>Auto-detected <strong>{formatCurrency(outstandingRent)}</strong> outstanding rent (last 2 months) — pre-filled below</span>
+                </div>
+              )}
+              {!loadingOutstanding && outstandingRent === 0 && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-700">✓ No outstanding rent detected</div>
+              )}
             </div>
             <div className="px-6 pt-4 grid sm:grid-cols-2 gap-4">
               {[['exit_date','Exit Date','date'],['outstanding_rent','Outstanding Rent (₹)','number'],['cleaning','Cleaning Charges (₹)','number'],['painting','Painting Charges (₹)','number'],['repair','Repair Charges (₹)','number'],['other','Other Deductions (₹)','number'],['collected_at_exit','Collected at Exit (₹)','number']].map(([k,l,type])=>(
