@@ -32,7 +32,7 @@ export default function CheckInOut() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: b }, { data: t }, { data: ex }] = await Promise.all([
+    const [{ data: b }, { data: t, error: te }, { data: ex }] = await Promise.all([
       supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
       supabase.from('tenants')
         .select('id,full_name,phone,monthly_rent,security_deposit_paid,move_in_date,rent_type,flat_id,building_id, flat:flats(door_number), building:buildings(name)')
@@ -41,6 +41,7 @@ export default function CheckInOut() {
         .select('id,full_name,phone,move_out_date,flat_id,building_id, flat:flats(door_number), building:buildings(name)')
         .eq('status', 'inactive').order('move_out_date', { ascending: false }).limit(30),
     ])
+    if (te) console.error('Tenants query error:', te)
     setBuildings(b || [])
     setActiveTenants(t || [])
     setRecentExits(ex || [])
