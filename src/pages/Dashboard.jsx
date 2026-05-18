@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, lastNMonths, currentMonth } from '@/utils/helpers'
 import { Spinner } from '@/components/ui'
-import { TrendingUp, TrendingDown, Download, RefreshCw, Building2, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { TrendingUp, TrendingDown, Download, RefreshCw, Building2, AlertTriangle, CheckCircle2, Clock, LogIn, LogOut } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend } from 'recharts'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [outstanding, setOutstanding] = useState({ count: 0, amount: 0, tenants: [] })
   const [rentExpected, setRentExpected] = useState({ expected: 0, collected: 0, prepaid: 0, postpaid: 0 })
   const [loading, setLoading] = useState(true)
+  const [movement, setMovement] = useState({ checkIns: 0, checkOuts: 0, depositIn: 0, runaways: 0 })
+  const [activeTenantCount, setActiveTenantCount] = useState(0)
   const [viewMode, setViewMode] = useState('consolidated') // 'consolidated' | 'building'
   const channelRef = useRef(null)
 
@@ -79,6 +81,19 @@ export default function Dashboard() {
       // Rent expected vs collected
       const prepaidTenants = (allTenants || []).filter(t => t.rent_type !== 'postpaid')
       const postpaidTenants = (allTenants || []).filter(t => t.rent_type === 'postpaid')
+      // Check-ins / check-outs this month
+      const [{ data: checkIns }, { data: checkOuts }] = await Promise.all([
+        supabase.from('tenants').select('security_deposit_paid').gte('move_in_date', `${month}-01`).lte('move_in_date', `${month}-31`),
+        supabase.from('tenants').select('notes').eq('status','inactive').gte('move_out_date', `${month}-01`).lte('move_out_date', `${month}-31`),
+      ])
+      setActiveTenantCount((allTenants||[]).length)
+      setMovement({
+        checkIns: (checkIns||[]).length,
+        checkOuts: (checkOuts||[]).length,
+        depositIn: (checkIns||[]).reduce((s,t)=>s+(parseFloat(t.security_deposit_paid)||0),0),
+        runaways: (checkOuts||[]).filter(t=>t.notes?.includes('RUNAWAY')).length,
+      })
+
       const totalExpected = (allTenants || []).reduce((s, t) => s + Number(t.monthly_rent), 0)
       setRentExpected({ expected: totalExpected, collected: income, prepaid: prepaidTenants.reduce((s,t)=>s+Number(t.monthly_rent),0), postpaid: postpaidTenants.reduce((s,t)=>s+Number(t.monthly_rent),0) })
 
@@ -192,6 +207,17 @@ export default function Dashboard() {
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(plRows), 'P&L Summary')
       }
 
+      // Sheet 7: Check-Ins this month
+      const { data: ciData } = await supabase.from('tenants').select('full_name, phone, monthly_rent, security_deposit_paid, move_in_date, building_id').gte('move_in_date', `${month}-01`).lte('move_in_date', `${month}-31`)
+      const { data: coData } = await supabase.from('tenants').select('full_name, phone, move_out_date, notes, building_id').eq('status','inactive').gte('move_out_date', `${month}-01`).lte('move_out_date', `${month}-31`)
+      const bNameMap = {}; (buildings||[]).forEach(b => { bNameMap[b.id] = b.name })
+      if (ciData?.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciData.map(t=>({ Building: bNameMap[t.building_id]||'—', Tenant: t.full_name, Phone: t.phone, 'Move In': t.move_in_date, Rent: t.monthly_rent, Deposit: t.security_deposit_paid||0 }))), 'Check-Ins')
+      }
+      if (coData?.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(coData.map(t=>({ Building: bNameMap[t.building_id]||'—', Tenant: t.full_name, Phone: t.phone, 'Exit Date': t.move_out_date, Type: t.notes?.includes('RUNAWAY')?'Runaway':'Normal' }))), 'Check-Outs')
+      }
+
       XLSX.writeFile(wb, `CashMyRent_Master_${month}.xlsx`)
       toast.dismiss(); toast.success('Master Excel downloaded ✓')
     } catch(e) { toast.dismiss(); toast.error('Download failed') }
@@ -291,6 +317,52 @@ export default function Dashboard() {
                 <p className={`text-xl font-bold font-mono ${vcolor}`}>{value}</p>
               </div>
             ))}
+          </div>
+
+          {/* Check In / Check Out this month */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="card p-4 border-l-4 border-emerald-400 flex items-center gap-3">
+              <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <LogIn className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-400">Check-Ins</p>
+                <p className="text-xl font-bold text-emerald-700">{movement.checkIns}</p>
+                <p className="text-xs text-surface-400">{formatCurrency(movement.depositIn)} deposit</p>
+              </div>
+            </div>
+            <div className="card p-4 border-l-4 border-red-400 flex items-center gap-3">
+              <div className="w-9 h-9 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <LogOut className="w-4 h-4 text-red-500" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-400">Check-Outs</p>
+                <p className="text-xl font-bold text-red-600">{movement.checkOuts}</p>
+                <p className="text-xs text-surface-400">{movement.runaways > 0 ? `${movement.runaways} runaway` : 'all normal'}</p>
+              </div>
+            </div>
+            <div className="card p-4 border-l-4 border-surface-300 flex items-center gap-3">
+              <div className="w-9 h-9 bg-surface-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-4 h-4 text-surface-500" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-400">Net Movement</p>
+                <p className={`text-xl font-bold ${movement.checkIns - movement.checkOuts >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {movement.checkIns - movement.checkOuts >= 0 ? '+' : ''}{movement.checkIns - movement.checkOuts}
+                </p>
+                <p className="text-xs text-surface-400">tenants this month</p>
+              </div>
+            </div>
+            <div className="card p-4 border-l-4 border-brand-400 flex items-center gap-3">
+              <div className="w-9 h-9 bg-brand-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-brand-600" />
+              </div>
+              <div>
+                <p className="text-xs text-surface-400">Active Tenants</p>
+                <p className="text-xl font-bold text-brand-700">{activeTenantCount}</p>
+                <p className="text-xs text-surface-400">across all buildings</p>
+              </div>
+            </div>
           </div>
 
           {viewMode === 'consolidated' ? (
