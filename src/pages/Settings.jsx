@@ -9,6 +9,10 @@ import { useAuth } from '@/contexts/AuthContext'
 export default function Settings() {
   const { profile, isAdmin, isSuperAdmin } = useAuth()
   const [tab, setTab] = useState('rates')
+  const [users, setUsers] = useState([])
+  const [userModal, setUserModal] = useState(false)
+  const [uForm, setUForm] = useState({ email:'', full_name:'', role:'admin', password:'' })
+  const [generatedCreds, setGeneratedCreds] = useState(null)
   const [settings, setSettings] = useState({})
   const [buildings, setBuildings] = useState([])
   const [expGroups, setExpGroups] = useState([])
@@ -25,17 +29,47 @@ export default function Settings() {
 
   async function loadAll() {
     setLoading(true)
-    const [{ data: s }, { data: b }, { data: g }] = await Promise.all([
+    const [{ data: s }, { data: b }, { data: g }, { data: u }] = await Promise.all([
       supabase.from('master_settings').select('*'),
       supabase.from('buildings').select('id, name, is_active, electricity_reading_enabled, water_reading_enabled').order('name'),
       supabase.from('expense_groups').select('*').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, full_name, email, role, created_at').order('created_at', { ascending: false }),
     ])
     const settingsMap = {}
     ;(s || []).forEach(r => { settingsMap[r.setting_key] = r.setting_value })
     setSettings(settingsMap)
     setBuildings(b || [])
     setExpGroups(g || [])
+    setUsers(u || [])
     setLoading(false)
+  }
+
+  async function createUser() {
+    if (!uForm.email || !uForm.password) return toast.error('Email and password required')
+    setSaving(true)
+    try {
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: uForm.email, password: uForm.password, email_confirm: true,
+        user_metadata: { full_name: uForm.full_name }
+      })
+      if (error) throw error
+      await supabase.from('profiles').upsert({ id: data.user.id, email: uForm.email, full_name: uForm.full_name, role: uForm.role })
+      setGeneratedCreds({ email: uForm.email, password: uForm.password })
+      toast.success('User created ✓')
+      setUForm({ email:'', full_name:'', role:'admin', password:'' })
+      loadAll()
+    } catch(e) { toast.error(e.message) }
+    setSaving(false)
+  }
+
+  function generatePassword() {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrs23456789@#!'
+    setUForm(p=>({...p, password: Array.from({length:10}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('')}))
+  }
+
+  async function deactivateUser(id) {
+    await supabase.from('profiles').update({ role: 'inactive' }).eq('id', id)
+    toast.success('User deactivated'); loadAll()
   }
 
   async function saveSetting(key, value) {
@@ -93,7 +127,7 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200">
-        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups']].map(([k,l]) => (
+        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management']].map(([k,l]) => (
           <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -186,6 +220,93 @@ export default function Settings() {
               </table>
             )}
           </div>
+        </div>
+      )}
+
+      {/* USERS TAB */}
+      {tab === 'users' && (
+        <div className="space-y-3">
+          <div className="flex justify-end">
+            <button onClick={() => { setUserModal(true); setGeneratedCreds(null) }} className="btn-primary flex items-center gap-2">
+              <Plus className="w-4 h-4"/> Add User
+            </button>
+          </div>
+          <div className="card overflow-hidden">
+            <table className="data-table">
+              <thead><tr><th>User</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+              <tbody>
+                {users.map(u => (
+                  <tr key={u.id}>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center text-brand-700 font-bold text-xs">{(u.full_name||u.email||'U').charAt(0).toUpperCase()}</div>
+                        <span className="font-medium text-surface-800">{u.full_name || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="text-sm text-surface-500">{u.email}</td>
+                    <td>
+                      <span className={`badge border text-xs ${u.role==='super_admin'?'bg-amber-50 text-amber-700 border-amber-200':u.role==='admin'?'bg-brand-50 text-brand-700 border-brand-200':u.role==='inactive'?'bg-surface-100 text-surface-400 border-surface-200':'bg-surface-100 text-surface-600 border-surface-200'}`}>
+                        {u.role}
+                      </span>
+                    </td>
+                    <td className="text-xs text-surface-400">{u.created_at?.slice(0,10)}</td>
+                    <td>
+                      {u.role !== 'inactive' && u.id !== profile?.id && (
+                        <button onClick={() => deactivateUser(u.id)} className="text-xs text-red-400 hover:text-red-600">Deactivate</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* User modal */}
+          <Modal open={userModal} onClose={() => { setUserModal(false); setGeneratedCreds(null) }} title="Create New User" size="sm">
+            <div className="p-6 space-y-4">
+              {generatedCreds ? (
+                <div className="space-y-3">
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                    <p className="font-semibold text-emerald-800 mb-2">✓ User created!</p>
+                    <div className="space-y-2 text-sm font-mono">
+                      <p>Email: <strong>{generatedCreds.email}</strong></p>
+                      <p>Password: <strong>{generatedCreds.password}</strong></p>
+                      <p className="text-xs text-emerald-600 font-sans">Login at app.cashmyrent.com</p>
+                    </div>
+                    <button onClick={() => {navigator.clipboard.writeText(`Email: ${generatedCreds.email}
+Password: ${generatedCreds.password}
+URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
+                      className="btn-secondary w-full mt-3 text-sm">Copy Credentials</button>
+                  </div>
+                  <button onClick={() => { setGeneratedCreds(null); setUForm({ email:'', full_name:'', role:'admin', password:'' }) }} className="btn-primary w-full">Add Another</button>
+                </div>
+              ) : (
+                <>
+                  <div className="form-group"><label className="label">Full Name</label><input className="input" value={uForm.full_name} onChange={e=>setUForm(p=>({...p,full_name:e.target.value}))} placeholder="Ravi Kumar" autoFocus /></div>
+                  <div className="form-group"><label className="label">Email *</label><input type="email" className="input" value={uForm.email} onChange={e=>setUForm(p=>({...p,email:e.target.value}))} /></div>
+                  <div className="form-group">
+                    <label className="label">Role</label>
+                    <select className="select" value={uForm.role} onChange={e=>setUForm(p=>({...p,role:e.target.value}))}>
+                      <option value="super_admin">Super Admin (full access)</option>
+                      <option value="admin">Admin</option>
+                      <option value="team">Team (collection only)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="label">Password *</label>
+                    <div className="flex gap-2">
+                      <input className="input flex-1 font-mono" value={uForm.password} onChange={e=>setUForm(p=>({...p,password:e.target.value}))} placeholder="Min 8 chars" />
+                      <button onClick={generatePassword} className="btn-secondary btn-sm whitespace-nowrap">Generate</button>
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button className="btn-secondary flex-1" onClick={() => setUserModal(false)}>Cancel</button>
+                    <button className="btn-primary flex-1" onClick={createUser} disabled={saving}>{saving ? <Spinner size={16}/> : 'Create User'}</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </Modal>
         </div>
       )}
 
