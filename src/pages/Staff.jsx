@@ -35,7 +35,11 @@ export default function Staff() {
   const [saving, setSaving] = useState(false)
   const [deleteStaffId, setDeleteStaffId] = useState(null)
   const [editSalaryRecord, setEditSalaryRecord] = useState(null)
+  const [editSalaryModal, setEditSalaryModal] = useState(false)
+  const [editSalaryForm, setEditSalaryForm] = useState({})
   const [editAdvanceRecord, setEditAdvanceRecord] = useState(null)
+  const [editAdvanceModal, setEditAdvanceModal] = useState(false)
+  const [editAdvanceForm, setEditAdvanceForm] = useState({})
   const [incentives, setIncentives] = useState([])
   const [reimbursements, setReimbursements] = useState([])
   const [reimbModal, setReimbModal] = useState(false)
@@ -213,6 +217,66 @@ export default function Staff() {
     const { error } = await supabase.from('staff_advances').update({ [field]: value }).eq('id', id)
     if (error) return toast.error(error.message)
     toast.success('Updated ✓'); setEditAdvanceRecord(null); loadAdvances()
+  }
+
+  async function openEditSalary(s) {
+    setEditSalaryForm({
+      gross_salary: s.gross_amount || s.gross_salary || '',
+      advance_deduction: s.advance_deduction || 0,
+      other_deduction: s.other_deduction || 0,
+      net_amount: s.net_amount || s.net_salary || '',
+      payment_mode: s.payment_mode || 'bank_transfer',
+      payment_date: s.payment_date || '',
+      transaction_ref: s.transaction_ref || '',
+      notes: s.notes || '',
+    })
+    setEditSalaryRecord(s)
+    setEditSalaryModal(true)
+  }
+
+  async function saveEditSalary() {
+    const net = parseFloat(editSalaryForm.gross_salary||0) - parseFloat(editSalaryForm.advance_deduction||0) - parseFloat(editSalaryForm.other_deduction||0)
+    const { error } = await supabase.from('staff_salaries').update({
+      gross_salary: parseFloat(editSalaryForm.gross_salary),
+      gross_amount: parseFloat(editSalaryForm.gross_salary),
+      advance_deduction: parseFloat(editSalaryForm.advance_deduction||0),
+      other_deduction: parseFloat(editSalaryForm.other_deduction||0),
+      net_salary: net, net_amount: net,
+      payment_mode: editSalaryForm.payment_mode,
+      payment_date: editSalaryForm.payment_date,
+      transaction_ref: editSalaryForm.transaction_ref || null,
+      notes: editSalaryForm.notes || null,
+    }).eq('id', editSalaryRecord.id)
+    if (error) return toast.error(error.message)
+    toast.success('Salary updated ✓')
+    setEditSalaryModal(false); setEditSalaryRecord(null); loadSalaries()
+  }
+
+  async function openEditAdvance(a) {
+    setEditAdvanceForm({
+      amount: a.amount || '',
+      advance_date: a.advance_date || '',
+      advance_type: a.advance_type || 'advance',
+      payment_mode: a.payment_mode || 'cash',
+      notes: a.notes || '',
+      recovered: a.recovered || false,
+    })
+    setEditAdvanceRecord(a)
+    setEditAdvanceModal(true)
+  }
+
+  async function saveEditAdvance() {
+    const { error } = await supabase.from('staff_advances').update({
+      amount: parseFloat(editAdvanceForm.amount),
+      advance_date: editAdvanceForm.advance_date,
+      advance_type: editAdvanceForm.advance_type,
+      payment_mode: editAdvanceForm.payment_mode,
+      notes: editAdvanceForm.notes || null,
+      recovered: editAdvanceForm.recovered,
+    }).eq('id', editAdvanceRecord.id)
+    if (error) return toast.error(error.message)
+    toast.success('Updated ✓')
+    setEditAdvanceModal(false); setEditAdvanceRecord(null); loadAdvances(); loadIncentives(); loadReimbursements()
   }
 
   async function deleteSalary(id) {
@@ -528,7 +592,7 @@ export default function Staff() {
                       <th className="text-right">Advance Deducted</th>
                       <th className="text-right">Other Deduction</th>
                       <th className="text-right">Net Paid</th>
-                      <th>Mode</th><th>Date</th>
+                      <th>Mode</th><th>Date</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -546,6 +610,16 @@ export default function Staff() {
                         <td className="text-right font-mono font-bold text-emerald-700">{formatCurrency(s.net_amount)}</td>
                         <td><span className="badge bg-surface-100 text-surface-600 border border-surface-200 text-xs">{s.payment_mode}</span></td>
                         <td className="text-surface-500 text-xs">{fmtDate(s.payment_date)}</td>
+                        <td>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => openEditSalary(s)} className="btn-ghost p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button onClick={() => deleteSalary(s.id)} className="btn-ghost p-1.5 text-red-400 hover:text-red-600" title="Delete">
+                              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -831,7 +905,16 @@ export default function Staff() {
                       <td className="text-xs text-surface-500">{i.advance_date}</td>
                       <td className="font-mono font-bold text-amber-700">{formatCurrency(i.amount)}</td>
                       <td className="text-xs text-surface-500">{i.notes || '—'}</td>
-                      <td><button onClick={() => deleteAdvance(i.id)} className="btn-ghost p-1 text-red-400 hover:text-red-600"><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button></td>
+                      <td>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openEditAdvance(i)} className="btn-ghost p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
+                          <button onClick={() => deleteAdvance(i.id)} className="btn-ghost p-1.5 text-red-400 hover:text-red-600" title="Delete">
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -861,7 +944,16 @@ export default function Staff() {
                       <td className="text-sm text-surface-600">{r.notes || '—'}</td>
                       <td className="text-xs"><span className="badge badge-surface">{r.payment_mode?.toUpperCase() || '—'}</span></td>
                       <td className="text-right font-mono font-semibold text-brand-700">{formatCurrency(r.amount)}</td>
-                      <td><button onClick={() => deleteAdvance(r.id)} className="btn-ghost p-1 text-red-400 hover:text-red-600"><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button></td>
+                      <td>
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openEditAdvance(r)} className="btn-ghost p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                          </button>
+                          <button onClick={() => deleteAdvance(r.id)} className="btn-ghost p-1.5 text-red-400 hover:text-red-600" title="Delete">
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -905,6 +997,92 @@ export default function Staff() {
         <div className="px-6 pb-6 flex gap-3 justify-end">
           <button className="btn-secondary" onClick={() => setReimbModal(false)}>Cancel</button>
           <button className="btn-primary" onClick={saveReimbursement} disabled={saving}>{saving ? <Spinner size={16}/> : 'Save Reimbursement'}</button>
+        </div>
+      </Modal>
+
+      {/* EDIT SALARY MODAL */}
+      <Modal open={editSalaryModal} onClose={() => { setEditSalaryModal(false); setEditSalaryRecord(null) }} title="Edit Salary Record" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Gross Salary (₹)</label>
+              <input type="number" className="input" value={editSalaryForm.gross_salary||''} onChange={e => setEditSalaryForm(p=>({...p, gross_salary: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Advance Deducted (₹)</label>
+              <input type="number" className="input" value={editSalaryForm.advance_deduction||0} onChange={e => setEditSalaryForm(p=>({...p, advance_deduction: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Other Deduction (₹)</label>
+              <input type="number" className="input" value={editSalaryForm.other_deduction||0} onChange={e => setEditSalaryForm(p=>({...p, other_deduction: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Net Payable (₹)</label>
+              <input type="number" className="input bg-surface-50" value={
+                parseFloat(editSalaryForm.gross_salary||0) - parseFloat(editSalaryForm.advance_deduction||0) - parseFloat(editSalaryForm.other_deduction||0)
+              } readOnly />
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Mode</label>
+              <select className="select" value={editSalaryForm.payment_mode||''} onChange={e => setEditSalaryForm(p=>({...p, payment_mode: e.target.value}))}>
+                {['cash','upi','bank_transfer','other'].map(m=><option key={m} value={m}>{m.replace('_',' ').toUpperCase()}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Date</label>
+              <input type="date" className="input" value={editSalaryForm.payment_date||''} onChange={e => setEditSalaryForm(p=>({...p, payment_date: e.target.value}))} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <input className="input" value={editSalaryForm.notes||''} onChange={e => setEditSalaryForm(p=>({...p, notes: e.target.value}))} />
+          </div>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => { setEditSalaryModal(false); setEditSalaryRecord(null) }}>Cancel</button>
+          <button className="btn-primary" onClick={saveEditSalary}>Save Changes</button>
+        </div>
+      </Modal>
+
+      {/* EDIT ADVANCE / INCENTIVE / REIMBURSEMENT MODAL */}
+      <Modal open={editAdvanceModal} onClose={() => { setEditAdvanceModal(false); setEditAdvanceRecord(null) }} title="Edit Entry" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Amount (₹)</label>
+              <input type="number" className="input" value={editAdvanceForm.amount||''} onChange={e => setEditAdvanceForm(p=>({...p, amount: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Date</label>
+              <input type="date" className="input" value={editAdvanceForm.advance_date||''} onChange={e => setEditAdvanceForm(p=>({...p, advance_date: e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Type</label>
+              <select className="select" value={editAdvanceForm.advance_type||'advance'} onChange={e => setEditAdvanceForm(p=>({...p, advance_type: e.target.value}))}>
+                <option value="advance">Advance</option>
+                <option value="incentive">Incentive</option>
+                <option value="reimbursement">Reimbursement</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="label">Payment Mode</label>
+              <select className="select" value={editAdvanceForm.payment_mode||'cash'} onChange={e => setEditAdvanceForm(p=>({...p, payment_mode: e.target.value}))}>
+                {['cash','upi','bank_transfer','other'].map(m=><option key={m} value={m}>{m.replace('_',' ').toUpperCase()}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Notes</label>
+            <input className="input" value={editAdvanceForm.notes||''} onChange={e => setEditAdvanceForm(p=>({...p, notes: e.target.value}))} />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-surface-600 cursor-pointer">
+            <input type="checkbox" checked={editAdvanceForm.recovered||false} onChange={e => setEditAdvanceForm(p=>({...p, recovered: e.target.checked}))} className="rounded" />
+            Mark as Recovered
+          </label>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => { setEditAdvanceModal(false); setEditAdvanceRecord(null) }}>Cancel</button>
+          <button className="btn-primary" onClick={saveEditAdvance}>Save Changes</button>
         </div>
       </Modal>
 
