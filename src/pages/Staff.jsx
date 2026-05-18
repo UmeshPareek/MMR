@@ -36,11 +36,15 @@ export default function Staff() {
   const [deleteStaffId, setDeleteStaffId] = useState(null)
   const [editSalaryRecord, setEditSalaryRecord] = useState(null)
   const [editAdvanceRecord, setEditAdvanceRecord] = useState(null)
+  const [incentives, setIncentives] = useState([])
+  const [reimbursements, setReimbursements] = useState([])
+  const [reimbModal, setReimbModal] = useState(false)
+  const [rForm, setRForm] = useState({ staff_id:'', amount:'', description:'', date: new Date().toISOString().slice(0,10), payment_mode:'cash' })
   const [quickModal, setQuickModal] = useState(false)
   const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
 
   useEffect(() => { loadAll() }, [])
-  useEffect(() => { if (tab === 'salaries' || tab === 'summary') loadSalaries(); if (tab === 'advances' || tab === 'summary') loadAdvances() }, [tab, selectedMonth])
+  useEffect(() => { if (tab === 'salaries' || tab === 'summary') loadSalaries(); if (tab === 'advances' || tab === 'summary') loadAdvances(); if (tab === 'incentives') loadIncentives(); if (tab === 'reimbursements') loadReimbursements() }, [tab, selectedMonth])
 
   async function loadAll() {
     setLoading(true)
@@ -64,6 +68,39 @@ export default function Staff() {
       .eq('for_month', selectedMonth)
       .order('created_at', { ascending: false })
     setSalaries(data || [])
+  }
+
+  async function loadIncentives() {
+    const { data } = await supabase.from('staff_advances')
+      .select('*, staff:staff(full_name)')
+      .eq('advance_type', 'incentive')
+      .order('advance_date', { ascending: false })
+    setIncentives(data || [])
+  }
+
+  async function loadReimbursements() {
+    const { data } = await supabase.from('staff_advances')
+      .select('*, staff:staff(full_name)')
+      .eq('advance_type', 'reimbursement')
+      .order('advance_date', { ascending: false })
+    setReimbursements(data || [])
+  }
+
+  async function saveReimbursement() {
+    if (!rForm.staff_id || !rForm.amount) return toast.error('Staff and amount required')
+    setSaving(true)
+    const { error } = await supabase.from('staff_advances').insert({
+      staff_id: rForm.staff_id, amount: parseFloat(rForm.amount),
+      advance_date: rForm.date, advance_type: 'reimbursement',
+      notes: rForm.description, recovered: true,
+      payment_mode: rForm.payment_mode
+    })
+    setSaving(false)
+    if (error) return toast.error(error.message)
+    toast.success('Reimbursement recorded ✓')
+    setReimbModal(false)
+    setRForm({ staff_id:'', amount:'', description:'', date: new Date().toISOString().slice(0,10), payment_mode:'cash' })
+    loadReimbursements()
   }
 
   async function loadAdvances() {
@@ -161,9 +198,9 @@ export default function Staff() {
   }
 
   async function deleteStaff(id) {
-    const { error } = await supabase.from('staff').update({ status: 'inactive' }).eq('id', id)
+    const { error } = await supabase.from('staff').delete().eq('id', id)
     if (error) return toast.error(error.message)
-    toast.success('Staff removed ✓'); setDeleteStaffId(null); loadStaff()
+    toast.success('Staff permanently deleted ✓'); setDeleteStaffId(null); loadStaff()
   }
 
   async function updateSalary(id, field, value) {
@@ -258,7 +295,7 @@ export default function Staff() {
 
       {/* Tabs */}
       <div className="flex border-b border-surface-200 overflow-x-auto">
-        {[['staff','Staff Members'],['payroll','Monthly Payroll'],['salaries',`Salary History`],['advances','Pending Advances']].map(([key, label]) => (
+        {[['staff','Staff Members'],['payroll','Monthly Payroll'],['salaries','Salary History'],['advances','Advances'],['incentives','Incentives'],['reimbursements','Reimbursements']].map(([key, label]) => (
           <button key={key} className={`tab flex-shrink-0 ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>
         ))}
       </div>
@@ -772,6 +809,105 @@ export default function Staff() {
           <button className="btn-primary" onClick={saveAdvance} disabled={saving}>{saving ? <Spinner size={16} /> : 'Record Advance'}</button>
         </div>
       </Modal>
+      {/* INCENTIVES TAB */}
+      {tab === 'incentives' && (
+        <div className="space-y-4">
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 border-b border-surface-100 bg-amber-50 flex justify-between items-center">
+              <div>
+                <h3 className="text-sm font-semibold text-amber-800">Flat Filling Incentives</h3>
+                <p className="text-xs text-amber-600 mt-0.5">₹1,000/flat · ₹5,000 bonus for 10+ flats</p>
+              </div>
+            </div>
+            {incentives.length === 0 ? (
+              <div className="py-10 text-center text-surface-400 text-sm">No incentives paid yet</div>
+            ) : (
+              <table className="data-table">
+                <thead><tr><th>Staff</th><th>Date</th><th>Amount</th><th>Notes</th><th></th></tr></thead>
+                <tbody>
+                  {incentives.map(i => (
+                    <tr key={i.id}>
+                      <td className="font-medium">{i.staff?.full_name}</td>
+                      <td className="text-xs text-surface-500">{i.advance_date}</td>
+                      <td className="font-mono font-bold text-amber-700">{formatCurrency(i.amount)}</td>
+                      <td className="text-xs text-surface-500">{i.notes || '—'}</td>
+                      <td><button onClick={() => deleteAdvance(i.id)} className="btn-ghost p-1 text-red-400 hover:text-red-600"><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* REIMBURSEMENTS TAB */}
+      {tab === 'reimbursements' && (
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={() => setReimbModal(true)} className="btn-primary flex items-center gap-2"><Plus size={16}/> Add Reimbursement</button>
+          </div>
+          <div className="card overflow-hidden">
+            {reimbursements.length === 0 ? (
+              <div className="py-10 text-center text-surface-400 text-sm">No reimbursements recorded yet</div>
+            ) : (
+              <table className="data-table">
+                <thead><tr><th>Staff</th><th>Date</th><th>Description</th><th>Mode</th><th className="text-right">Amount</th><th></th></tr></thead>
+                <tbody>
+                  {reimbursements.map(r => (
+                    <tr key={r.id}>
+                      <td className="font-medium">{r.staff?.full_name}</td>
+                      <td className="text-xs text-surface-500">{r.advance_date}</td>
+                      <td className="text-sm text-surface-600">{r.notes || '—'}</td>
+                      <td className="text-xs"><span className="badge badge-surface">{r.payment_mode?.toUpperCase() || '—'}</span></td>
+                      <td className="text-right font-mono font-semibold text-brand-700">{formatCurrency(r.amount)}</td>
+                      <td><button onClick={() => deleteAdvance(r.id)} className="btn-ghost p-1 text-red-400 hover:text-red-600"><svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg></button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* REIMBURSEMENT MODAL */}
+      <Modal open={reimbModal} onClose={() => setReimbModal(false)} title="Record Reimbursement" size="sm">
+        <div className="p-6 space-y-4">
+          <div className="form-group">
+            <label className="label">Staff Member *</label>
+            <select className="select" value={rForm.staff_id} onChange={e => setRForm(p=>({...p,staff_id:e.target.value}))}>
+              <option value="">— Select staff —</option>
+              {activeStaff.map(s => <option key={s.id} value={s.id}>{s.full_name}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="label">Amount (₹) *</label>
+              <input type="number" className="input" value={rForm.amount} onChange={e => setRForm(p=>({...p,amount:e.target.value}))} />
+            </div>
+            <div className="form-group">
+              <label className="label">Date</label>
+              <input type="date" className="input" value={rForm.date} onChange={e => setRForm(p=>({...p,date:e.target.value}))} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="label">Description</label>
+            <input className="input" value={rForm.description} onChange={e => setRForm(p=>({...p,description:e.target.value}))} placeholder="Travel, food, tools…" />
+          </div>
+          <div className="form-group">
+            <label className="label">Payment Mode</label>
+            <select className="select" value={rForm.payment_mode} onChange={e => setRForm(p=>({...p,payment_mode:e.target.value}))}>
+              {['cash','upi','bank_transfer','other'].map(m=><option key={m} value={m}>{m.toUpperCase()}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="px-6 pb-6 flex gap-3 justify-end">
+          <button className="btn-secondary" onClick={() => setReimbModal(false)}>Cancel</button>
+          <button className="btn-primary" onClick={saveReimbursement} disabled={saving}>{saving ? <Spinner size={16}/> : 'Save Reimbursement'}</button>
+        </div>
+      </Modal>
+
       {/* DELETE STAFF CONFIRM */}
       {deleteStaffId && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
