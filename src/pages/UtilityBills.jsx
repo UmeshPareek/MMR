@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
 import { Modal, Spinner, EmptyState } from '@/components/ui'
@@ -10,6 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 
 export default function UtilityBills() {
   const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const channelRef = useRef(null)
   const [tab, setTab] = useState('readings')
   const [buildings, setBuildings] = useState([])
   const [flats, setFlats] = useState([])
@@ -36,7 +37,15 @@ export default function UtilityBills() {
   const [editReading, setEditReading] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { loadAll() }, [filterMonth, filterBuilding, filterType])
+  useEffect(() => {
+    loadAll()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('utility-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meter_readings' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => loadAll())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [filterMonth, filterBuilding, filterType])
 
   async function loadAll() {
     setLoading(true)
