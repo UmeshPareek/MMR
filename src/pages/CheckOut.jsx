@@ -13,6 +13,8 @@ export default function CheckOut() {
   const [recentExits, setRecentExits] = useState([])
   const [tab, setTab] = useState('active')
   const [loading, setLoading] = useState(true)
+  const [filterMonth, setFilterMonth] = useState(new Date().toISOString().slice(0,7))
+  const [stats, setStats] = useState({ totalExits:0, normalExits:0, runaways:0, depositHeld:0, deductions:0, refunds:0 })
   const [modal, setModal] = useState(false)
   const [selected, setSelected] = useState(null)
   const [coType, setCoType] = useState('good')
@@ -21,7 +23,7 @@ export default function CheckOut() {
   const [filterBuilding, setFilterBuilding] = useState('')
   const [buildings, setBuildings] = useState([])
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { loadAll() }, [filterMonth])
 
   async function loadAll() {
     setLoading(true)
@@ -29,7 +31,7 @@ export default function CheckOut() {
       // Use same pattern as working Tenants page — select * then join manually
       const [{ data: b }, { data: t }, { data: ex }, { data: allFlats }, { data: allBuildings }] = await Promise.all([
         supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
-        supabase.from('tenants').select('*').eq('status','active').order('full_name'),
+        supabase.from('tenants').select('*').eq('status','active').order('building_id').order('full_name'),
         supabase.from('tenants').select('*').eq('status','inactive').order('move_out_date', { ascending: false }).limit(50),
         supabase.from('flats').select('id,door_number'),
         supabase.from('buildings').select('id,name'),
@@ -48,7 +50,19 @@ export default function CheckOut() {
 
       setBuildings(b || [])
       setTenants(enrich(t))
-      setRecentExits(enrich(ex))
+      const enrichedExits = enrich(ex)
+      setRecentExits(enrichedExits)
+
+      // Compute monthly stats from exits
+      const monthExits = enrichedExits.filter(t => t.move_out_date?.slice(0,7) === filterMonth)
+      const runaways = monthExits.filter(t => t.notes?.includes('RUNAWAY'))
+      const depositTotal = monthExits.reduce((s,t) => s + (parseFloat(t.security_deposit_paid)||0), 0)
+      setStats({
+        totalExits: monthExits.length,
+        normalExits: monthExits.length - runaways.length,
+        runaways: runaways.length,
+        depositHeld: depositTotal,
+      })
     } catch(e) {
       console.error('CheckOut loadAll error:', e)
       toast.error('Failed to load tenants')
@@ -141,44 +155,84 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
         ))}
       </div>
 
-      {tab === 'active' && (
-        <div className="card overflow-hidden">
-          {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
-          : filtered.length === 0
-            ? <EmptyState icon={LogOut} title="No active tenants" />
-            : (
-              <table className="data-table">
-                <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Move In</th><th>Monthly Rent</th><th>Deposit Held</th><th>Action</th></tr></thead>
-                <tbody>
-                  {filtered.map(t=>(
-                    <tr key={t.id}>
-                      <td>
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 bg-brand-100 rounded-full flex items-center justify-center font-bold text-brand-700 text-sm">{t.full_name.charAt(0)}</div>
-                          <div><p className="font-medium text-surface-800">{t.full_name}</p><p className="text-xs text-surface-400">{t.phone}</p></div>
-                        </div>
-                      </td>
-                      <td className="text-sm text-surface-600">{t.building?.name||'—'}</td>
-                      <td className="font-mono font-semibold">{t.flat?.door_number||'—'}</td>
-                      <td className="text-xs text-surface-500">{fmtDate(t.move_in_date)}</td>
-                      <td className="font-mono">{formatCurrency(t.monthly_rent)}</td>
-                      <td className="font-mono text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
-                      <td>
-                        <button onClick={()=>openCheckout(t)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
-                          <LogOut className="w-3.5 h-3.5"/> Check Out
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-        </div>
-      )}
+      {tab === 'active' && (() => {
+        // Group by building
+        const byBuilding = {}
+        filtered.forEach(t => {
+          const bName = t.building?.name || 'Unknown'
+          if (!byBuilding[bName]) byBuilding[bName] = []
+          byBuilding[bName].push(t)
+        })
+        return (
+          <div className="space-y-4">
+            {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
+            : filtered.length === 0 ? <div className="card py-12 text-center text-surface-400">No active tenants</div>
+            : Object.entries(byBuilding).map(([bName, bTenants]) => (
+              <div key={bName} className="card overflow-hidden">
+                {/* Building header */}
+                <div className="px-5 py-3 bg-brand-50 border-b border-brand-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-brand-500"></div>
+                    <h3 className="font-semibold text-brand-800">{bName}</h3>
+                    <span className="text-xs text-brand-500 bg-brand-100 px-2 py-0.5 rounded-full">{bTenants.length} tenants</span>
+                  </div>
+                  <span className="text-xs text-brand-600 font-mono">
+                    Deposit: {formatCurrency(bTenants.reduce((s,t)=>s+(parseFloat(t.security_deposit_paid)||0),0))}
+                  </span>
+                </div>
+                <table className="data-table">
+                  <thead><tr><th>Tenant</th><th>Flat</th><th>Move In</th><th>Rent</th><th>Deposit</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {bTenants.map(t => (
+                      <tr key={t.id}>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center font-bold text-brand-700 text-xs">{t.full_name.charAt(0)}</div>
+                            <div><p className="font-medium text-surface-800 text-sm">{t.full_name}</p><p className="text-xs text-surface-400">{t.phone}</p></div>
+                          </div>
+                        </td>
+                        <td className="font-mono font-semibold">{t.flat?.door_number||'—'}</td>
+                        <td className="text-xs text-surface-500">{fmtDate(t.move_in_date)}</td>
+                        <td className="font-mono text-sm">{formatCurrency(t.monthly_rent)}</td>
+                        <td className="font-mono text-sm text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
+                        <td>
+                          <button onClick={()=>openCheckout(t)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
+                            <LogOut className="w-3.5 h-3.5"/> Check Out
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {tab === 'exits' && (
-        <div className="card overflow-hidden">
-          {recentExits.length === 0 ? <EmptyState icon={LogOut} title="No exits yet" />
+        <div className="space-y-4">
+          {/* Month filter + stats */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <input type="month" className="input py-1.5 text-sm w-40"
+              value={filterMonth} onChange={e => setFilterMonth(e.target.value)} />
+            <div className="flex gap-3 flex-wrap">
+              {[
+                { label:'Total Exits', value: stats.totalExits, color:'text-surface-800' },
+                { label:'Normal', value: stats.normalExits, color:'text-emerald-700' },
+                { label:'Runaway', value: stats.runaways, color:'text-red-600' },
+              ].map(({label,value,color}) => (
+                <div key={label} className="card px-4 py-2 flex items-center gap-3">
+                  <span className="text-xs text-surface-400">{label}</span>
+                  <span className={`font-bold text-lg font-mono ${color}`}>{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card overflow-hidden">
+          {recentExits.filter(t => t.move_out_date?.slice(0,7) === filterMonth).length === 0
+            ? <EmptyState icon={LogOut} title="No exits this month" description="Change the month filter to see past exits" />
           : (
             <table className="data-table">
               <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Exit Date</th><th>Exit Type</th></tr></thead>
@@ -195,6 +249,7 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
               </tbody>
             </table>
           )}
+          </div>
         </div>
       )}
 
