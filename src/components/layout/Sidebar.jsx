@@ -96,8 +96,8 @@ export default function Sidebar({ open, onClose }) {
           {/* ADMIN only */}
           {(isSuperAdmin || isAdmin) && (
             <Section label="Admin">
-              {isSuperAdmin && <Item to="/audit" icon={ShieldCheck} label="Audit" />
-            <Item to="/checkinout" icon={LogIn} label="Check In/Out" />}
+              {isSuperAdmin && <Item to="/audit" icon={ShieldCheck} label="Audit" />}
+            <Item to="/checkinout" icon={LogIn} label="Check In/Out" />
               <Item to="/settings" icon={Settings} label="Settings" />
             </Section>
           )}
