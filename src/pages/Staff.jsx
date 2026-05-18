@@ -673,22 +673,33 @@ export default function Staff() {
           : advances.length === 0 ? <EmptyState icon={CheckCircle2} title="No pending advances" description="All advances have been recovered" />
           : (
             <table className="data-table">
-              <thead><tr><th>Staff</th><th>Date</th><th>Reason</th><th>Mode</th><th className="text-right">Amount</th></tr></thead>
+              <thead><tr><th>Staff</th><th>Date</th><th>Reason</th><th>Mode</th><th className="text-right">Amount</th><th></th></tr></thead>
               <tbody>
                 {advances.map(a => (
                   <tr key={a.id} className="bg-amber-50/20">
                     <td className="font-medium text-surface-800">{a.staff?.full_name || '—'}</td>
                     <td className="text-surface-500 text-xs">{fmtDate(a.advance_date)}</td>
-                    <td className="text-surface-500">{a.reason || '—'}</td>
+                    <td className="text-surface-500">{a.reason || a.notes || '—'}</td>
                     <td><span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">{a.payment_mode}</span></td>
                     <td className="text-right font-mono font-bold text-amber-700">{formatCurrency(a.amount)}</td>
+                    <td>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => openEditAdvance(a)} className="btn-ghost p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                        <button onClick={() => deleteAdvance(a.id)} className="btn-ghost p-1.5 text-red-400 hover:text-red-600" title="Delete">
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="bg-surface-50 border-t border-surface-200">
-                  <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-surface-500">Total Pending</td>
+                  <td colSpan={5} className="px-4 py-2 text-xs font-semibold text-surface-500">Total Pending</td>
                   <td className="px-4 py-2 text-right font-mono font-bold text-amber-700">{formatCurrency(totalPendingAdvances)}</td>
+                  <td/>
                 </tr>
               </tfoot>
             </table>
