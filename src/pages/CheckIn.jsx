@@ -8,6 +8,15 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const EMPTY = () => ({ full_name:'', phone:'', email:'', building_id:'', flat_id:'', monthly_rent:'', move_in_date: new Date().toISOString().slice(0,10), security_deposit_paid:'', advance_paid:'0', rent_type:'prepaid', id_type:'aadhar', id_number:'', notes:'' })
 
+function getFloor(doorNumber) {
+  if (!doorNumber) return 'Ground / Other'
+  const num = doorNumber.toString().replace(/[^0-9]/g, '')
+  if (!num) return doorNumber.toString().charAt(0).toUpperCase() + ' Block'
+  const floorNum = Math.floor(parseInt(num) / 100)
+  if (floorNum === 0) return 'Ground Floor'
+  return 'Floor ' + floorNum
+}
+
 export default function CheckIn() {
   const { profile } = useAuth()
   const [buildings, setBuildings] = useState([])
@@ -59,23 +68,22 @@ export default function CheckIn() {
     if (!form.full_name || !form.phone || !form.flat_id || !form.building_id)
       return toast.error('Name, phone, building and flat are required')
     setSaving(true)
+    // Use exact same payload structure as Tenants.jsx which works
     const payload = {
       full_name: form.full_name,
       phone: form.phone,
-      email: form.email || null,
       building_id: form.building_id,
       flat_id: form.flat_id,
       monthly_rent: parseFloat(form.monthly_rent) || 0,
       move_in_date: form.move_in_date,
       security_deposit_paid: parseFloat(form.security_deposit_paid) || 0,
       security_deposit_months: 2,
-      id_type: form.id_type || null,
-      id_number: form.id_number || null,
-      notes: form.notes || null,
       status: 'active',
     }
-    // Remove nulls that DB might reject
-    Object.keys(payload).forEach(k => { if (payload[k] === null || payload[k] === '') delete payload[k] })
+    if (form.email) payload.email = form.email
+    if (form.id_type) payload.id_type = form.id_type
+    if (form.id_number) payload.id_number = form.id_number
+    if (form.notes) payload.notes = form.notes
 
     const { data: t, error } = await supabase.from('tenants').insert(payload).select().single()
     if (error) { setSaving(false); return toast.error(error.message) }
