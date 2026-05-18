@@ -47,7 +47,17 @@ export default function Staff() {
   const [quickModal, setQuickModal] = useState(false)
   const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => {
+    loadAll()
+    // Realtime — refresh when data changes from other pages
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('staff-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_salaries' }, () => { loadSalaries() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_advances' }, () => { loadAdvances(); loadIncentives(); loadReimbursements() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => { loadStaff() })
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [])
   useEffect(() => { if (tab === 'salaries' || tab === 'summary') loadSalaries(); if (tab === 'advances' || tab === 'summary') loadAdvances(); if (tab === 'incentives') loadIncentives(); if (tab === 'reimbursements') loadReimbursements() }, [tab, selectedMonth])
 
   async function loadAll() {
@@ -276,7 +286,7 @@ export default function Staff() {
     }).eq('id', editAdvanceRecord.id)
     if (error) return toast.error(error.message)
     toast.success('Updated ✓')
-    setEditAdvanceModal(false); setEditAdvanceRecord(null); loadAdvances(); loadIncentives(); loadReimbursements()
+    setEditAdvanceModal(false); setEditAdvanceRecord(null); loadAdvances(); loadIncentives(); loadReimbursements(); if (tab === 'payroll') loadAll()
   }
 
   async function deleteSalary(id) {
@@ -302,7 +312,7 @@ export default function Staff() {
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Advance recorded ✓')
-    setAdvanceModal(false); loadAdvances()
+    setAdvanceModal(false); loadAdvances(); if (tab === 'payroll') loadAll()
   }
 
   // Monthly summary calculations
