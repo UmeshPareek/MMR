@@ -134,9 +134,10 @@ export default function Staff() {
     const { error } = await supabase.from('staff_salaries').insert({
       staff_id: salaryForm.staff_id,
       for_month: salaryForm.for_month,
-      gross_amount: parseFloat(salaryForm.gross_salary),
+      gross_salary: parseFloat(salaryForm.gross_salary),
       advance_deduction: advDeduction,
       other_deduction: parseFloat(salaryForm.other_deduction) || 0,
+      net_salary: net,
       net_amount: net,
       payment_date: salaryForm.payment_date,
       payment_mode: salaryForm.payment_mode,
@@ -154,6 +155,22 @@ export default function Staff() {
     if (error) return toast.error(error.message)
     toast.success('Salary paid — advances marked recovered ✓')
     setSalaryModal(false); loadSalaries(); loadAdvances()
+  }
+
+  async function deleteSalary(id) {
+    if (!window.confirm('Delete this salary record?')) return
+    const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Salary record deleted')
+    loadSalaries()
+  }
+
+  async function deleteAdvance(id) {
+    if (!window.confirm('Delete this advance?')) return
+    const { error } = await supabase.from('staff_advances').delete().eq('id', id)
+    if (error) return toast.error(error.message)
+    toast.success('Advance deleted')
+    loadAdvances()
   }
 
   async function saveAdvance() {
