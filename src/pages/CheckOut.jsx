@@ -7,6 +7,15 @@ import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 import jsPDF from 'jspdf'
 
+function getFloor(doorNumber) {
+  if (!doorNumber) return 'Ground / Other'
+  const num = doorNumber.toString().replace(/[^0-9]/g, '')
+  if (!num) return doorNumber.toString().charAt(0).toUpperCase() + ' Block'
+  const floorNum = Math.floor(parseInt(num) / 100)
+  if (floorNum === 0) return 'Ground Floor'
+  return 'Floor ' + floorNum
+}
+
 export default function CheckOut() {
   const { profile } = useAuth()
   const [tenants, setTenants] = useState([])
@@ -183,16 +192,6 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
           if (!byBuilding[bName]) byBuilding[bName] = []
           byBuilding[bName].push(t)
         })
-        // Helper: get floor from flat door number e.g. "301" → "Floor 3", "101" → "Floor 1"
-        function getFloor(doorNumber) {
-          if (!doorNumber) return 'Ground / Other'
-          const num = doorNumber.toString().replace(/[^0-9]/g, '')
-          if (!num) return doorNumber.toString().charAt(0).toUpperCase() + ' Block'
-          const floorNum = Math.floor(parseInt(num) / 100)
-          if (floorNum === 0) return 'Ground Floor'
-          return `Floor ${floorNum}`
-        }
-
         return (
           <div className="space-y-4">
             {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
