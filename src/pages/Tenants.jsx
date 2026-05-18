@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
@@ -19,6 +19,7 @@ const defaultForm = () => ({
 
 export default function Tenants() {
   const { profile, isAdmin, isSuperAdmin } = useAuth()
+  const channelRef = useRef(null)
   const location = useLocation()
   const [tenants, setTenants] = useState([])
   const [buildings, setBuildings] = useState([])
@@ -32,7 +33,15 @@ export default function Tenants() {
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { load(); loadBuildings() }, [statusFilter])
+  useEffect(() => {
+    load(); loadBuildings()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('tenants-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flats' }, () => load())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [statusFilter])
 
   async function load() {
     setLoading(true)
