@@ -70,6 +70,26 @@ export default function CheckOut() {
     setLoading(false)
   }
 
+  async function deleteExit(t) {
+    if (!window.confirm(`Delete exit record for ${t.full_name}? This will restore them as active and mark their flat as occupied again.`)) return
+    // Restore tenant to active
+    const { error } = await supabase.from('tenants').update({ status:'active', move_out_date: null, notes: null }).eq('id', t.id)
+    if (error) return toast.error(error.message)
+    // Restore flat to occupied
+    if (t.flat_id) await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', t.flat_id)
+    toast.success('Exit reversed — tenant restored as active ✓')
+    loadAll()
+  }
+
+  async function deleteCheckin(t) {
+    if (!window.confirm(`Permanently delete ${t.full_name}'s check-in record? This cannot be undone.`)) return
+    const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+    if (error) return toast.error(error.message)
+    if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+    toast.success('Tenant record deleted ✓')
+    loadAll()
+  }
+
   function openCheckout(t) {
     setSelected(t)
     setCoType('good')
@@ -163,49 +183,97 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
           if (!byBuilding[bName]) byBuilding[bName] = []
           byBuilding[bName].push(t)
         })
+        // Helper: get floor from flat door number e.g. "301" → "Floor 3", "101" → "Floor 1"
+        function getFloor(doorNumber) {
+          if (!doorNumber) return 'Ground / Other'
+          const num = doorNumber.toString().replace(/[^0-9]/g, '')
+          if (!num) return doorNumber.toString().charAt(0).toUpperCase() + ' Block'
+          const floorNum = Math.floor(parseInt(num) / 100)
+          if (floorNum === 0) return 'Ground Floor'
+          return `Floor ${floorNum}`
+        }
+
         return (
           <div className="space-y-4">
             {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
             : filtered.length === 0 ? <div className="card py-12 text-center text-surface-400">No active tenants</div>
-            : Object.entries(byBuilding).map(([bName, bTenants]) => (
-              <div key={bName} className="card overflow-hidden">
-                {/* Building header */}
-                <div className="px-5 py-3 bg-brand-50 border-b border-brand-100 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full bg-brand-500"></div>
-                    <h3 className="font-semibold text-brand-800">{bName}</h3>
-                    <span className="text-xs text-brand-500 bg-brand-100 px-2 py-0.5 rounded-full">{bTenants.length} tenants</span>
+            : Object.entries(byBuilding).map(([bName, bTenants]) => {
+              // Group by floor within each building
+              const byFloor = {}
+              bTenants.forEach(t => {
+                const floor = getFloor(t.flat?.door_number)
+                if (!byFloor[floor]) byFloor[floor] = []
+                byFloor[floor].push(t)
+              })
+              // Sort floors
+              const sortedFloors = Object.keys(byFloor).sort((a,b) => {
+                const na = parseInt(a.replace(/\D/g,'')) || 0
+                const nb = parseInt(b.replace(/\D/g,'')) || 0
+                return na - nb
+              })
+
+              return (
+                <div key={bName} className="card overflow-hidden border border-brand-100">
+                  {/* Building header */}
+                  <div className="px-5 py-3 bg-brand-600 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full bg-white opacity-70"></div>
+                      <h3 className="font-bold text-white">{bName}</h3>
+                      <span className="text-xs text-brand-100 bg-brand-500 px-2 py-0.5 rounded-full">{bTenants.length} tenants</span>
+                    </div>
+                    <span className="text-xs text-brand-100 font-mono">
+                      Total Deposit: {formatCurrency(bTenants.reduce((s,t)=>s+(parseFloat(t.security_deposit_paid)||0),0))}
+                    </span>
                   </div>
-                  <span className="text-xs text-brand-600 font-mono">
-                    Deposit: {formatCurrency(bTenants.reduce((s,t)=>s+(parseFloat(t.security_deposit_paid)||0),0))}
-                  </span>
+
+                  {/* Floor-wise sections */}
+                  {sortedFloors.map(floor => (
+                    <div key={floor}>
+                      {/* Floor sub-header */}
+                      <div className="px-5 py-2 bg-surface-50 border-y border-surface-200 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-surface-500 uppercase tracking-wider">{floor}</span>
+                          <span className="text-xs text-surface-400">— {byFloor[floor].length} unit{byFloor[floor].length > 1 ? 's' : ''}</span>
+                        </div>
+                        <span className="text-xs font-mono text-surface-400">
+                          {formatCurrency(byFloor[floor].reduce((s,t)=>s+(parseFloat(t.monthly_rent)||0),0))}/mo
+                        </span>
+                      </div>
+                      <table className="data-table">
+                        <tbody>
+                          {byFloor[floor].map(t => (
+                            <tr key={t.id}>
+                              <td style={{width:32}} className="pl-4 pr-0">
+                                <div className="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center font-bold text-brand-700 text-xs flex-shrink-0">{t.full_name.charAt(0)}</div>
+                              </td>
+                              <td>
+                                <p className="font-medium text-surface-800 text-sm">{t.full_name}</p>
+                                <p className="text-xs text-surface-400">{t.phone}</p>
+                              </td>
+                              <td className="font-mono font-bold text-surface-700">{t.flat?.door_number||'—'}</td>
+                              <td className="text-xs text-surface-500">{fmtDate(t.move_in_date)}</td>
+                              <td className="font-mono text-sm">{formatCurrency(t.monthly_rent)}</td>
+                              <td className="font-mono text-sm text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
+                              <td>
+                                <div className="flex items-center gap-2">
+                                  <button onClick={()=>openCheckout(t)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
+                                    <LogOut className="w-3.5 h-3.5"/> Check Out
+                                  </button>
+                                  <button onClick={() => deleteCheckin(t)} title="Delete wrong entry"
+                                    className="p-1.5 text-surface-300 hover:text-red-500 transition-colors rounded">
+                                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
                 </div>
-                <table className="data-table">
-                  <thead><tr><th>Tenant</th><th>Flat</th><th>Move In</th><th>Rent</th><th>Deposit</th><th>Action</th></tr></thead>
-                  <tbody>
-                    {bTenants.map(t => (
-                      <tr key={t.id}>
-                        <td>
-                          <div className="flex items-center gap-2">
-                            <div className="w-7 h-7 bg-brand-100 rounded-full flex items-center justify-center font-bold text-brand-700 text-xs">{t.full_name.charAt(0)}</div>
-                            <div><p className="font-medium text-surface-800 text-sm">{t.full_name}</p><p className="text-xs text-surface-400">{t.phone}</p></div>
-                          </div>
-                        </td>
-                        <td className="font-mono font-semibold">{t.flat?.door_number||'—'}</td>
-                        <td className="text-xs text-surface-500">{fmtDate(t.move_in_date)}</td>
-                        <td className="font-mono text-sm">{formatCurrency(t.monthly_rent)}</td>
-                        <td className="font-mono text-sm text-emerald-700">{formatCurrency(t.security_deposit_paid||0)}</td>
-                        <td>
-                          <button onClick={()=>openCheckout(t)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg text-xs font-medium hover:bg-red-100 flex items-center gap-1">
-                            <LogOut className="w-3.5 h-3.5"/> Check Out
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )
       })()}
@@ -243,7 +311,15 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
                     <td className="text-sm text-surface-500">{t.building?.name||'—'}</td>
                     <td className="font-mono">{t.flat?.door_number||'—'}</td>
                     <td className="text-xs text-surface-500">{fmtDate(t.move_out_date)}</td>
-                    <td><span className={`badge border text-xs ${t.notes?.includes('RUNAWAY')?'bg-red-50 text-red-700 border-red-200':'bg-surface-100 text-surface-600 border-surface-200'}`}>{t.notes?.includes('RUNAWAY')?'Runaway':'Normal'}</span></td>
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <span className={`badge border text-xs ${t.notes?.includes('RUNAWAY')?'bg-red-50 text-red-700 border-red-200':'bg-surface-100 text-surface-600 border-surface-200'}`}>{t.notes?.includes('RUNAWAY')?'Runaway':'Normal'}</span>
+                        <button onClick={() => deleteExit(t)} title="Undo exit / delete record"
+                          className="btn-ghost p-1 text-red-400 hover:text-red-600">
+                          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
