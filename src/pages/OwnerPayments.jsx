@@ -35,11 +35,11 @@ export default function OwnerPayments() {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    loadAll()
+    load(); loadOwners(); loadBuildings()
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     channelRef.current = supabase.channel('owner-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => loadBuildings())
       .subscribe()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [filterMonth])
