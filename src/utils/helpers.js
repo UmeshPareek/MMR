@@ -42,9 +42,9 @@ export function monthRange(yyyyMM) {
 
 export function lastNMonths(n = 6) {
   const months = []
+  const now = new Date()
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date()
-    d.setMonth(d.getMonth() - i)
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
     months.push(format(d, 'yyyy-MM'))
   }
   return months

@@ -60,7 +60,7 @@ export default function Expenses() {
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     channelRef.current = supabase.channel('expenses-rt')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => loadExpenses())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_groups' }, () => { loadExpenses(); loadGroups() })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_groups' }, () => loadExpenses())
       .subscribe()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [filterMonth, filterCategory, tab])

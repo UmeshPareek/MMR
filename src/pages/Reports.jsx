@@ -20,7 +20,9 @@ export default function Reports() {
     try {
       const { data } = await supabase.from('buildings').select('id, name').order('name');
       setBuildings(data || []);
-    } catch (e) {}
+    } catch (e) {
+      console.error('Failed to load buildings:', e)
+    }
   }
 
   async function loadReport() {
@@ -42,10 +44,10 @@ export default function Reports() {
       if (flatIds.length > 0) {
         const { data: tenants } = await supabase
           .from('tenants')
-          .select('id, name, phone, flat_id')
+          .select('id, full_name, phone, flat_id')
           .eq('status', 'active')
           .in('flat_id', flatIds);
-        (tenants || []).forEach(t => { tenantMap[t.flat_id] = t; });
+        (tenants || []).forEach(t => { tenantMap[t.flat_id] = { ...t, full_name: t.full_name }; });
 
         const { data: collections } = await supabase
           .from('rent_collections')
@@ -75,7 +77,7 @@ export default function Reports() {
           building: bName,
           location: bLoc,
           doorNo: String(flat.door_number || '—'),
-          tenant: tenant ? String(tenant.full_name || '—') : '—',
+          tenant: tenant ? String(tenant.full_name || tenant.name || '—') : '—',
           phone: tenant ? String(tenant.phone || '') : '',
           expected,
           paid,

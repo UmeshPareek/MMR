@@ -10,8 +10,10 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
   const inactivityTimer = useRef(null)
+  const profileLoading = useRef(false)
 
   async function fetchProfile(userId) {
+    profileLoading.current = true
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -23,6 +25,7 @@ export function AuthProvider({ children }) {
     } catch (e) {
       setProfile(null)
     } finally {
+      profileLoading.current = false
       setLoading(false)
     }
   }
@@ -34,13 +37,11 @@ export function AuthProvider({ children }) {
     await supabase.auth.signOut()
   }, [])
 
-  // Reset inactivity timer on user activity
   const resetTimer = useCallback(() => {
     clearTimeout(inactivityTimer.current)
     inactivityTimer.current = setTimeout(() => {
       signOut()
-      // Show a toast-like alert
-      window.__cmrAutoLogout = true
+      sessionStorage.setItem('cmr_auto_logout', '1')
     }, INACTIVITY_TIMEOUT)
   }, [signOut])
 
@@ -69,7 +70,6 @@ export function AuthProvider({ children }) {
       }
     })
 
-    // Listen for activity events to reset timer
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click']
     events.forEach(e => window.addEventListener(e, resetTimer, { passive: true }))
 

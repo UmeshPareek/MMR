@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
-// Canvas mesh animation for left teal panel
 function AnimatedBackground() {
   const canvasRef = useRef(null)
   useEffect(() => {
@@ -23,7 +22,9 @@ function AnimatedBackground() {
       })
     }
     resize(); initNodes()
-    window.addEventListener('resize', () => { resize(); initNodes() })
+    // Use named handler so we can remove it properly
+    const handleResize = () => { resize(); initNodes() }
+    window.addEventListener('resize', handleResize)
     function draw() {
       ctx.clearRect(0, 0, w, h)
       for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
@@ -46,14 +47,14 @@ function AnimatedBackground() {
       animId = requestAnimationFrame(draw)
     }
     draw()
-    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize) }
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', handleResize) }
   }, [])
   return <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }} />
 }
 
 export default function Login() {
-  const wasAutoLoggedOut = window.__cmrAutoLogout
-  if (wasAutoLoggedOut) window.__cmrAutoLogout = false
+  const wasAutoLoggedOut = sessionStorage.getItem('cmr_auto_logout') === '1'
+  if (wasAutoLoggedOut) sessionStorage.removeItem('cmr_auto_logout')
 
   const { signIn } = useAuth()
   const navigate = useNavigate()
@@ -73,15 +74,6 @@ export default function Login() {
     } else {
       navigate('/', { replace: true })
     }
-  }
-
-  const inputStyle = {
-    width: '100%', padding: '11px 14px',
-    border: '1px solid rgba(255,255,255,0.25)',
-    borderRadius: 10, fontSize: 15, color: '#fff',
-    outline: 'none', transition: 'border-color .15s',
-    fontFamily: 'inherit', background: 'rgba(255,255,255,0.1)',
-    backdropFilter: 'blur(4px)',
   }
 
   return (
@@ -134,7 +126,6 @@ export default function Login() {
       {/* ── RIGHT — city video background + form ── */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
 
-        {/* City video — place your .mp4 in /public/city.mp4 */}
         <video
           autoPlay muted loop playsInline
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}
@@ -143,7 +134,6 @@ export default function Login() {
           <source src="/city.mp4" type="video/mp4" />
         </video>
 
-        {/* Frosted overlay — light enough to see city, dark enough to read form */}
         <div style={{
           position: 'absolute', inset: 0, zIndex: 1,
           background: 'rgba(255,255,255,0.55)',
@@ -248,7 +238,7 @@ export default function Login() {
           </form>
 
           <p style={{ marginTop: 24, textAlign: 'center', fontSize: 13, color: '#AAA' }}>
-            Need access? 
+            Need access?{' '}
             <span style={{color:'#0D9488',fontWeight:500}}>cashmyrent@gmail.com</span> · <a href="tel:8217716904" style={{color:'#0D9488',fontWeight:500,textDecoration:'none'}}>8217716904</a>
           </p>
         </div>

@@ -92,11 +92,17 @@ export default function CheckOut() {
 
   async function deleteExit(t) {
     if (!window.confirm(`Delete exit record for ${t.full_name}? This will restore them as active and mark their flat as occupied again.`)) return
-    // Restore tenant to active
     const { error } = await supabase.from('tenants').update({ status:'active', move_out_date: null, notes: null }).eq('id', t.id)
     if (error) return toast.error(error.message)
-    // Restore flat to occupied
-    if (t.flat_id) await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', t.flat_id)
+    if (t.flat_id) {
+      // Only restore flat if it hasn't been re-assigned to another tenant
+      const { data: currentFlat } = await supabase.from('flats').select('current_tenant_id, status').eq('id', t.flat_id).single()
+      if (currentFlat && (currentFlat.status === 'vacant' || currentFlat.current_tenant_id === null)) {
+        await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', t.flat_id)
+      } else {
+        toast.error('Flat has already been re-assigned — please update manually')
+      }
+    }
     toast.success('Exit reversed — tenant restored as active ✓')
     loadAll()
   }
@@ -204,9 +210,9 @@ You are hereby directed to pay ₹${Math.abs(netRefund).toLocaleString('en-IN')}
 
 FAILURE TO COMPLY WILL RESULT IN:
 1. Filing of an FIR/police complaint for cheating, fraud and breach of contract
-2. Civil suit for recovery of dues with interest
-3. Public disclosure of your name, photo and dues on social media platforms
-4. Blacklisting from all rental and housing platforms
+2. Civil suit for recovery of dues with interest and legal costs
+3. Reporting to credit bureaus and rental property networks
+4. Further legal action as deemed appropriate under Indian law
 
 This notice is issued without prejudice to all legal rights and remedies available.
 

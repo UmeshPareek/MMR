@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import {
@@ -9,7 +8,6 @@ import {
 } from 'lucide-react';
 
 export default function DailyCollection() {
-  const { isAdmin, isSuperAdmin } = useAuth();
   const months = lastNMonths(6);
   const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1]);
   const [buildings, setBuildings] = useState([]);

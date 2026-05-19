@@ -98,13 +98,14 @@ export default function CheckIn() {
     if (error) { setSaving(false); return toast.error(error.message) }
     await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', form.flat_id)
     if (parseFloat(form.security_deposit_paid) > 0) {
-      await supabase.from('security_deposits').insert({
+      const { error: sdError } = await supabase.from('security_deposits').insert({
         tenant_id: t.id, flat_id: form.flat_id, building_id: form.building_id,
-        amount_expected: parseFloat(form.security_deposit_paid),
-        amount_paid: parseFloat(form.security_deposit_paid),
-        payment_date: form.move_in_date, status:'collected',
+        amount: parseFloat(form.security_deposit_paid),
+        deposit_type: 'collection',
+        deposit_date: form.move_in_date,
         notes: `Check-in ${form.move_in_date}`
       })
+      if (sdError) console.error('Security deposit record failed:', sdError.message)
     }
     setSaving(false)
     toast.success(`${form.full_name} checked in ✓`)

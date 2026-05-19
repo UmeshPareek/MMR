@@ -222,7 +222,7 @@ export default function Buildings() {
     try {
       const reader = new FileReader()
       reader.onload = (ev) => {
-        const wb = XLSX.read(ev.target.result, { type: 'binary' })
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' })
         const ws = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' })
         if (!rows.length) return toast.error('No data found in file')
@@ -236,7 +236,7 @@ export default function Buildings() {
         if (errors.length) { toast.error(errors.slice(0,3).join(' | ')); return }
         setBulkPreview(rows)
       }
-      reader.readAsBinaryString(file)
+      reader.readAsArrayBuffer(file)
     } catch (e) {
       toast.error('Failed to parse file: ' + e.message)
     }

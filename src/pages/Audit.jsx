@@ -696,7 +696,8 @@ export default function Audit() {
       setFileQueue([...updated]);
       try {
         const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(updated[i].file);});
-        const resp=await fetch('/api/extract-pdf',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fileBase64:base64,bank:updated[i].bank,filename:updated[i].file.name})});
+        const { data: { session } } = await supabase.auth.getSession();
+        const resp=await fetch('/api/extract-pdf',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+(session?.access_token||'')},body:JSON.stringify({fileBase64:base64,bank:updated[i].bank,filename:updated[i].file.name})});
         if (!resp.ok){const e=await resp.json();throw new Error(e.error||'Server error');}
         const data=await resp.json();
         const enriched=(data.txns||[]).map(t=>{

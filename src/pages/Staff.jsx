@@ -197,7 +197,6 @@ export default function Staff() {
       advance_deduction: advDeduction,
       other_deduction: parseFloat(salaryForm.other_deduction) || 0,
       net_salary: net,
-      net_amount: net,
       payment_date: salaryForm.payment_date,
       payment_mode: salaryForm.payment_mode,
       notes: salaryForm.notes || null,
@@ -239,7 +238,7 @@ export default function Staff() {
       gross_salary: s.gross_amount || s.gross_salary || '',
       advance_deduction: s.advance_deduction || 0,
       other_deduction: s.other_deduction || 0,
-      net_amount: s.net_amount || s.net_salary || '',
+      net_salary: s.net_salary || '',
       payment_mode: s.payment_mode || 'bank_transfer',
       payment_date: s.payment_date || '',
       transaction_ref: s.transaction_ref || '',
@@ -253,10 +252,9 @@ export default function Staff() {
     const net = parseFloat(editSalaryForm.gross_salary||0) - parseFloat(editSalaryForm.advance_deduction||0) - parseFloat(editSalaryForm.other_deduction||0)
     const { error } = await supabase.from('staff_salaries').update({
       gross_salary: parseFloat(editSalaryForm.gross_salary),
-      gross_amount: parseFloat(editSalaryForm.gross_salary),
       advance_deduction: parseFloat(editSalaryForm.advance_deduction||0),
       other_deduction: parseFloat(editSalaryForm.other_deduction||0),
-      net_salary: net, net_amount: net,
+      net_salary: net,
       payment_mode: editSalaryForm.payment_mode,
       payment_date: editSalaryForm.payment_date,
       transaction_ref: editSalaryForm.transaction_ref || null,
@@ -324,7 +322,7 @@ export default function Staff() {
   const activeStaff = staff.filter(s => s.status === 'active')
   const totalMonthlySalary = activeStaff.reduce((s, st) => s + Number(st.monthly_salary || 0), 0)
   const paidThisMonth = salaries.filter(s => s.for_month === selectedMonth)
-  const totalPaid = paidThisMonth.reduce((s, sal) => s + Number(sal.net_amount || 0), 0)
+  const totalPaid = paidThisMonth.reduce((s, sal) => s + Number(sal.net_salary || 0), 0)
   const totalAdvanceDeducted = paidThisMonth.reduce((s, sal) => s + Number(sal.advance_deduction || 0), 0)
   const pendingPayment = totalMonthlySalary - totalPaid
   const paidStaffIds = new Set(paidThisMonth.map(s => s.staff_id))
@@ -426,7 +424,7 @@ export default function Staff() {
                     paid ? (
                       <div className="flex items-center gap-2 text-xs bg-emerald-50 text-emerald-700 px-3 py-2 rounded-lg border border-emerald-200">
                         <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
-                        <span>Paid {formatCurrency(staffSalary?.net_amount)} for {selectedMonth}</span>
+                        <span>Paid {formatCurrency(staffSalary?.net_salary)} for {selectedMonth}</span>
                         {staffSalary?.advance_deduction > 0 && <span className="ml-auto text-amber-600">-{formatCurrency(staffSalary.advance_deduction)} adv</span>}
                       </div>
                     ) : (
@@ -469,7 +467,7 @@ export default function Staff() {
         const totalGross = payrollRows.reduce((s, r) => s + r.gross, 0)
         const totalAdvMonth = payrollRows.reduce((s, r) => s + r.advThisMonth, 0)
         const totalNet = payrollRows.reduce((s, r) => s + r.net, 0)
-        const totalNetPaid = payrollRows.filter(r => r.paid).reduce((s, r) => s + Number(r.paidRecord?.net_amount || 0), 0)
+        const totalNetPaid = payrollRows.filter(r => r.paid).reduce((s, r) => s + Number(r.paidRecord?.net_salary || 0), 0)
         const totalStillPending = payrollRows.filter(r => !r.paid).reduce((s, r) => s + r.net, 0)
 
         return (
@@ -542,7 +540,7 @@ export default function Staff() {
                         <td>
                           {r.paid
                             ? <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">
-                                Paid {formatCurrency(r.paidRecord?.net_amount)}
+                                Paid {formatCurrency(r.paidRecord?.net_salary)}
                               </span>
                             : <span className="badge bg-red-50 text-red-600 border border-red-200 text-xs">Pending</span>}
                         </td>
@@ -622,7 +620,7 @@ export default function Staff() {
                         <td className="text-right font-mono text-red-500">
                           {s.other_deduction > 0 ? `-${formatCurrency(s.other_deduction)}` : '—'}
                         </td>
-                        <td className="text-right font-mono font-bold text-emerald-700">{formatCurrency(s.net_amount)}</td>
+                        <td className="text-right font-mono font-bold text-emerald-700">{formatCurrency(s.net_salary)}</td>
                         <td><span className="badge bg-surface-100 text-surface-600 border border-surface-200 text-xs">{s.payment_mode}</span></td>
                         <td className="text-surface-500 text-xs">{fmtDate(s.payment_date)}</td>
                         <td>

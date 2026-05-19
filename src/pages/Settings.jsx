@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/utils/helpers'
 import { Modal, Spinner } from '@/components/ui'
-import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star } from 'lucide-react'
+import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star, AlertTriangle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -12,14 +12,18 @@ export default function Settings() {
   const [users, setUsers] = useState([])
   const [userModal, setUserModal] = useState(false)
   const [uForm, setUForm] = useState({ email:'', full_name:'', role:'admin', password:'' })
-  const [generatedCreds, setGeneratedCreds] = useState(null)
   const [settings, setSettings] = useState({})
   const [buildings, setBuildings] = useState([])
   const [expGroups, setExpGroups] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // Modals
+  // Danger zone confirm modal
+  const [dangerModal, setDangerModal] = useState(null) // { title, table, color }
+  const [dangerConfirmText, setDangerConfirmText] = useState('')
+  const [dangerRunning, setDangerRunning] = useState(false)
+
+  // Expense group modals
   const [groupModal, setGroupModal] = useState(false)
   const [groupForm, setGroupForm] = useState({ name: '', icon: '📌', color: '#94a3b8' })
   const [editGroup, setEditGroup] = useState(null)
@@ -46,17 +50,28 @@ export default function Settings() {
 
   async function createUser() {
     if (!uForm.email || !uForm.password) return toast.error('Email and password required')
+    if (uForm.password.length < 8) return toast.error('Password must be at least 8 characters')
     setSaving(true)
     try {
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: uForm.email, password: uForm.password, email_confirm: true,
-        user_metadata: { full_name: uForm.full_name }
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          email: uForm.email,
+          password: uForm.password,
+          full_name: uForm.full_name,
+          role: uForm.role,
+        }),
       })
-      if (error) throw error
-      await supabase.from('profiles').upsert({ id: data.user.id, email: uForm.email, full_name: uForm.full_name, role: uForm.role })
-      setGeneratedCreds({ email: uForm.email, password: uForm.password })
-      toast.success('User created ✓')
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Failed to create user')
+      toast.success('User created ✓ — share credentials via secure channel (not chat/email)')
       setUForm({ email:'', full_name:'', role:'admin', password:'' })
+      setUserModal(false)
       loadAll()
     } catch(e) { toast.error(e.message) }
     setSaving(false)
@@ -64,11 +79,10 @@ export default function Settings() {
 
   function generatePassword() {
     const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrs23456789@#!'
-    setUForm(p=>({...p, password: Array.from({length:10}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('')}))
+    setUForm(p=>({...p, password: Array.from({length:12}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('')}))
   }
 
   async function updateUserRole(id, currentRole, newRole) {
-    // Only platform admin can touch super_admins
     if (currentRole === 'super_admin' && !profile?.is_platform_admin) {
       return toast.error('Only Platform Admin can modify Super Admin accounts')
     }
@@ -115,6 +129,31 @@ export default function Settings() {
     await supabase.from('expense_groups').update({ is_active: false }).eq('id', id)
     toast.success('Group removed')
     setDeleteConfirm(null); loadAll()
+  }
+
+  async function executeDangerReset() {
+    if (dangerConfirmText !== 'RESET') return toast.error('Type RESET exactly to confirm')
+    setDangerRunning(true)
+    try {
+      if (dangerModal.table === 'ALL') {
+        await Promise.all([
+          supabase.from('rent_collections').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('staff_advances').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('staff_salaries').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('utility_bills').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('meter_readings').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+          supabase.from('owner_payments').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+        ])
+        toast.success('Full data reset complete')
+      } else {
+        const { error } = await supabase.from(dangerModal.table).delete().neq('id', '00000000-0000-0000-0000-000000000000')
+        if (error) throw error
+        toast.success(`${dangerModal.title} complete`)
+      }
+      setDangerModal(null); setDangerConfirmText('')
+    } catch(e) { toast.error('Reset failed: ' + e.message) }
+    setDangerRunning(false)
   }
 
   const RATE_SETTINGS = [
@@ -235,7 +274,7 @@ export default function Settings() {
       {tab === 'users' && (
         <div className="space-y-3">
           <div className="flex justify-end">
-            <button onClick={() => { setUserModal(true); setGeneratedCreds(null) }} className="btn-primary flex items-center gap-2">
+            <button onClick={() => { setUserModal(true) }} className="btn-primary flex items-center gap-2">
               <Plus className="w-4 h-4"/> Add User
             </button>
           </div>
@@ -245,7 +284,6 @@ export default function Settings() {
               <tbody>
                 {users
                   .filter(u => {
-                    // Non-platform admins cannot see super_admin users
                     if (u.role === 'super_admin' && !profile?.is_platform_admin) return false
                     return true
                   })
@@ -282,50 +320,34 @@ export default function Settings() {
             </table>
           </div>
 
-          {/* User modal */}
-          <Modal open={userModal} onClose={() => { setUserModal(false); setGeneratedCreds(null) }} title="Create New User" size="sm">
+          {/* User creation modal */}
+          <Modal open={userModal} onClose={() => setUserModal(false)} title="Create New User" size="sm">
             <div className="p-6 space-y-4">
-              {generatedCreds ? (
-                <div className="space-y-3">
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
-                    <p className="font-semibold text-emerald-800 mb-2">✓ User created!</p>
-                    <div className="space-y-2 text-sm font-mono">
-                      <p>Email: <strong>{generatedCreds.email}</strong></p>
-                      <p>Password: <strong>{generatedCreds.password}</strong></p>
-                      <p className="text-xs text-emerald-600 font-sans">Login at app.cashmyrent.com</p>
-                    </div>
-                    <button onClick={() => {navigator.clipboard.writeText(`Email: ${generatedCreds.email}
-Password: ${generatedCreds.password}
-URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
-                      className="btn-secondary w-full mt-3 text-sm">Copy Credentials</button>
-                  </div>
-                  <button onClick={() => { setGeneratedCreds(null); setUForm({ email:'', full_name:'', role:'admin', password:'' }) }} className="btn-primary w-full">Add Another</button>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                After creation, share credentials via WhatsApp or in-person — not over email or chat.
+              </div>
+              <div className="form-group"><label className="label">Full Name</label><input className="input" value={uForm.full_name} onChange={e=>setUForm(p=>({...p,full_name:e.target.value}))} placeholder="Ravi Kumar" autoFocus /></div>
+              <div className="form-group"><label className="label">Email *</label><input type="email" className="input" value={uForm.email} onChange={e=>setUForm(p=>({...p,email:e.target.value}))} /></div>
+              <div className="form-group">
+                <label className="label">Role</label>
+                <select className="select" value={uForm.role} onChange={e=>setUForm(p=>({...p,role:e.target.value}))}>
+                  {profile?.is_platform_admin && <option value="super_admin">Super Admin (full access)</option>}
+                  <option value="admin">Admin</option>
+                  <option value="team">Team (collection only)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="label">Temporary Password *</label>
+                <div className="flex gap-2">
+                  <input className="input flex-1 font-mono" value={uForm.password} onChange={e=>setUForm(p=>({...p,password:e.target.value}))} placeholder="Min 8 chars" />
+                  <button onClick={generatePassword} className="btn-secondary btn-sm whitespace-nowrap">Generate</button>
                 </div>
-              ) : (
-                <>
-                  <div className="form-group"><label className="label">Full Name</label><input className="input" value={uForm.full_name} onChange={e=>setUForm(p=>({...p,full_name:e.target.value}))} placeholder="Ravi Kumar" autoFocus /></div>
-                  <div className="form-group"><label className="label">Email *</label><input type="email" className="input" value={uForm.email} onChange={e=>setUForm(p=>({...p,email:e.target.value}))} /></div>
-                  <div className="form-group">
-                    <label className="label">Role</label>
-                    <select className="select" value={uForm.role} onChange={e=>setUForm(p=>({...p,role:e.target.value}))}>
-                      <option value="super_admin">Super Admin (full access)</option>
-                      <option value="admin">Admin</option>
-                      <option value="team">Team (collection only)</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="label">Password *</label>
-                    <div className="flex gap-2">
-                      <input className="input flex-1 font-mono" value={uForm.password} onChange={e=>setUForm(p=>({...p,password:e.target.value}))} placeholder="Min 8 chars" />
-                      <button onClick={generatePassword} className="btn-secondary btn-sm whitespace-nowrap">Generate</button>
-                    </div>
-                  </div>
-                  <div className="flex gap-3">
-                    <button className="btn-secondary flex-1" onClick={() => setUserModal(false)}>Cancel</button>
-                    <button className="btn-primary flex-1" onClick={createUser} disabled={saving}>{saving ? <Spinner size={16}/> : 'Create User'}</button>
-                  </div>
-                </>
-              )}
+                <p className="text-xs text-surface-400 mt-1">User should change password after first login.</p>
+              </div>
+              <div className="flex gap-3">
+                <button className="btn-secondary flex-1" onClick={() => setUserModal(false)}>Cancel</button>
+                <button className="btn-primary flex-1" onClick={createUser} disabled={saving}>{saving ? <Spinner size={16}/> : 'Create User'}</button>
+              </div>
             </div>
           </Modal>
         </div>
@@ -356,29 +378,7 @@ URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
                   <p className="text-xs text-surface-500 mt-1">{desc}</p>
                 </div>
                 <button
-                  onClick={async () => {
-                    const confirm1 = window.confirm(`Are you sure you want to ${title}? This cannot be undone.`)
-                    if (!confirm1) return
-                    const confirmWord = window.prompt(`Type RESET to confirm deletion of ${table === 'ALL' ? 'all data' : table}:`)
-                    if (confirmWord !== 'RESET') return toast.error('Cancelled — you must type RESET exactly')
-                    try {
-                      if (table === 'ALL') {
-                        await Promise.all([
-                          supabase.from('rent_collections').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('staff_advances').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('staff_salaries').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('utility_bills').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('meter_readings').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                          supabase.from('owner_payments').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
-                        ])
-                        toast.success('Full data reset complete')
-                      } else {
-                        await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000')
-                        toast.success(`${title} complete`)
-                      }
-                    } catch(e) { toast.error('Reset failed: ' + e.message) }
-                  }}
+                  onClick={() => { setDangerModal({ title, table, color }); setDangerConfirmText('') }}
                   className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${color==='red'?'border-red-300 text-red-600 hover:bg-red-600 hover:text-white':'border-amber-300 text-amber-700 hover:bg-amber-500 hover:text-white'}`}>
                   Reset
                 </button>
@@ -412,7 +412,7 @@ URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
         </div>
       </Modal>
 
-      {/* DELETE CONFIRM */}
+      {/* DELETE GROUP CONFIRM */}
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-4 shadow-2xl">
@@ -421,6 +421,42 @@ URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
             <div className="flex gap-3">
               <button onClick={() => setDeleteConfirm(null)} className="btn-secondary flex-1">Cancel</button>
               <button onClick={() => deleteGroup(deleteConfirm)} className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DANGER ZONE CONFIRM MODAL */}
+      {dangerModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-red-700">{dangerModal.title}</h3>
+                <p className="text-xs text-surface-500">This action is irreversible</p>
+              </div>
+            </div>
+            <p className="text-sm text-surface-600 mb-4">
+              To confirm, type <strong>RESET</strong> in the field below:
+            </p>
+            <input
+              className="input w-full font-mono mb-4"
+              placeholder="Type RESET here"
+              value={dangerConfirmText}
+              onChange={e => setDangerConfirmText(e.target.value)}
+              autoFocus
+            />
+            <div className="flex gap-3">
+              <button onClick={() => { setDangerModal(null); setDangerConfirmText('') }} className="btn-secondary flex-1">Cancel</button>
+              <button
+                onClick={executeDangerReset}
+                disabled={dangerRunning || dangerConfirmText !== 'RESET'}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg font-semibold disabled:opacity-40 flex items-center justify-center gap-2">
+                {dangerRunning ? <Spinner size={16}/> : 'Confirm Reset'}
+              </button>
             </div>
           </div>
         </div>

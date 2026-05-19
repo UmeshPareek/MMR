@@ -19,7 +19,6 @@ import Settings from '@/pages/Settings'
 import UtilityBills from '@/pages/UtilityBills'
 import SecurityDeposits from '@/pages/SecurityDeposits'
 import DailyCollection from '@/pages/DailyCollection'
-import SuperAdmin from '@/pages/SuperAdmin'
 import CheckIn from '@/pages/CheckIn'
 import CheckOut from '@/pages/CheckOut'
 import DailyReconciliation from '@/pages/DailyReconciliation'
@@ -28,7 +27,7 @@ function ProtectedRoute({ children, adminOnly = false, superOnly = false }) {
   const { user, profile, loading } = useAuth()
   if (loading) return <Loader />
   if (!user || !profile) return <Navigate to="/login" replace />
-  if (superOnly && profile.role !== 'super_admin') return <Navigate to="/" replace />
+  if (superOnly && profile.role !== 'super_admin' && !profile.is_platform_admin) return <Navigate to="/" replace />
   if (adminOnly && !['super_admin', 'admin'].includes(profile.role)) return <Navigate to="/" replace />
   return children
 }
@@ -41,7 +40,6 @@ function Loader() {
   )
 }
 
-// Role-based home: team sees TeamHome, admin/super admin sees Dashboard
 function HomeRoute() {
   const { profile } = useAuth()
   if (profile?.role === 'team') return <TeamHome />
@@ -50,17 +48,14 @@ function HomeRoute() {
 
 function AppRoutes() {
   const { user, loading } = useAuth()
-  // While checking auth, show loader
   if (loading) return <Loader />
 
   return (
     <Routes>
-      {/* Login — redirect to home if already authenticated */}
       <Route path="/login" element={
         user ? <Navigate to="/" replace /> : <Login />
       } />
 
-      {/* Protected app routes */}
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route path="/" element={<HomeRoute />} />
         <Route path="/dashboard" element={<Dashboard />} />
@@ -76,12 +71,13 @@ function AppRoutes() {
         <Route path="/utility-bills" element={<UtilityBills />} />
         <Route path="/security-deposits" element={<SecurityDeposits />} />
         <Route path="/daily-collection" element={<DailyCollection />} />
-        <Route path="/platform-admin" element={<SuperAdmin />} />
         <Route path="/checkin" element={<CheckIn />} />
         <Route path="/checkout" element={<CheckOut />} />
         <Route path="/daily-reconciliation" element={<DailyReconciliation />} />
         <Route path="/audit" element={<ProtectedRoute superOnly><Audit /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        {/* Platform admin is a separate application — redirect to keep URL clean */}
+        <Route path="/platform-admin" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

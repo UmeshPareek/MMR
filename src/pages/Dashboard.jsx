@@ -1,13 +1,15 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, lastNMonths, currentMonth } from '@/utils/helpers'
+import { formatCurrency, debounce } from '@/utils/helpers'
 import { Spinner } from '@/components/ui'
 import { Download, RefreshCw, Building2, AlertTriangle, CheckCircle2, LogIn, LogOut, TrendingUp, TrendingDown, Users, Wallet, BarChart3, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
 
-const APP_START = '2026-04'
+function currentMonth() {
+  return new Date().toISOString().slice(0, 7)
+}
 
 export default function Dashboard() {
   const [month, setMonth] = useState(currentMonth())
@@ -20,32 +22,47 @@ export default function Dashboard() {
   const [activeTenantCount, setActiveTenantCount] = useState(0)
   const [viewMode, setViewMode] = useState('consolidated')
   const [loading, setLoading] = useState(true)
+  const [appStart, setAppStart] = useState('2024-01')
   const channelRef = useRef(null)
 
-  // Generate months from April 2026 onwards
+  // Generate available months dynamically — fetched from DB on mount
   const availableMonths = []
-  const start = new Date(APP_START + '-01')
+  const start = new Date(appStart + '-01')
   const now = new Date()
   for (let d = new Date(start); d <= now; d.setMonth(d.getMonth() + 1)) {
-    availableMonths.push(d.toISOString().slice(0, 7))
+    availableMonths.push(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 7))
   }
   availableMonths.reverse()
+
+  // Debounced loader — prevents 25 queries on every rapid real-time event
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const debouncedLoad = useCallback(debounce(() => load(), 800), [month])
+
+  useEffect(() => {
+    // Derive app start from the earliest rent_collection record
+    supabase.from('rent_collections').select('for_month').order('for_month', { ascending: true }).limit(1)
+      .then(({ data }) => {
+        if (data?.[0]?.for_month) setAppStart(data[0].for_month.slice(0, 7))
+      })
+  }, [])
 
   useEffect(() => {
     load()
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     channelRef.current = supabase.channel('dashboard')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_salaries' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_advances' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meter_readings' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, () => load())
-      .subscribe()
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_salaries' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'staff_advances' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'utility_bills' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'meter_readings' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, debouncedLoad)
+      .subscribe((status, err) => {
+        if (status === 'CHANNEL_ERROR') console.error('Dashboard channel error:', err)
+      })
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
-  }, [month])
+  }, [month]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function load() {
     setLoading(true)
@@ -54,37 +71,49 @@ export default function Dashboard() {
       prevMonthDate.setMonth(prevMonthDate.getMonth() - 1)
       const prevMonth = prevMonthDate.toISOString().slice(0, 7)
       const monthEnd = new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7)), 0).getDate()
+      const monthEndStr = `${month}-${String(monthEnd).padStart(2,'0')}`
 
       const [
-        { data: collections },{ data: expenses },{ data: prevSalaries },
-        { data: ownerRents },{ data: utilityBills },{ data: meterReadings },
-        { data: buildings },{ data: allTenants },{ data: prevCollections },
-        { data: checkIns },{ data: checkOuts },{ data: currentSalaries }
+        { data: collections, error: e1 },
+        { data: expenses, error: e2 },
+        { data: prevSalaries, error: e3 },
+        { data: ownerRents, error: e4 },
+        { data: utilityBills, error: e5 },
+        { data: meterReadings, error: e6 },
+        { data: buildings, error: e7 },
+        { data: allTenants, error: e8 },
+        { data: prevCollections, error: e9 },
+        { data: checkIns, error: e10 },
+        { data: checkOuts, error: e11 },
+        { data: currentSalaries, error: e12 },
       ] = await Promise.all([
         supabase.from('rent_collections').select('amount,building_id,tenant_id,payment_mode').eq('for_month', month),
-        supabase.from('expenses').select('amount,category,building_id,expense_date,for_month').gte('expense_date',`${month}-01`).lte('expense_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
-        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', prevMonth),
-        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', month),
+        supabase.from('expenses').select('amount,category,building_id,expense_date,for_month').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr),
+        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', prevMonth),
+        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', month),
         supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),
         supabase.from('utility_bills').select('amount,building_id').eq('for_month', month),
         supabase.from('meter_readings').select('amount_charged,building_id').eq('for_month', month),
         supabase.from('buildings').select('id,name').eq('is_active', true),
-        supabase.from('tenants').select('id,monthly_rent,building_id').eq('status','active'),
+        supabase.from('tenants').select('id,monthly_rent,building_id,move_in_date').eq('status','active'),
         supabase.from('rent_collections').select('tenant_id').eq('for_month', prevMonth),
-        supabase.from('tenants').select('security_deposit_paid').gte('move_in_date',`${month}-01`).lte('move_in_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
-        supabase.from('tenants').select('notes').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
-        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', month),
+        supabase.from('tenants').select('security_deposit_paid').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
+        supabase.from('tenants').select('notes').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
       ])
+
+      const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12].filter(Boolean)
+      if (errors.length > 0) {
+        console.error('Dashboard load errors:', errors)
+        toast.error('Some data failed to load — refresh to retry')
+      }
 
       const income = (collections||[]).reduce((s,r)=>s+Number(r.amount),0)
       const expTotal = (expenses||[]).reduce((s,r)=>s+Number(r.amount),0)
-      // Staff salary is POSTPAID — April salary is paid/expensed in May
-      // So for current month P&L: show PREVIOUS month's salary as expense
-      // AND show current month salary if already paid (for accuracy)
-      const prevMonthSalaryTotal = (prevSalaries||[]).reduce((s,r)=>s+Number(r.net_amount),0)
-      const currentMonthSalaryPaid = (currentSalaries||[]).reduce((s,r)=>s+Number(r.net_amount),0)
-      // Use whichever is more: prev month (accrual) or actual paid this month
-      const salaryTotal = Math.max(prevMonthSalaryTotal, currentMonthSalaryPaid)
+      // Salary: use the month being viewed's salary if paid, otherwise previous month (accrual)
+      const prevMonthSalaryTotal = (prevSalaries||[]).reduce((s,r)=>s+Number(r.net_salary||r.net_amount||0),0)
+      const currentMonthSalaryPaid = (currentSalaries||[]).reduce((s,r)=>s+Number(r.net_salary||r.net_amount||0),0)
+      // Use current month salary if paid; otherwise show previous month as the accrued expense
+      const salaryTotal = currentMonthSalaryPaid > 0 ? currentMonthSalaryPaid : prevMonthSalaryTotal
       const ownerRentTotal = (ownerRents||[]).reduce((s,r)=>s+Number(r.amount),0)
       const utilPaid = (utilityBills||[]).reduce((s,r)=>s+Number(r.amount),0)
       const utilCharged = (meterReadings||[]).reduce((s,r)=>s+Number(r.amount_charged||0),0)
@@ -94,11 +123,8 @@ export default function Dashboard() {
 
       const totalExpected = (allTenants||[]).reduce((s,t)=>s+Number(t.monthly_rent),0)
       const prevPaidIds = new Set((prevCollections||[]).map(c=>c.tenant_id))
-      // Outstanding = tenants who existed before this month AND didn't pay prev month
       const unpaidPrev = (allTenants||[]).filter(t => {
-        // Skip tenants who moved in this month or current month — they have no prev month dues
         if (t.move_in_date && t.move_in_date >= `${month}-01`) return false
-        // Skip tenants who moved in last month or later
         if (t.move_in_date && t.move_in_date >= `${prevMonth}-01`) return false
         return !prevPaidIds.has(t.id)
       })
@@ -113,7 +139,6 @@ export default function Dashboard() {
         runaways: (checkOuts||[]).filter(t=>t.notes?.includes('RUNAWAY')).length,
       })
 
-      // Building P&L
       const bMap = {}
       ;(buildings||[]).forEach(b=>{ bMap[b.id]={ name:b.name, income:0, expenses:0, ownerRent:0, util:0 } })
       ;(collections||[]).forEach(c=>{ if(bMap[c.building_id]) bMap[c.building_id].income+=Number(c.amount) })
@@ -124,11 +149,11 @@ export default function Dashboard() {
 
       setPnl({ income, expTotal, salaryTotal, ownerRentTotal, utilPaid, utilCharged, totalExpenses, grossProfit, margin })
 
-      // Trend — use available months
+      // Trend — last 6 available months, using 2 queries per month max
       const trendMonths = availableMonths.slice(0, 6).reverse()
       const trendData = await Promise.all(trendMonths.map(async m => {
         const me = new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7)), 0).getDate()
-        const [{ data: mc },{ data: me2 }] = await Promise.all([
+        const [{ data: mc }, { data: me2 }] = await Promise.all([
           supabase.from('rent_collections').select('amount').eq('for_month', m),
           supabase.from('expenses').select('amount').gte('expense_date',`${m}-01`).lte('expense_date',`${m}-${String(me).padStart(2,'0')}`),
         ])
@@ -139,37 +164,48 @@ export default function Dashboard() {
         }
       }))
       setTrend(trendData)
-    } catch(e) { console.error(e) }
+    } catch(e) {
+      console.error('Dashboard load failed:', e)
+      toast.error('Dashboard failed to load: ' + (e.message || 'Unknown error'))
+    }
     setLoading(false)
   }
 
   async function downloadMasterExcel() {
-    toast.loading('Preparing...')
+    const tid = toast.loading('Preparing…')
     try {
       const monthEnd = new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7)), 0).getDate()
+      const monthEndStr = `${month}-${String(monthEnd).padStart(2,'0')}`
       const wb = XLSX.utils.book_new()
-      const [{ data: collections },{ data: expenses },{ data: salaries },{ data: ownerRents },{ data: utilityBills },{ data: buildings },{ data: ciData },{ data: coData }] = await Promise.all([
+      const [
+        { data: collections }, { data: expenses }, { data: salaries },
+        { data: ownerRents }, { data: utilityBills }, { data: buildings },
+        { data: ciData }, { data: coData }
+      ] = await Promise.all([
         supabase.from('rent_collections').select('*, tenant:tenants(full_name,phone), building:buildings(name)').eq('for_month', month),
-        supabase.from('expenses').select('*, building:buildings(name)').gte('expense_date',`${month}-01`).lte('expense_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
+        supabase.from('expenses').select('*, building:buildings(name)').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr),
         supabase.from('staff_salaries').select('*, staff:staff(full_name)').eq('for_month', month),
         supabase.from('owner_payments').select('*, building:buildings(name)').eq('for_month', month),
         supabase.from('utility_bills').select('*, building:buildings(name)').eq('for_month', month),
         supabase.from('buildings').select('id,name').eq('is_active', true),
-        supabase.from('tenants').select('full_name,phone,monthly_rent,security_deposit_paid,move_in_date,building_id').gte('move_in_date',`${month}-01`).lte('move_in_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
-        supabase.from('tenants').select('full_name,phone,move_out_date,notes,building_id').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
+        supabase.from('tenants').select('full_name,phone,monthly_rent,security_deposit_paid,move_in_date,building_id').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
+        supabase.from('tenants').select('full_name,phone,move_out_date,notes,building_id').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
       ])
       const bMap = {}; (buildings||[]).forEach(b=>{ bMap[b.id]=b.name })
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((collections||[]).map(c=>({ Building:c.building?.name, Tenant:c.tenant?.full_name, Phone:c.tenant?.phone, Amount:c.amount, Mode:c.payment_mode, Month:month }))), 'Rent Collections')
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((expenses||[]).map(e=>({ Date:e.expense_date, Category:e.category, Description:e.description, Building:e.building?.name||'General', Amount:e.amount }))), 'Expenses')
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((salaries||[]).map(s=>({ Staff:s.staff?.full_name, Gross:s.gross_salary||s.gross_amount, Net:s.net_amount, Date:s.payment_date }))), 'Staff Salary')
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((salaries||[]).map(s=>({ Staff:s.staff?.full_name, Gross:s.gross_salary, Net:s.net_salary||s.net_amount, Date:s.payment_date }))), 'Staff Salary')
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((utilityBills||[]).map(u=>({ Building:u.building?.name, Type:u.utility_type, Amount:u.amount, Month:u.for_month }))), 'Utility Bills')
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildingPnl.map(b=>({ Building:b.name, Rent:b.income, 'Owner Rent':b.ownerRent, Expenses:b.expenses, Utility:b.util, Net:b.net }))), 'Building P&L')
       if (pnl) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['CashMyRent P&L',month],[''],['Rent Collected',pnl.income],['Utility Billed',pnl.utilCharged],['TOTAL INCOME',pnl.income+pnl.utilCharged],[''],['Owner Rent',pnl.ownerRentTotal],['Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal],['TOTAL EXPENSES',pnl.totalExpenses],[''],['NET PROFIT',pnl.grossProfit],['MARGIN',pnl.margin+'%']]), 'P&L Summary')
       if (ciData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, Phone:t.phone, 'Move In':t.move_in_date, Rent:t.monthly_rent, Deposit:t.security_deposit_paid||0 }))), 'Check-Ins')
       if (coData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(coData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, 'Exit Date':t.move_out_date, Type:t.notes?.includes('RUNAWAY')?'Runaway':'Normal' }))), 'Check-Outs')
       XLSX.writeFile(wb, `CashMyRent_${month}.xlsx`)
-      toast.dismiss(); toast.success('Downloaded ✓')
-    } catch(e) { toast.dismiss(); toast.error('Failed') }
+      toast.dismiss(tid); toast.success('Downloaded ✓')
+    } catch(e) {
+      toast.dismiss(tid)
+      toast.error('Export failed: ' + (e.message || 'Unknown error'))
+    }
   }
 
   const collRate = rentExpected.expected > 0 ? Math.round(rentExpected.collected/rentExpected.expected*100) : 0
@@ -227,7 +263,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Inline KPIs */}
         {!loading && pnl && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
             {[
@@ -250,7 +285,6 @@ export default function Dashboard() {
 
       {!loading && pnl && (<>
 
-        {/* ── Outstanding alert ── */}
         {outstanding.amount > 0 && (
           <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
             <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"/>
@@ -261,7 +295,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ── Rent collection progress ── */}
         <div className="card p-5">
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -284,7 +317,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ── Movement strip ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { icon: <LogIn className="w-5 h-5 text-emerald-600"/>, bg:'bg-emerald-100', label:'Check-Ins', value: movement.checkIns, sub:`${formatCurrency(movement.depositIn)} deposit`, color:'text-emerald-700' },
@@ -307,11 +339,9 @@ export default function Dashboard() {
 
         {viewMode === 'consolidated' ? (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* P&L card */}
             <div className="card p-5 lg:col-span-1">
               <h3 className="font-semibold text-surface-800 mb-4">P&L — {month}</h3>
               <div className="space-y-2">
-                {/* Income */}
                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Income</span>
@@ -322,19 +352,17 @@ export default function Dashboard() {
                     <div className="flex justify-between text-emerald-600"><span>Utility Billed</span><span className="font-mono">{formatCurrency(pnl.utilCharged)}</span></div>
                   </div>
                 </div>
-                {/* Expenses */}
                 <div className="p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-xs font-semibold text-red-700 uppercase tracking-wider">Expenses</span>
                     <span className="font-mono font-bold text-red-600">{formatCurrency(pnl.totalExpenses)}</span>
                   </div>
                   <div className="space-y-1 text-xs">
-                    {[['Owner Rent',pnl.ownerRentTotal],['General Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary (prev mo.)',pnl.salaryTotal]].map(([l,v])=>
+                    {[['Owner Rent',pnl.ownerRentTotal],['General Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal]].map(([l,v])=>
                       v>0 && <div key={l} className="flex justify-between text-red-600"><span>{l}</span><span className="font-mono">{formatCurrency(v)}</span></div>
                     )}
                   </div>
                 </div>
-                {/* Net */}
                 <div className={`p-3 rounded-xl border ${pnl.grossProfit>=0?'bg-brand-50 border-brand-200':'bg-red-100 border-red-300'}`}>
                   <div className="flex justify-between items-center">
                     <span className="font-bold text-surface-800">Net Profit</span>
@@ -347,7 +375,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Trend chart */}
             <div className="card p-5 lg:col-span-2">
               <h3 className="font-semibold text-surface-800 mb-4">Revenue vs Expenses</h3>
               <ResponsiveContainer width="100%" height={200}>
@@ -362,7 +389,6 @@ export default function Dashboard() {
                 </BarChart>
               </ResponsiveContainer>
 
-              {/* Expense donut */}
               {expenseBreakdown.length > 0 && (
                 <div className="mt-4 pt-4 border-t border-surface-100 grid grid-cols-2 gap-4 items-center">
                   <div>
@@ -392,7 +418,6 @@ export default function Dashboard() {
             </div>
           </div>
         ) : (
-          /* Building-wise */
           <div className="card overflow-hidden">
             <div className="px-5 py-4 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
               <h3 className="font-semibold text-surface-700">Building P&L — {month}</h3>
