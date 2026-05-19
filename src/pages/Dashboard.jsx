@@ -88,7 +88,7 @@ export default function Dashboard() {
         { data: currentSalaries, error: e12 },
       ] = await Promise.all([
         supabase.from('rent_collections').select('amount,building_id,tenant_id,payment_mode').eq('for_month', month),
-        supabase.from('expenses').select('amount,category,building_id,expense_date,for_month').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr),
+        supabase.from('expenses').select('amount,category,building_id,expense_date').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr),
         supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', prevMonth),
         supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', month),
         supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),
