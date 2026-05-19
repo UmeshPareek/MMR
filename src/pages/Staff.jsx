@@ -119,17 +119,21 @@ export default function Staff() {
   }
 
   async function loadAdvances() {
-    // All unrecovered advances (for pending tab)
+    // Only REAL advances (not incentives/reimbursements) that are unrecovered
     const { data } = await supabase.from('staff_advances')
       .select('*, staff:staff(full_name)')
+      .eq('advance_type', 'advance')
       .eq('recovered', false)
       .order('advance_date', { ascending: false })
     setAdvances(data || [])
-    // Advances given THIS selected month (for net payable calculation)
+
+    // Month advances for net payable calculation — only actual advances given this month
+    const monthEnd = new Date(parseInt(selectedMonth.slice(0,4)), parseInt(selectedMonth.slice(5,7)), 0).getDate()
     const { data: mAdv } = await supabase.from('staff_advances')
       .select('*, staff:staff(full_name)')
+      .eq('advance_type', 'advance')
       .gte('advance_date', `${selectedMonth}-01`)
-      .lte('advance_date', `${selectedMonth}-31`)
+      .lte('advance_date', `${selectedMonth}-${String(monthEnd).padStart(2,'0')}`)
       .order('advance_date', { ascending: false })
     setMonthAdvances(mAdv || [])
   }
@@ -209,7 +213,7 @@ export default function Staff() {
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Salary paid — advances marked recovered ✓')
-    setSalaryModal(false); loadSalaries(); loadAdvances()
+    setSalaryModal(false); loadSalaries(); loadAdvances(); if (tab === 'payroll') { loadSalaries() }
   }
 
   async function deleteStaff(id) {
@@ -694,7 +698,11 @@ export default function Staff() {
                     <td><span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">{a.payment_mode}</span></td>
                     <td className="text-right font-mono font-bold text-amber-700">{formatCurrency(a.amount)}</td>
                     <td>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1.5">
+                        <button onClick={async () => { await supabase.from('staff_advances').update({recovered:true}).eq('id',a.id); toast.success('Marked recovered'); loadAdvances() }}
+                          className="px-2 py-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg hover:bg-emerald-100 whitespace-nowrap">
+                          ✓ Recovered
+                        </button>
                         <button onClick={() => openEditAdvance(a)} className="btn-ghost p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
                           <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
