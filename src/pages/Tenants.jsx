@@ -137,7 +137,7 @@ export default function Tenants() {
   async function doDelete(id) {
     // Get tenant's flat_id first
     const { data: tenant } = await supabase.from('tenants').select('flat_id').eq('id', id).single()
-    const { error } = await supabase.from('tenants').update({ status: 'inactive', move_out_date: new Date().toISOString().slice(0,10) }).eq('id', id)
+    const { error } = await supabase.from('tenants').update({ status: 'vacated', move_out_date: new Date().toISOString().slice(0,10) }).eq('id', id)
     if (error) return toast.error(error.message)
     // Mark flat as vacant
     if (tenant?.flat_id) {
@@ -166,7 +166,7 @@ export default function Tenants() {
             <option value="all">All Status</option>
             <option value="active">Active</option>
             <option value="notice">Notice</option>
-            <option value="inactive">Inactive</option>
+            <option value="vacated">Vacated</option>
           </select>
           <button className="btn-primary" onClick={openAdd}><Plus size={16} /> Add Tenant</button>
         </div>
@@ -291,7 +291,7 @@ export default function Tenants() {
             <select className="select" value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}>
               <option value="active">Active</option>
               <option value="notice">Notice Period</option>
-              <option value="inactive">Inactive</option>
+              <option value="vacated">Vacated</option>
             </select>
           </div>
           <div className="form-group sm:col-span-2">

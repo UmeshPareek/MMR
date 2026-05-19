@@ -188,7 +188,7 @@ export default function Dashboard() {
         supabase.from('utility_bills').select('*, building:buildings(name)').eq('for_month', month),
         supabase.from('buildings').select('id,name').eq('is_active', true),
         supabase.from('tenants').select('full_name,phone,monthly_rent,security_deposit_paid,move_in_date,building_id').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
-        supabase.from('tenants').select('full_name,phone,move_out_date,notes,building_id').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
+        supabase.from('tenants').select('full_name,phone,move_out_date,notes,building_id').eq('status','vacated').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
       ])
       const bMap = {}; (buildings||[]).forEach(b=>{ bMap[b.id]=b.name })
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((collections||[]).map(c=>({ Building:c.building?.name, Tenant:c.tenant?.full_name, Phone:c.tenant?.phone, Amount:c.amount, Mode:c.payment_mode, Month:month }))), 'Rent Collections')

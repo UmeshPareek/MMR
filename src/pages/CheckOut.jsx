@@ -52,7 +52,7 @@ export default function CheckOut() {
       const [{ data: b }, { data: t }, { data: ex }, { data: allFlats }, { data: allBuildings }] = await Promise.all([
         supabase.from('buildings').select('id,name').eq('is_active', true).order('name'),
         supabase.from('tenants').select('*').eq('status','active').order('building_id').order('full_name'),
-        supabase.from('tenants').select('*').eq('status','inactive').order('move_out_date', { ascending: false }).limit(50),
+        supabase.from('tenants').select('*').eq('status','vacated').order('move_out_date', { ascending: false }).limit(50),
         supabase.from('flats').select('id,door_number'),
         supabase.from('buildings').select('id,name'),
       ])
@@ -157,7 +157,7 @@ export default function CheckOut() {
     const netRefund = deposit - deductions
     const exitNotes = `TYPE:${coType==='bad'?'RUNAWAY':'Normal'}|Date:${form.exit_date}|Deposit:${deposit}|Deductions:${deductions}|Net:${netRefund}|Collected:${form.collected_at_exit}|${form.notes}`
     
-    const { error } = await supabase.from('tenants').update({ status:'inactive', move_out_date: form.exit_date, notes: exitNotes }).eq('id', selected.id)
+    const { error } = await supabase.from('tenants').update({ status:'vacated', move_out_date: form.exit_date, notes: exitNotes }).eq('id', selected.id)
     if (error) { setSaving(false); return toast.error(error.message) }
 
     // Free the flat
