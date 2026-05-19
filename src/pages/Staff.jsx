@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, fmtMonth, lastNMonths } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog } from '@/components/ui'
@@ -46,6 +46,7 @@ export default function Staff() {
   const [rForm, setRForm] = useState({ staff_id:'', amount:'', description:'', date: new Date().toISOString().slice(0,10), payment_mode:'cash' })
   const [quickModal, setQuickModal] = useState(false)
   const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
+  const channelRef = useRef(null)
 
   useEffect(() => {
     loadAll()
