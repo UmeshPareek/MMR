@@ -3,16 +3,31 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
-import { Users, Plus, Edit2, Trash2, Phone, Home } from 'lucide-react'
-import * as XLSX from 'xlsx'
+import { Users, Plus, Edit2, Trash2, Phone, Home, TrendingUp, AlertCircle, UserCheck, UserX, Calendar } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
 const STATUS_MAP = { active: 'success', vacated: 'default', notice: 'warning' }
 
+function tenureLabel(moveIn) {
+  if (!moveIn) return '—'
+  const days = Math.floor((Date.now() - new Date(moveIn)) / 86400000)
+  if (days < 30) return `${days}d`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months}mo`
+  const years = Math.floor(months / 12)
+  const rem = months % 12
+  return rem > 0 ? `${years}y ${rem}mo` : `${years}y`
+}
+
+function avatarColor(name = '') {
+  const h = (name.charCodeAt(0) * 7 + (name.charCodeAt(1) || 0) * 13) % 360
+  return `hsl(${h}, 50%, 45%)`
+}
+
 const defaultForm = () => ({
   full_name: '', phone: '', email: '', id_type: '', id_number: '',
-  flat_id: '', building_id: '', move_in_date: new Date().toISOString().slice(0,10), monthly_rent: '',
+  flat_id: '', building_id: '', move_in_date: new Date().toISOString().slice(0, 10), monthly_rent: '',
   security_deposit_paid: '', security_deposit_months: 2,
   emergency_contact: '', emergency_phone: '', status: 'active', notes: ''
 })
@@ -48,9 +63,8 @@ export default function Tenants() {
     let q = supabase.from('tenants').select('*').order('full_name')
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data, error } = await q
-    if (error) { console.error('Tenants error:', error); setLoading(false); return; }
+    if (error) { console.error('Tenants error:', error); setLoading(false); return }
 
-    // Fetch flats and buildings separately
     const flatIds = [...new Set((data || []).map(t => t.flat_id).filter(Boolean))]
     const buildingIds = [...new Set((data || []).map(t => t.building_id).filter(Boolean))]
 
@@ -64,12 +78,11 @@ export default function Tenants() {
     const buildingMap = {}
     ;(buildingsData || []).forEach(b => { buildingMap[b.id] = b })
 
-    const enriched = (data || []).map(t => ({
+    setTenants((data || []).map(t => ({
       ...t,
       flat: t.flat_id ? flatMap[t.flat_id] : null,
       building: t.building_id ? buildingMap[t.building_id] : null,
-    }))
-    setTenants(enriched)
+    })))
     setLoading(false)
   }
 
@@ -102,7 +115,6 @@ export default function Tenants() {
     let error
     if (editTenant) {
       ({ error } = await supabase.from('tenants').update(payload).eq('id', editTenant.id))
-      // Update flat status
       if (!error && form.flat_id) {
         await supabase.from('flats').update({ status: form.status === 'active' ? 'occupied' : 'vacant', current_tenant_id: form.status === 'active' ? editTenant.id : null }).eq('id', form.flat_id)
       }
@@ -110,19 +122,13 @@ export default function Tenants() {
       const { data: newTenant, error: e } = await supabase.from('tenants').insert(payload).select().single()
       error = e
       if (!error && form.flat_id && newTenant) {
-        // Mark flat occupied
         await supabase.from('flats').update({ status: 'occupied', current_tenant_id: newTenant.id }).eq('id', form.flat_id)
-        // Auto-create security deposit record
         if (parseFloat(form.security_deposit_paid) > 0) {
           await supabase.from('security_deposits').insert({
-            tenant_id: newTenant.id,
-            flat_id: form.flat_id,
-            building_id: form.building_id,
-            amount_expected: parseFloat(form.security_deposit_paid),
-            amount_paid: parseFloat(form.security_deposit_paid),
-            payment_date: form.move_in_date || new Date().toISOString().slice(0,10),
-            status: 'collected',
-            notes: 'Auto-created from tenant onboarding',
+            tenant_id: newTenant.id, flat_id: form.flat_id, building_id: form.building_id,
+            amount_expected: parseFloat(form.security_deposit_paid), amount_paid: parseFloat(form.security_deposit_paid),
+            payment_date: form.move_in_date || new Date().toISOString().slice(0, 10),
+            status: 'collected', notes: 'Auto-created from tenant onboarding',
           }).then(({ error: de }) => { if (!de) toast.success('Security deposit record created automatically') })
         }
       }
@@ -135,11 +141,9 @@ export default function Tenants() {
   }
 
   async function doDelete(id) {
-    // Get tenant's flat_id first
     const { data: tenant } = await supabase.from('tenants').select('flat_id').eq('id', id).single()
-    const { error } = await supabase.from('tenants').update({ status: 'vacated', move_out_date: new Date().toISOString().slice(0,10) }).eq('id', id)
+    const { error } = await supabase.from('tenants').update({ status: 'vacated', move_out_date: new Date().toISOString().slice(0, 10) }).eq('id', id)
     if (error) return toast.error(error.message)
-    // Mark flat as vacant
     if (tenant?.flat_id) {
       await supabase.from('flats').update({ status: 'vacant' }).eq('id', tenant.flat_id)
     }
@@ -153,26 +157,56 @@ export default function Tenants() {
     (t.building?.name || '').toLowerCase().includes(search.toLowerCase())
   )
 
+  const activeCount = tenants.filter(t => t.status === 'active').length
+  const noticeCount = tenants.filter(t => t.status === 'notice').length
+  const vacatedCount = tenants.filter(t => t.status === 'vacated').length
+  const totalRent = tenants.filter(t => t.status === 'active').reduce((s, t) => s + (parseFloat(t.monthly_rent) || 0), 0)
+
+  const STATUS_TABS = [
+    { v: 'active', label: 'Active', count: activeCount, icon: <UserCheck size={13} />, color: 'text-emerald-600' },
+    { v: 'notice', label: 'Notice', count: noticeCount, icon: <AlertCircle size={13} />, color: 'text-amber-600' },
+    { v: 'vacated', label: 'Vacated', count: vacatedCount, icon: <UserX size={13} />, color: 'text-surface-400' },
+    { v: 'all', label: 'All', count: tenants.length, icon: <Users size={13} />, color: 'text-brand-600' },
+  ]
+
   return (
     <div className="space-y-5">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-surface-900">Tenants</h2>
-          <p className="text-surface-500 text-sm mt-1">{tenants.length} {statusFilter !== 'all' ? statusFilter : ''} tenants</p>
+          <p className="text-surface-500 text-sm mt-1">{activeCount} active · {formatCurrency(totalRent)}/mo income</p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           <SearchInput value={search} onChange={setSearch} placeholder="Search tenants…" />
-          <select className="select w-36" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="all">All Status</option>
-            <option value="active">Active</option>
-            <option value="notice">Notice</option>
-            <option value="vacated">Vacated</option>
-          </select>
           <button className="btn-primary" onClick={openAdd}><Plus size={16} /> Add Tenant</button>
         </div>
       </div>
 
-      {loading ? <div className="flex justify-center py-20"><Spinner size={32} /></div> : filtered.length === 0 ? (
+      {/* Stat pills + status filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {STATUS_TABS.map(({ v, label, count, icon, color }) => (
+          <button
+            key={v}
+            onClick={() => setStatusFilter(v)}
+            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-medium border transition-all ${statusFilter === v ? 'bg-brand-600 text-white border-brand-600 shadow-sm' : 'bg-white text-surface-600 border-surface-200 hover:border-surface-300'}`}
+          >
+            <span className={statusFilter === v ? 'text-white' : color}>{icon}</span>
+            {label}
+            <span className={`ml-0.5 text-xs font-semibold ${statusFilter === v ? 'text-brand-100' : 'text-surface-400'}`}>{count}</span>
+          </button>
+        ))}
+        {statusFilter === 'active' && totalRent > 0 && (
+          <div className="ml-auto flex items-center gap-2 px-4 py-2 bg-emerald-50 border border-emerald-200 rounded-xl">
+            <TrendingUp size={14} className="text-emerald-600" />
+            <span className="text-sm font-semibold text-emerald-700 font-mono">{formatCurrency(totalRent)}<span className="font-normal text-emerald-500">/mo</span></span>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20"><Spinner size={32} /></div>
+      ) : filtered.length === 0 ? (
         <EmptyState icon={Users} title="No tenants found" description="Add a tenant to start tracking rent" action={<button className="btn-primary" onClick={openAdd}><Plus size={16} /> Add Tenant</button>} />
       ) : (
         <div className="card overflow-hidden">
@@ -180,32 +214,65 @@ export default function Tenants() {
             <table className="data-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Phone</th>
-                  <th>Building</th>
-                  <th>Flat</th>
-                  <th>Monthly Rent</th>
-                  <th>Security Paid</th>
+                  <th>Tenant</th>
+                  <th>Building / Flat</th>
+                  <th className="text-right">Monthly Rent</th>
+                  <th className="text-right">Deposit</th>
                   <th>Move In</th>
+                  <th>Tenure</th>
                   <th>Status</th>
-                  <th></th>
+                  <th className="w-16"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map(t => (
-                  <tr key={t.id}>
-                    <td className="font-semibold text-surface-800">{t.full_name}</td>
-                    <td className="font-mono text-sm">{t.phone}</td>
-                    <td>{t.building?.name || '—'}</td>
-                    <td>{t.flat?.door_number || '—'}</td>
-                    <td className="amount-neutral">{formatCurrency(t.monthly_rent)}</td>
-                    <td className="amount-positive">{formatCurrency(t.security_deposit_paid)}</td>
-                    <td className="text-surface-500">{fmtDate(t.move_in_date)}</td>
+                  <tr key={t.id} className="group">
+                    <td>
+                      <div className="flex items-center gap-2.5">
+                        <div
+                          className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white flex-shrink-0"
+                          style={{ background: avatarColor(t.full_name) }}
+                        >
+                          {t.full_name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-surface-800 leading-tight">{t.full_name}</p>
+                          <p className="text-xs text-surface-400 font-mono">{t.phone}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {t.building?.name
+                        ? <div>
+                            <p className="text-surface-700 text-sm">{t.building.name}</p>
+                            {t.flat?.door_number && <p className="text-xs text-surface-400 font-mono">{t.flat.door_number}</p>}
+                          </div>
+                        : <span className="text-surface-300">—</span>}
+                    </td>
+                    <td className="text-right amount-neutral">{formatCurrency(t.monthly_rent)}</td>
+                    <td className="text-right amount-positive">{formatCurrency(t.security_deposit_paid)}</td>
+                    <td>
+                      <div className="flex items-center gap-1 text-surface-500 text-xs">
+                        <Calendar size={11} className="flex-shrink-0" />
+                        {fmtDate(t.move_in_date)}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="text-xs font-mono text-surface-500 bg-surface-100 px-2 py-0.5 rounded-full">
+                        {tenureLabel(t.move_in_date)}
+                      </span>
+                    </td>
                     <td><Badge variant={STATUS_MAP[t.status] || 'default'}>{t.status}</Badge></td>
                     <td>
-                      <div className="flex items-center gap-1">
-                        <button className="btn-ghost btn-sm" onClick={() => openEdit(t)}><Edit2 size={13} /></button>
-                        <button className="btn-ghost btn-sm text-expense" onClick={() => setDeleteConfirm({ id: t.id, name: t.full_name })}><Trash2 size={13} /></button>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          className="p-1.5 text-surface-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition-colors"
+                          onClick={() => openEdit(t)} title="Edit"
+                        ><Edit2 size={13} /></button>
+                        <button
+                          className="p-1.5 text-surface-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          onClick={() => setDeleteConfirm({ id: t.id, name: t.full_name })} title="Mark vacated"
+                        ><Trash2 size={13} /></button>
                       </div>
                     </td>
                   </tr>
@@ -218,7 +285,7 @@ export default function Tenants() {
 
       <Modal open={modal} onClose={() => setModal(false)} title={editTenant ? 'Edit Tenant' : 'Add Tenant'} size="xl">
         <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="form-group sm:col-span-2 border-b border-surface-200 pb-4 mb-1">
+          <div className="form-group sm:col-span-2 border-b border-surface-200 pb-3 mb-1">
             <p className="text-xs text-surface-500 uppercase tracking-wider font-semibold">Personal Details</p>
           </div>
           <div className="form-group">
@@ -253,7 +320,7 @@ export default function Tenants() {
             <input className="input" value={form.emergency_phone} onChange={e => setForm(p => ({ ...p, emergency_phone: e.target.value }))} />
           </div>
 
-          <div className="form-group sm:col-span-2 border-b border-t border-surface-200 py-4 mt-1 mb-1">
+          <div className="form-group sm:col-span-2 border-b border-t border-surface-200 py-3 mt-1 mb-1">
             <p className="text-xs text-surface-500 uppercase tracking-wider font-semibold">Property & Rent Details</p>
           </div>
           <div className="form-group">
@@ -265,7 +332,7 @@ export default function Tenants() {
           </div>
           <div className="form-group">
             <label className="label">Flat</label>
-            <select className="select" value={form.flat_id} onChange={e => { const f = flats.find(fl => fl.id === e.target.value); setForm(p => ({ ...p, flat_id: e.target.value, monthly_rent: f?.monthly_rent || p.monthly_rent, security_deposit_paid: f ? String(Number(f.monthly_rent||0) * 2) : p.security_deposit_paid })) }}>
+            <select className="select" value={form.flat_id} onChange={e => { const f = flats.find(fl => fl.id === e.target.value); setForm(p => ({ ...p, flat_id: e.target.value, monthly_rent: f?.monthly_rent || p.monthly_rent, security_deposit_paid: f ? String(Number(f.monthly_rent || 0) * 2) : p.security_deposit_paid })) }}>
               <option value="">— Select flat —</option>
               {flats.map(f => <option key={f.id} value={f.id}>{f.door_number} (₹{f.monthly_rent?.toLocaleString('en-IN')})</option>)}
             </select>
