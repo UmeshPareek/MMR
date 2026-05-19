@@ -7,6 +7,7 @@ import { Building2, Plus, ChevronDown, ChevronRight, Edit2, Trash2, Home, Upload
 import * as XLSX from 'xlsx'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
+import { checkBuildingLimit } from '@/utils/orgLimits'
 
 const FLAT_STATUS_OPTIONS = ['occupied', 'vacant', 'maintenance']
 
@@ -125,6 +126,11 @@ export default function Buildings() {
 
   async function saveBuilding() {
     if (!bForm.name || !bForm.address) return toast.error('Name and address are required')
+    // Check org limit only when adding new building
+    if (!editBuilding) {
+      const { allowed, reason } = await checkBuildingLimit(profile?.id)
+      if (!allowed) return toast.error(reason)
+    }
     setSaving(true)
     const payload = {
       ...bForm,

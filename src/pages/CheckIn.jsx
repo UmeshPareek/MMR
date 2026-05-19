@@ -5,6 +5,7 @@ import { Modal, Spinner, EmptyState } from '@/components/ui'
 import { LogIn, Home } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
+import { checkTenantLimit } from '@/utils/orgLimits'
 
 const EMPTY = () => ({ full_name:'', phone:'', email:'', building_id:'', flat_id:'', monthly_rent:'', move_in_date: new Date().toISOString().slice(0,10), security_deposit_paid:'', advance_paid:'0', rent_type:'prepaid', id_type:'aadhar', id_number:'', notes:'' })
 
@@ -76,6 +77,8 @@ export default function CheckIn() {
   async function save() {
     if (!form.full_name || !form.phone || !form.flat_id || !form.building_id)
       return toast.error('Name, phone, building and flat are required')
+    const { allowed, reason } = await checkTenantLimit(profile?.id)
+    if (!allowed) return toast.error(reason)
     setSaving(true)
     // Use exact same payload structure as Tenants.jsx which works
     const payload = {
