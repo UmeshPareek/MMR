@@ -135,7 +135,7 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200">
-        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management']].map(([k,l]) => (
+        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['danger','⚠️ Danger Zone']].map(([k,l]) => (
           <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -328,6 +328,63 @@ URL: https://app.cashmyrent.com`); toast.success('Copied!')}}
               )}
             </div>
           </Modal>
+        </div>
+      )}
+
+      {/* DANGER ZONE TAB */}
+      {tab === 'danger' && (
+        <div className="space-y-4 max-w-2xl">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+            <p className="font-bold mb-1">⚠️ Irreversible Actions</p>
+            <p>These actions permanently delete data and cannot be undone. Use with extreme caution.</p>
+          </div>
+
+          {[
+            { title:'Reset Rent Collections', desc:'Delete all rent collection records. Tenant and flat data is preserved.', table:'rent_collections', color:'amber' },
+            { title:'Reset Expenses', desc:'Delete all expense records across all buildings and months.', table:'expenses', color:'amber' },
+            { title:'Reset Staff Advances', desc:'Delete all advance, incentive and reimbursement records.', table:'staff_advances', color:'amber' },
+            { title:'Reset Salary History', desc:'Delete all salary payment records. Staff profiles are preserved.', table:'staff_salaries', color:'amber' },
+            { title:'Reset Utility Bills', desc:'Delete all utility bill payment records.', table:'utility_bills', color:'red' },
+            { title:'Reset Meter Readings', desc:'Delete all electricity and water meter readings.', table:'meter_readings', color:'red' },
+            { title:'Reset Owner Payments', desc:'Delete all owner rent payment records.', table:'owner_payments', color:'red' },
+            { title:'FULL DATA RESET', desc:'⚠️ Deletes ALL records: collections, expenses, salaries, bills, readings, owner payments. Tenants and buildings are preserved.', table:'ALL', color:'red' },
+          ].map(({ title, desc, table, color }) => (
+            <div key={table} className={`card p-5 border-l-4 ${color==='red'?'border-red-500':'border-amber-400'}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className={`font-semibold ${color==='red'?'text-red-700':'text-surface-800'}`}>{title}</p>
+                  <p className="text-xs text-surface-500 mt-1">{desc}</p>
+                </div>
+                <button
+                  onClick={async () => {
+                    const confirm1 = window.confirm(`Are you sure you want to ${title}? This cannot be undone.`)
+                    if (!confirm1) return
+                    const confirmWord = window.prompt(`Type RESET to confirm deletion of ${table === 'ALL' ? 'all data' : table}:`)
+                    if (confirmWord !== 'RESET') return toast.error('Cancelled — you must type RESET exactly')
+                    try {
+                      if (table === 'ALL') {
+                        await Promise.all([
+                          supabase.from('rent_collections').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('expenses').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('staff_advances').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('staff_salaries').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('utility_bills').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('meter_readings').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                          supabase.from('owner_payments').delete().neq('id', '00000000-0000-0000-0000-000000000000'),
+                        ])
+                        toast.success('Full data reset complete')
+                      } else {
+                        await supabase.from(table).delete().neq('id', '00000000-0000-0000-0000-000000000000')
+                        toast.success(`${title} complete`)
+                      }
+                    } catch(e) { toast.error('Reset failed: ' + e.message) }
+                  }}
+                  className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${color==='red'?'border-red-300 text-red-600 hover:bg-red-600 hover:text-white':'border-amber-300 text-amber-700 hover:bg-amber-500 hover:text-white'}`}>
+                  Reset
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
