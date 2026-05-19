@@ -56,11 +56,11 @@ export default function Expenses() {
   const [bulkForm, setBulkForm] = useState({ building_id: '', utility_type: 'electricity', amount: '', payment_mode: 'upi', for_month: '', vendor: '', bill_number: '' })
 
   useEffect(() => {
-    loadAll()
+    loadExpenses(); loadBuildings()
     if (channelRef.current) supabase.removeChannel(channelRef.current)
     channelRef.current = supabase.channel('expenses-rt')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => loadAll())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_groups' }, () => loadAll())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expenses' }, () => loadExpenses())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'expense_groups' }, () => { loadExpenses(); loadGroups() })
       .subscribe()
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [filterMonth, filterCategory, tab])
