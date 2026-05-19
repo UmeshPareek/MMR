@@ -59,11 +59,12 @@ export default function Dashboard() {
         { data: collections },{ data: expenses },{ data: prevSalaries },
         { data: ownerRents },{ data: utilityBills },{ data: meterReadings },
         { data: buildings },{ data: allTenants },{ data: prevCollections },
-        { data: checkIns },{ data: checkOuts }
+        { data: checkIns },{ data: checkOuts },{ data: currentSalaries }
       ] = await Promise.all([
         supabase.from('rent_collections').select('amount,building_id,tenant_id,payment_mode').eq('for_month', month),
-        supabase.from('expenses').select('amount,category,building_id').gte('expense_date',`${month}-01`).lte('expense_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
-        supabase.from('staff_salaries').select('net_amount').eq('for_month', prevMonth),
+        supabase.from('expenses').select('amount,category,building_id,expense_date,for_month').gte('expense_date',`${month}-01`).lte('expense_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
+        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', prevMonth),
+        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', month),
         supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),
         supabase.from('utility_bills').select('amount,building_id').eq('for_month', month),
         supabase.from('meter_readings').select('amount_charged,building_id').eq('for_month', month),
@@ -72,11 +73,18 @@ export default function Dashboard() {
         supabase.from('rent_collections').select('tenant_id').eq('for_month', prevMonth),
         supabase.from('tenants').select('security_deposit_paid').gte('move_in_date',`${month}-01`).lte('move_in_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
         supabase.from('tenants').select('notes').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date',`${month}-${String(monthEnd).padStart(2,'0')}`),
+        supabase.from('staff_salaries').select('net_amount,for_month').eq('for_month', month),
       ])
 
       const income = (collections||[]).reduce((s,r)=>s+Number(r.amount),0)
       const expTotal = (expenses||[]).reduce((s,r)=>s+Number(r.amount),0)
-      const salaryTotal = (prevSalaries||[]).reduce((s,r)=>s+Number(r.net_amount),0)
+      // Staff salary is POSTPAID — April salary is paid/expensed in May
+      // So for current month P&L: show PREVIOUS month's salary as expense
+      // AND show current month salary if already paid (for accuracy)
+      const prevMonthSalaryTotal = (prevSalaries||[]).reduce((s,r)=>s+Number(r.net_amount),0)
+      const currentMonthSalaryPaid = (currentSalaries||[]).reduce((s,r)=>s+Number(r.net_amount),0)
+      // Use whichever is more: prev month (accrual) or actual paid this month
+      const salaryTotal = Math.max(prevMonthSalaryTotal, currentMonthSalaryPaid)
       const ownerRentTotal = (ownerRents||[]).reduce((s,r)=>s+Number(r.amount),0)
       const utilPaid = (utilityBills||[]).reduce((s,r)=>s+Number(r.amount),0)
       const utilCharged = (meterReadings||[]).reduce((s,r)=>s+Number(r.amount_charged||0),0)
@@ -86,7 +94,14 @@ export default function Dashboard() {
 
       const totalExpected = (allTenants||[]).reduce((s,t)=>s+Number(t.monthly_rent),0)
       const prevPaidIds = new Set((prevCollections||[]).map(c=>c.tenant_id))
-      const unpaidPrev = (allTenants||[]).filter(t=>!prevPaidIds.has(t.id))
+      // Outstanding = tenants who existed before this month AND didn't pay prev month
+      const unpaidPrev = (allTenants||[]).filter(t => {
+        // Skip tenants who moved in this month or current month — they have no prev month dues
+        if (t.move_in_date && t.move_in_date >= `${month}-01`) return false
+        // Skip tenants who moved in last month or later
+        if (t.move_in_date && t.move_in_date >= `${prevMonth}-01`) return false
+        return !prevPaidIds.has(t.id)
+      })
 
       setRentExpected({ expected: totalExpected, collected: income })
       setOutstanding({ count: unpaidPrev.length, amount: unpaidPrev.reduce((s,t)=>s+Number(t.monthly_rent),0) })
