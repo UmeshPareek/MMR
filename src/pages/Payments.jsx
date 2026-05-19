@@ -3,11 +3,82 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
+import jsPDF from 'jspdf';
 import {
   Plus, Download, Camera, Upload, X, CheckCircle2,
   Clock, XCircle, Building2, ChevronDown, ChevronRight,
-  Phone, Lock, Trash2, Eye, ImageIcon, Filter, RefreshCw
+  Phone, Lock, Trash2, Eye, ImageIcon, Filter, RefreshCw, Receipt
 } from 'lucide-react';
+
+function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mode, payment_date, for_month, transaction_ref }) {
+  const doc = new jsPDF({ format: 'a5', unit: 'mm', orientation: 'portrait' })
+  const W = 148, pad = 12
+
+  // Header band
+  doc.setFillColor(13, 148, 136)
+  doc.rect(0, 0, W, 28, 'F')
+  doc.setTextColor(255, 255, 255)
+  doc.setFontSize(16)
+  doc.setFont('helvetica', 'bold')
+  doc.text('RENT RECEIPT', W / 2, 12, { align: 'center' })
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'normal')
+  doc.text('CashMyRent · Rent N Stay', W / 2, 20, { align: 'center' })
+
+  // Body
+  doc.setTextColor(30, 41, 59)
+  let y = 38
+
+  const row = (label, value, bold = false) => {
+    doc.setFontSize(9)
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 116, 139)
+    doc.text(label, pad, y)
+    doc.setFont('helvetica', bold ? 'bold' : 'normal')
+    doc.setTextColor(30, 41, 59)
+    doc.text(String(value || '—'), W - pad, y, { align: 'right' })
+    y += 8
+  }
+
+  row('Tenant', tenantName)
+  row('Flat / Room', flatNumber)
+  row('Building', buildingName)
+
+  // Divider
+  doc.setDrawColor(226, 232, 240)
+  doc.line(pad, y, W - pad, y)
+  y += 6
+
+  row('For Month', for_month)
+  row('Payment Date', payment_date)
+  row('Payment Mode', String(payment_mode || '').toUpperCase())
+  if (transaction_ref) row('Reference', transaction_ref)
+
+  // Divider
+  doc.setDrawColor(226, 232, 240)
+  doc.line(pad, y, W - pad, y)
+  y += 8
+
+  // Amount box
+  doc.setFillColor(240, 253, 250)
+  doc.roundedRect(pad, y, W - pad * 2, 20, 3, 3, 'F')
+  doc.setTextColor(15, 118, 110)
+  doc.setFontSize(11)
+  doc.setFont('helvetica', 'bold')
+  doc.text('Amount Paid', pad + 4, y + 7)
+  doc.setFontSize(16)
+  doc.text(formatCurrency(amount), W - pad - 4, y + 12, { align: 'right' })
+  y += 30
+
+  // Footer note
+  doc.setFontSize(7.5)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(148, 163, 184)
+  doc.text('This is a computer-generated receipt and does not require a signature.', W / 2, y, { align: 'center' })
+  doc.text(`Printed on ${new Date().toLocaleDateString('en-IN')}`, W / 2, y + 5, { align: 'center' })
+
+  doc.save(`Receipt_${flatNumber}_${for_month}.pdf`)
+}
 
 const MODES = ['cash', 'upi', 'bank_transfer', 'rentok', 'crib', 'cheque', 'other'];
 const MODE_LABELS = { cash: 'Cash', upi: 'UPI', bank_transfer: 'Bank Transfer', rentok: 'RentOK', crib: 'Crib', cheque: 'Cheque', other: 'Other' };
@@ -400,6 +471,24 @@ export default function Payments() {
                                 {activeFlat?.id === flat.id ? 'Cancel' : '+ Pay'}
                               </button>
                             )}
+                            {flat.status === 'paid' && (
+                              <button
+                                onClick={() => printReceipt({
+                                  tenantName: flat.tenant?.full_name || '—',
+                                  flatNumber: flat.door_number,
+                                  buildingName: buildings.find(x => x.id === flat.building_id)?.name || '—',
+                                  amount: flat.paid,
+                                  payment_mode: flat.colls[0]?.payment_mode,
+                                  payment_date: flat.colls[flat.colls.length - 1]?.payment_date,
+                                  for_month: selectedMonth,
+                                  transaction_ref: flat.colls[0]?.transaction_ref,
+                                })}
+                                className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600"
+                                title="Print receipt"
+                              >
+                                <Receipt className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             {flat.status === 'paid' && (isAdmin || isSuperAdmin) && (
                               <button onClick={() => handleDelete(flat.colls[0]?.id)} className="btn-ghost btn-sm p-1.5 text-surface-300 hover:text-red-400">
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -545,13 +634,31 @@ export default function Payments() {
                         ) : <span className="text-surface-300 text-xs">—</span>}
                       </td>
                       <td>
-                        {(isAdmin || isSuperAdmin) ? (
-                          <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500">
-                            <Trash2 className="w-3.5 h-3.5" />
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => printReceipt({
+                              tenantName: c.tenantName,
+                              flatNumber: c.flatNumber,
+                              buildingName: c.buildingName,
+                              amount: c.amount,
+                              payment_mode: c.payment_mode,
+                              payment_date: c.payment_date,
+                              for_month: selectedMonth,
+                              transaction_ref: c.transaction_ref,
+                            })}
+                            className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600"
+                            title="Print receipt"
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
                           </button>
-                        ) : (
-                          <Lock className="w-3.5 h-3.5 text-surface-300" />
-                        )}
+                          {(isAdmin || isSuperAdmin) ? (
+                            <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <Lock className="w-3.5 h-3.5 text-surface-300" />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

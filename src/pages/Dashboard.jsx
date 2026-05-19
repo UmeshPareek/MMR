@@ -2,7 +2,26 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, debounce } from '@/utils/helpers'
 import { Spinner } from '@/components/ui'
-import { Download, RefreshCw, Building2, AlertTriangle, CheckCircle2, LogIn, LogOut, TrendingUp, TrendingDown, Users, Wallet, BarChart3, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+import { Download, RefreshCw, Building2, AlertTriangle, LogIn, LogOut, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react'
+
+function useCountUp(target, duration = 900) {
+  const [value, setValue] = useState(0)
+  const prevRef = useRef(0)
+  useEffect(() => {
+    const start = prevRef.current
+    if (start === target) return
+    const startTime = performance.now()
+    const step = (now) => {
+      const progress = Math.min((now - startTime) / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setValue(Math.round(start + (target - start) * eased))
+      if (progress < 1) requestAnimationFrame(step)
+      else { setValue(target); prevRef.current = target }
+    }
+    requestAnimationFrame(step)
+  }, [target, duration])
+  return value
+}
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
 import toast from 'react-hot-toast'
 import * as XLSX from 'xlsx'
@@ -20,6 +39,7 @@ export default function Dashboard() {
   const [rentExpected, setRentExpected] = useState({ expected: 0, collected: 0 })
   const [movement, setMovement] = useState({ checkIns: 0, checkOuts: 0, depositIn: 0, runaways: 0 })
   const [activeTenantCount, setActiveTenantCount] = useState(0)
+  const [overdueList, setOverdueList] = useState([])
   const [viewMode, setViewMode] = useState('consolidated')
   const [loading, setLoading] = useState(true)
   const [appStart, setAppStart] = useState('2024-01')
@@ -129,7 +149,20 @@ export default function Dashboard() {
       })
 
       setRentExpected({ expected: totalExpected, collected: income })
-      setOutstanding({ count: unpaidPrev.length, amount: unpaidPrev.reduce((s,t)=>s+Number(t.monthly_rent),0) })
+      const outstandingAmount = unpaidPrev.reduce((s,t)=>s+Number(t.monthly_rent),0)
+      setOutstanding({ count: unpaidPrev.length, amount: outstandingAmount })
+
+      // Overdue details — tenants unpaid last month (for alert widget)
+      if (unpaidPrev.length > 0) {
+        const unpaidIds = unpaidPrev.map(t => t.id)
+        const { data: overdueDetails } = await supabase
+          .from('tenants')
+          .select('id, full_name, phone, monthly_rent, buildings(name)')
+          .in('id', unpaidIds.slice(0, 10))
+        setOverdueList(overdueDetails || [])
+      } else {
+        setOverdueList([])
+      }
       setActiveTenantCount((allTenants||[]).length)
       setMovement({
         checkIns: (checkIns||[]).length,
@@ -208,6 +241,15 @@ export default function Dashboard() {
   }
 
   const collRate = rentExpected.expected > 0 ? Math.round(rentExpected.collected/rentExpected.expected*100) : 0
+
+  // Animated counters
+  const animatedIncome = useCountUp(pnl?.income || 0)
+  const animatedProfit = useCountUp(pnl?.grossProfit || 0)
+  const animatedExpenses = useCountUp(pnl?.totalExpenses || 0)
+  const animatedCollRate = useCountUp(collRate)
+  const animatedOutstanding = useCountUp(outstanding.amount)
+  const animatedTenants = useCountUp(activeTenantCount)
+
   const expenseBreakdown = pnl ? [
     { name:'Owner Rent', value: pnl.ownerRentTotal, color:'#f87171' },
     { name:'Expenses', value: pnl.expTotal, color:'#fb923c' },
@@ -224,13 +266,13 @@ export default function Dashboard() {
           <div>
             <p className="text-brand-100 text-sm font-medium mb-1">CashMyRent · Portfolio Overview</p>
             <h1 className="text-3xl font-bold tracking-tight">
-              {loading ? '—' : formatCurrency(pnl?.income || 0)}
+              {loading ? '—' : formatCurrency(animatedIncome)}
             </h1>
             <p className="text-brand-100 text-sm mt-1">Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}</p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-1.5 text-sm">
                 <Users className="w-4 h-4 text-brand-200"/>
-                <span className="text-white font-semibold">{activeTenantCount}</span>
+                <span className="text-white font-semibold">{animatedTenants}</span>
                 <span className="text-brand-200">active tenants</span>
               </div>
               <div className="flex items-center gap-1.5 text-sm">
@@ -265,10 +307,10 @@ export default function Dashboard() {
         {!loading && pnl && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
             {[
-              { label:'Net Profit', value: formatCurrency(pnl.grossProfit), sub: `${pnl.margin}% margin`, up: pnl.grossProfit >= 0 },
-              { label:'Total Expenses', value: formatCurrency(pnl.totalExpenses), sub:'all costs', up: false },
-              { label:'Collection Rate', value: `${collRate}%`, sub:`of ₹${(rentExpected.expected/100000).toFixed(1)}L expected`, up: collRate >= 80 },
-              { label:'Outstanding', value: formatCurrency(outstanding.amount), sub:`${outstanding.count} tenants`, up: outstanding.amount === 0 },
+              { label:'Net Profit', value: formatCurrency(animatedProfit), sub: `${pnl.margin}% margin`, up: pnl.grossProfit >= 0 },
+              { label:'Total Expenses', value: formatCurrency(animatedExpenses), sub:'all costs', up: false },
+              { label:'Collection Rate', value: `${animatedCollRate}%`, sub:`of ₹${(rentExpected.expected/100000).toFixed(1)}L expected`, up: collRate >= 80 },
+              { label:'Outstanding', value: formatCurrency(animatedOutstanding), sub:`${outstanding.count} tenants`, up: outstanding.amount === 0 },
             ].map(({label,value,sub,up}) => (
               <div key={label} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-xl p-3">
                 <p className="text-brand-100 text-xs mb-1">{label}</p>
@@ -285,12 +327,46 @@ export default function Dashboard() {
       {!loading && pnl && (<>
 
         {outstanding.amount > 0 && (
-          <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-            <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5"/>
-            <div>
-              <p className="font-semibold text-amber-800 text-sm">{outstanding.count} tenants with outstanding dues from previous month — {formatCurrency(outstanding.amount)}</p>
-              <p className="text-xs text-amber-600 mt-0.5">Ensure collection team follows up before closing this month.</p>
+          <div className="card border-l-4 border-amber-400 overflow-hidden">
+            <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-100 dark:border-amber-800/30">
+              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0"/>
+              <div className="flex-1">
+                <p className="font-semibold text-amber-800 dark:text-amber-400 text-sm">
+                  {outstanding.count} tenant{outstanding.count > 1 ? 's' : ''} overdue from previous month
+                </p>
+                <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                  {formatCurrency(outstanding.amount)} outstanding — follow up before month close
+                </p>
+              </div>
             </div>
+            {overdueList.length > 0 && (
+              <div className="divide-y divide-surface-100 dark:divide-surface-700/60">
+                {overdueList.slice(0, 5).map(t => (
+                  <div key={t.id} className="flex items-center gap-3 px-4 py-2.5">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate">{t.full_name}</p>
+                      <p className="text-xs text-surface-400 dark:text-surface-500">{t.buildings?.name || '—'}</p>
+                    </div>
+                    <span className="text-sm font-mono font-semibold text-amber-600 dark:text-amber-400">
+                      {formatCurrency(t.monthly_rent)}
+                    </span>
+                    {t.phone && (
+                      <a
+                        href={`https://wa.me/91${t.phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hi ${t.full_name}, your rent of ₹${t.monthly_rent} is overdue. Please pay at the earliest. - CashMyRent`)}`}
+                        target="_blank" rel="noreferrer"
+                        className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors flex-shrink-0"
+                        title="WhatsApp reminder"
+                      >
+                        <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      </a>
+                    )}
+                  </div>
+                ))}
+                {outstanding.count > 5 && (
+                  <p className="px-4 py-2 text-xs text-surface-400 dark:text-surface-500">+{outstanding.count - 5} more tenants overdue</p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
