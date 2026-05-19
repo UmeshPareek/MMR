@@ -67,9 +67,8 @@ export default function Dashboard() {
   async function load() {
     setLoading(true)
     try {
-      const prevMonthDate = new Date(month + '-01')
-      prevMonthDate.setMonth(prevMonthDate.getMonth() - 1)
-      const prevMonth = prevMonthDate.toISOString().slice(0, 7)
+      const prevMonthDate = new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-2, 1)
+      const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth()+1).padStart(2,'0')}`
       const monthEnd = new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7)), 0).getDate()
       const monthEndStr = `${month}-${String(monthEnd).padStart(2,'0')}`
 
@@ -94,11 +93,11 @@ export default function Dashboard() {
         supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),
         supabase.from('utility_bills').select('amount,building_id').eq('for_month', month),
         supabase.from('meter_readings').select('amount_charged,building_id').eq('for_month', month),
-        supabase.from('buildings').select('id,name').eq('is_active', true),
+        supabase.from('buildings').select('id,name').neq('is_active', false),
         supabase.from('tenants').select('id,monthly_rent,building_id,move_in_date').eq('status','active'),
         supabase.from('rent_collections').select('tenant_id').eq('for_month', prevMonth),
-        supabase.from('tenants').select('security_deposit_paid').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
-        supabase.from('tenants').select('notes').eq('status','inactive').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
+        supabase.from('tenants').select('security_deposit_paid,move_in_date').eq('status','active').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
+        supabase.from('tenants').select('move_out_date,notes').eq('status','vacated').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
       ])
 
       const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12].filter(Boolean)
@@ -121,7 +120,7 @@ export default function Dashboard() {
       const grossProfit = income + utilCharged - totalExpenses
       const margin = income > 0 ? Math.round(grossProfit/income*100) : 0
 
-      const totalExpected = (allTenants||[]).reduce((s,t)=>s+Number(t.monthly_rent),0)
+      const totalExpected = (allTenants||[]).reduce((s,t)=>s+Number(t.monthly_rent||0),0)
       const prevPaidIds = new Set((prevCollections||[]).map(c=>c.tenant_id))
       const unpaidPrev = (allTenants||[]).filter(t => {
         if (t.move_in_date && t.move_in_date >= `${month}-01`) return false
@@ -158,7 +157,7 @@ export default function Dashboard() {
           supabase.from('expenses').select('amount').gte('expense_date',`${m}-01`).lte('expense_date',`${m}-${String(me).padStart(2,'0')}`),
         ])
         return {
-          month: new Date(m+'-01').toLocaleString('en-IN',{month:'short'}),
+          month: new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'short'}),
           revenue: (mc||[]).reduce((s,r)=>s+Number(r.amount),0),
           expenses: (me2||[]).reduce((s,r)=>s+Number(r.amount),0),
         }
@@ -227,7 +226,7 @@ export default function Dashboard() {
             <h1 className="text-3xl font-bold tracking-tight">
               {loading ? '—' : formatCurrency(pnl?.income || 0)}
             </h1>
-            <p className="text-brand-100 text-sm mt-1">Rent collected · {month}</p>
+            <p className="text-brand-100 text-sm mt-1">Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}</p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-1.5 text-sm">
                 <Users className="w-4 h-4 text-brand-200"/>
@@ -246,7 +245,7 @@ export default function Dashboard() {
               value={month} onChange={e => setMonth(e.target.value)}>
               {availableMonths.map(m => (
                 <option key={m} value={m} style={{color:'#0C0C0C'}}>
-                  {new Date(m+'-01').toLocaleString('en-IN',{month:'long',year:'numeric'})}
+                  {new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}
                 </option>
               ))}
             </select>
