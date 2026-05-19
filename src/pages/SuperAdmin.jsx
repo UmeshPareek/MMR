@@ -1,498 +1,441 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { formatCurrency, fmtDate, lastNMonths } from '@/utils/helpers'
-import { useAuth } from '@/contexts/AuthContext'
+import { formatCurrency, fmtDate } from '@/utils/helpers'
+import { Modal, Spinner } from '@/components/ui'
+import { Building2, Users, CreditCard, TrendingUp, Plus, CheckCircle2, Circle, Copy, Eye, EyeOff, ChevronDown, ChevronRight, Zap, Globe, Phone, Mail } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { Modal, Spinner, EmptyState } from '@/components/ui'
-import {
-  Shield, Plus, Building2, Users, CreditCard, CheckCircle2,
-  AlertTriangle, Edit2, RefreshCw, TrendingUp, Send, Eye, EyeOff,
-  Copy, ChevronDown, ChevronRight, Activity
-} from 'lucide-react'
+
+const PLANS = [
+  { id: 'starter', name: 'Starter', price: 1999, buildings: 2, tenants: 50, users: 3, features: ['Rent collection', 'Expenses', 'Staff salary', 'Excel exports'] },
+  { id: 'growth', name: 'Growth', price: 4999, buildings: 5, tenants: 200, users: 10, features: ['Everything in Starter', 'Audit module', 'Utility bills', 'Priority support'] },
+  { id: 'pro', name: 'Pro', price: 9999, buildings: 999, tenants: 9999, users: 999, features: ['Everything in Growth', 'Unlimited buildings', 'API access', 'Custom branding', 'Dedicated support'] },
+]
+
+const ONBOARD_STEPS = ['Company Details', 'Select Plan', 'Create Admin User', 'Confirm & Launch']
 
 export default function SuperAdmin() {
-  const { profile, isPlatformAdmin } = useAuth()
-  const [tab, setTab] = useState('dashboard')
-  const [orgs, setOrgs] = useState([])
-  const [plans, setPlans] = useState([])
-  const [stats, setStats] = useState(null)
+  const [clients, setClients] = useState([])
+  const [revenue, setRevenue] = useState({ mrr: 0, arr: 0, total: 0, byPlan: {} })
   const [loading, setLoading] = useState(true)
-  const [expandedOrg, setExpandedOrg] = useState(null)
-  const [orgDetails, setOrgDetails] = useState({})
+  const [tab, setTab] = useState('overview')
 
-  // Modals
-  const [orgModal, setOrgModal] = useState(false)
-  const [editOrg, setEditOrg] = useState(null)
-  const [orgForm, setOrgForm] = useState({ name:'', email:'', phone:'', city:'', plan_id:'', status:'trial' })
-
-  const [userModal, setUserModal] = useState(false)
-  const [userForm, setUserForm] = useState({ email:'', full_name:'', password:'', org_id:'', role:'admin' })
-  const [showPassword, setShowPassword] = useState(false)
-  const [generatedCreds, setGeneratedCreds] = useState(null)
+  // Onboarding wizard
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [step, setStep] = useState(0)
+  const [wizardData, setWizardData] = useState({
+    company_name: '', contact_name: '', email: '', phone: '', city: '', website: '',
+    plan_id: 'growth', custom_price: '',
+    admin_email: '', admin_password: '', admin_name: '',
+  })
   const [saving, setSaving] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [expandedClient, setExpandedClient] = useState(null)
 
   useEffect(() => { loadAll() }, [])
 
   async function loadAll() {
     setLoading(true)
-    await Promise.all([loadOrgs(), loadPlans(), loadStats()])
+    const { data: orgs } = await supabase.from('organizations').select('*').order('created_at', { ascending: false })
+    const { data: plans } = await supabase.from('plans').select('*')
+    setClients(orgs || [])
+
+    // Revenue calc
+    const planMap = {}; (plans||[]).forEach(p => { planMap[p.slug] = p })
+    let mrr = 0
+    const byPlan = {}
+    ;(orgs||[]).filter(o=>o.status==='active').forEach(o => {
+      const plan = PLANS.find(p=>p.id===o.plan_id) || PLANS[1]
+      const price = o.custom_price || plan.price
+      mrr += price
+      byPlan[plan.name] = (byPlan[plan.name] || 0) + 1
+    })
+    setRevenue({ mrr, arr: mrr * 12, total: mrr, byPlan })
     setLoading(false)
   }
 
-  async function loadOrgs() {
-    const { data } = await supabase
-      .from('organizations')
-      .select('*, plan:plans(display_name, name, price_monthly)')
-      .order('created_at', { ascending: false })
-    setOrgs(data || [])
+  function generatePassword() {
+    const c = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrs23456789@#!'
+    setWizardData(p => ({ ...p, admin_password: Array.from({length:12},()=>c[Math.floor(Math.random()*c.length)]).join('') }))
   }
 
-  async function loadPlans() {
-    const { data } = await supabase.from('plans').select('*').eq('is_active', true).order('sort_order')
-    setPlans(data || [])
-  }
-
-  async function loadStats() {
-    const [
-      { count: totalOrgs },
-      { count: activeOrgs },
-      { count: trialOrgs },
-      { data: recentOrgs }
-    ] = await Promise.all([
-      supabase.from('organizations').select('*', { count:'exact', head:true }),
-      supabase.from('organizations').select('*', { count:'exact', head:true }).eq('status', 'active'),
-      supabase.from('organizations').select('*', { count:'exact', head:true }).eq('status', 'trial'),
-      supabase.from('organizations').select('id, name, created_at, status').order('created_at', { ascending:false }).limit(5),
-    ])
-    setStats({ totalOrgs:totalOrgs||0, activeOrgs:activeOrgs||0, trialOrgs:trialOrgs||0, recentOrgs:recentOrgs||[] })
-  }
-
-  async function loadOrgDetails(orgId) {
-    if (orgDetails[orgId]) { setExpandedOrg(orgId); return }
-    const [
-      { count: buildings },
-      { count: tenants },
-      { count: flats },
-      { data: users },
-      { data: collections },
-    ] = await Promise.all([
-      supabase.from('buildings').select('*', { count:'exact', head:true }).eq('org_id', orgId),
-      supabase.from('tenants').select('*', { count:'exact', head:true }).eq('org_id', orgId).eq('status', 'active'),
-      supabase.from('flats').select('*', { count:'exact', head:true }).eq('org_id', orgId),
-      supabase.from('profiles').select('full_name, email, role, created_at').eq('org_id', orgId),
-      supabase.from('rent_collections').select('amount, for_month').eq('org_id', orgId)
-        .gte('for_month', new Date(new Date().setMonth(new Date().getMonth()-1)).toISOString().slice(0,7)),
-    ])
-    const monthRevenue = (collections||[]).reduce((s,c)=>s+Number(c.amount),0)
-    setOrgDetails(prev => ({
-      ...prev,
-      [orgId]: { buildings:buildings||0, tenants:tenants||0, flats:flats||0, users:users||[], monthRevenue }
-    }))
-    setExpandedOrg(orgId)
-  }
-
-  async function saveOrg() {
-    if (!orgForm.name || !orgForm.email) return toast.error('Name and email required')
-    setSaving(true)
-    const slug = orgForm.name.toLowerCase().replace(/\s+/g,'-').replace(/[^a-z0-9-]/g,'') + '-' + Date.now().toString(36)
-    const payload = { ...orgForm }
-    if (!payload.plan_id) delete payload.plan_id
-    const { error } = editOrg
-      ? await supabase.from('organizations').update(payload).eq('id', editOrg.id)
-      : await supabase.from('organizations').insert({ ...payload, slug })
-    setSaving(false)
-    if (error) return toast.error(error.message)
-    toast.success(editOrg ? 'Client updated' : 'Client created')
-    setOrgModal(false); loadOrgs(); loadStats()
-  }
-
-  async function createUser() {
-    if (!userForm.email || !userForm.org_id || !userForm.password) return toast.error('Fill all required fields')
-    if (userForm.password.length < 8) return toast.error('Password must be at least 8 characters')
+  async function launchClient() {
+    if (!wizardData.company_name || !wizardData.admin_email || !wizardData.admin_password) return toast.error('Fill all required fields')
     setSaving(true)
     try {
-      // Use Supabase Admin API via Edge Function or direct
-      const { data, error } = await supabase.auth.admin.createUser({
-        email: userForm.email,
-        password: userForm.password,
-        email_confirm: true,
-        user_metadata: { full_name: userForm.full_name }
-      })
-      if (error) throw error
+      // Create org
+      const slug = wizardData.company_name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-')
+      const { data: org, error: orgErr } = await supabase.from('organizations').insert({
+        name: wizardData.company_name, slug,
+        contact_name: wizardData.contact_name, contact_email: wizardData.email,
+        contact_phone: wizardData.phone, city: wizardData.city,
+        plan_id: wizardData.plan_id,
+        custom_price: wizardData.custom_price ? parseInt(wizardData.custom_price) : null,
+        status: 'active', onboarded_at: new Date().toISOString(),
+      }).select().single()
+      if (orgErr) throw orgErr
 
-      // Update profile
+      // Create admin user
+      const { data: user, error: userErr } = await supabase.auth.admin.createUser({
+        email: wizardData.admin_email, password: wizardData.admin_password,
+        email_confirm: true, user_metadata: { full_name: wizardData.admin_name }
+      })
+      if (userErr) throw userErr
+
       await supabase.from('profiles').upsert({
-        id: data.user.id,
-        email: userForm.email,
-        full_name: userForm.full_name,
-        org_id: userForm.org_id,
-        role: userForm.role,
-        is_platform_admin: false,
+        id: user.user.id, email: wizardData.admin_email,
+        full_name: wizardData.admin_name, role: 'super_admin',
+        org_id: org.id,
       })
 
-      setGeneratedCreds({ email: userForm.email, password: userForm.password, role: userForm.role })
-      toast.success('User created successfully!')
-      setUserForm({ email:'', full_name:'', password:'', org_id:'', role:'admin' })
-    } catch(e) {
-      toast.error(e.message)
-    }
+      toast.success(`✓ ${wizardData.company_name} is live on CashMyRent!`)
+      setWizardOpen(false)
+      setStep(0)
+      setWizardData({ company_name:'', contact_name:'', email:'', phone:'', city:'', website:'', plan_id:'growth', custom_price:'', admin_email:'', admin_password:'', admin_name:'' })
+      loadAll()
+    } catch(e) { toast.error(e.message) }
     setSaving(false)
   }
 
-  function generatePassword() {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
-    const pwd = Array.from({length:12}, ()=>chars[Math.floor(Math.random()*chars.length)]).join('')
-    setUserForm(p=>({...p, password:pwd}))
+  async function toggleClientStatus(id, currentStatus) {
+    await supabase.from('organizations').update({ status: currentStatus==='active'?'suspended':'active' }).eq('id', id)
+    toast.success(currentStatus==='active'?'Client suspended':'Client reactivated')
+    loadAll()
   }
 
-  function copyToClipboard(text) {
-    navigator.clipboard.writeText(text)
-    toast.success('Copied!')
-  }
-
-  async function updateStatus(id, status) {
-    await supabase.from('organizations').update({ status }).eq('id', id)
-    toast.success(`Status → ${status}`)
-    loadOrgs()
-  }
-
-  if (!isPlatformAdmin) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="card p-8 text-center max-w-sm">
-          <Shield className="w-12 h-12 text-amber-500 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-surface-800 mb-2">Platform Admin Only</h2>
-          <p className="text-surface-500 text-sm">This section is restricted to the platform owner.</p>
-        </div>
-      </div>
-    )
-  }
-
-  const totalMRR = orgs.filter(o=>o.status==='active').reduce((s,o)=>s+Number(o.plan?.price_monthly||0),0)
-  const STATUS_C = { active:'bg-emerald-50 text-emerald-700 border-emerald-200', trial:'bg-blue-50 text-blue-700 border-blue-200', suspended:'bg-red-50 text-red-700 border-red-200', cancelled:'bg-surface-100 text-surface-500 border-surface-200' }
-  const PLAN_C = { starter:'bg-surface-100 text-surface-600 border-surface-200', growth:'bg-brand-50 text-brand-700 border-brand-200', pro:'bg-amber-50 text-amber-700 border-amber-200' }
+  const activeClients = clients.filter(c=>c.status==='active')
+  const suspendedClients = clients.filter(c=>c.status==='suspended')
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
-            <Shield className="w-5 h-5 text-amber-600" />
-          </div>
+    <div className="space-y-6">
+      {/* ── Hero ── */}
+      <div className="rounded-2xl bg-gradient-to-br from-slate-800 via-slate-700 to-slate-600 p-6 text-white relative overflow-hidden">
+        <div className="absolute inset-0 opacity-5" style={{backgroundImage:'radial-gradient(circle at 30% 70%, white 1px, transparent 1px)', backgroundSize:'20px 20px'}}/>
+        <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div>
-            <h2 className="text-xl font-bold text-surface-900">Platform Admin</h2>
-            <p className="text-xs text-surface-500">CashMyRent Super Admin · {profile?.email}</p>
+            <p className="text-slate-300 text-xs font-semibold uppercase tracking-wider mb-2">Platform Admin · CashMyRent</p>
+            <h1 className="text-3xl font-bold">₹{(revenue.mrr/1000).toFixed(1)}K <span className="text-slate-300 text-lg font-normal">MRR</span></h1>
+            <p className="text-slate-300 text-sm mt-1">₹{(revenue.arr/100000).toFixed(1)}L ARR · {activeClients.length} active clients</p>
           </div>
+          <button onClick={() => { setWizardOpen(true); setStep(0) }}
+            className="flex items-center gap-2 bg-white text-slate-800 px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-slate-100 transition-colors shadow-lg">
+            <Plus className="w-4 h-4"/> Onboard New Client
+          </button>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => { setUserModal(true); setGeneratedCreds(null) }} className="btn-secondary flex items-center gap-2">
-            <Users className="w-4 h-4" /> Create User
-          </button>
-          <button onClick={() => { setEditOrg(null); setOrgForm({name:'',email:'',phone:'',city:'',plan_id:'',status:'trial'}); setOrgModal(true) }} className="btn-primary flex items-center gap-2">
-            <Plus className="w-4 h-4" /> Add Client
-          </button>
-          <button onClick={loadAll} className="btn-ghost p-2"><RefreshCw className="w-4 h-4" /></button>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-5">
+          {[
+            { label:'Active Clients', value: activeClients.length, icon:'🟢' },
+            { label:'Suspended', value: suspendedClients.length, icon:'🔴' },
+            { label:'MRR', value: `₹${(revenue.mrr/1000).toFixed(1)}K`, icon:'💰' },
+            { label:'ARR', value: `₹${(revenue.arr/100000).toFixed(2)}L`, icon:'📈' },
+          ].map(({label,value,icon}) => (
+            <div key={label} className="bg-white/10 border border-white/10 rounded-xl p-3">
+              <p className="text-slate-300 text-xs mb-1">{icon} {label}</p>
+              <p className="text-white font-bold text-xl">{value}</p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* ── Tabs ── */}
       <div className="flex border-b border-surface-200">
-        {[['dashboard','Dashboard'],['clients','Clients'],['plans','Plans']].map(([k,l])=>(
-          <button key={k} className={`tab ${tab===k?'active':''}`} onClick={()=>setTab(k)}>{l}</button>
+        {[['overview','Overview'],['clients','All Clients'],['revenue','Revenue']].map(([k,l]) => (
+          <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
 
-      {/* DASHBOARD TAB */}
-      {tab === 'dashboard' && (
+      {/* OVERVIEW */}
+      {tab === 'overview' && (
         <div className="space-y-4">
-          {/* MRR cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {[
-              { label:'Monthly Revenue', value:formatCurrency(totalMRR), sub:`${orgs.filter(o=>o.status==='active').length} paying clients`, color:'border-emerald-400' },
-              { label:'Annual Run Rate', value:formatCurrency(totalMRR*12), sub:'If all stay active', color:'border-brand-500' },
-              { label:'Total Clients', value:stats?.totalOrgs||0, sub:`${stats?.trialOrgs||0} on trial`, color:'border-surface-300' },
-              { label:'Active Clients', value:stats?.activeOrgs||0, sub:'Paying subscribers', color:'border-emerald-400' },
-            ].map(({label,value,sub,color})=>(
-              <div key={label} className={`card p-4 border-l-4 ${color}`}>
-                <p className="text-xs text-surface-500 mb-1">{label}</p>
-                <p className="text-xl font-bold font-mono text-surface-900">{value}</p>
-                <p className="text-xs text-surface-400 mt-0.5">{sub}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Recent signups */}
-          <div className="card overflow-hidden">
-            <div className="px-5 py-3 border-b border-surface-100 bg-surface-50 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-surface-400" />
-              <h3 className="text-sm font-semibold text-surface-700">Recent Signups</h3>
-            </div>
-            {(stats?.recentOrgs||[]).map(o=>(
-              <div key={o.id} className="flex items-center gap-4 px-5 py-3 border-b border-surface-100 last:border-0">
-                <div className="w-8 h-8 bg-brand-100 text-brand-700 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0">
-                  {o.name.charAt(0)}
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-surface-800 text-sm">{o.name}</p>
-                  <p className="text-xs text-surface-400">{fmtDate(o.created_at)}</p>
-                </div>
-                <span className={`badge border text-xs ${STATUS_C[o.status]}`}>{o.status}</span>
-              </div>
-            ))}
-          </div>
-
           {/* Plan breakdown */}
-          <div className="grid grid-cols-3 gap-3">
-            {plans.map(p=>{
-              const clients = orgs.filter(o=>o.plan_id===p.id)
-              const mrr = clients.filter(o=>o.status==='active').reduce((s,o)=>s+Number(p.price_monthly),0)
+          <div className="grid grid-cols-3 gap-4">
+            {PLANS.map(plan => {
+              const count = clients.filter(c=>c.plan_id===plan.id&&c.status==='active').length
               return (
-                <div key={p.id} className="card p-4">
-                  <p className="text-xs text-surface-500 mb-1 uppercase tracking-wider">{p.display_name}</p>
-                  <p className="text-2xl font-bold text-surface-900">{clients.length}</p>
-                  <p className="text-xs text-surface-400 mt-0.5">clients · {formatCurrency(mrr)}/mo</p>
-                  <div className="mt-3 h-1.5 bg-surface-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-brand-500 rounded-full" style={{width:`${orgs.length>0?(clients.length/orgs.length)*100:0}%`}} />
+                <div key={plan.id} className="card p-5">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-bold text-surface-800">{plan.name}</p>
+                      <p className="text-xs text-surface-400">₹{plan.price.toLocaleString('en-IN')}/mo</p>
+                    </div>
+                    <span className="badge bg-brand-50 text-brand-700 border border-brand-200 text-xs font-bold">{count} clients</span>
+                  </div>
+                  <p className="font-mono font-bold text-brand-700">{formatCurrency(count * plan.price)}<span className="text-xs text-surface-400 font-normal">/mo</span></p>
+                  <div className="mt-3 space-y-1">
+                    {plan.features.slice(0,3).map(f => <p key={f} className="text-xs text-surface-500 flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-emerald-500"/>{f}</p>)}
                   </div>
                 </div>
               )
             })}
           </div>
+
+          {/* Recent clients */}
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 border-b border-surface-100 bg-surface-50">
+              <h3 className="font-semibold text-surface-700">Recent Clients</h3>
+            </div>
+            <table className="data-table">
+              <thead><tr><th>Company</th><th>Plan</th><th>MRR</th><th>Onboarded</th><th>Status</th></tr></thead>
+              <tbody>
+                {clients.slice(0,5).map(c => {
+                  const plan = PLANS.find(p=>p.id===c.plan_id)||PLANS[1]
+                  return (
+                    <tr key={c.id}>
+                      <td>
+                        <p className="font-medium text-surface-800">{c.name}</p>
+                        <p className="text-xs text-surface-400">{c.contact_email||'—'}</p>
+                      </td>
+                      <td><span className="badge bg-brand-50 text-brand-700 border border-brand-200 text-xs">{plan.name}</span></td>
+                      <td className="font-mono font-semibold text-brand-700">{formatCurrency(c.custom_price||plan.price)}</td>
+                      <td className="text-xs text-surface-500">{fmtDate(c.onboarded_at||c.created_at)}</td>
+                      <td><span className={`badge border text-xs ${c.status==='active'?'bg-emerald-50 text-emerald-700 border-emerald-200':'bg-red-50 text-red-700 border-red-200'}`}>{c.status}</span></td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
-      {/* CLIENTS TAB */}
+      {/* ALL CLIENTS */}
       {tab === 'clients' && (
         <div className="space-y-3">
-          {loading ? <div className="py-12 flex justify-center"><Spinner /></div>
-          : orgs.length === 0 ? <EmptyState icon={Building2} title="No clients yet" />
-          : orgs.map(o => (
-            <div key={o.id} className="card overflow-hidden">
-              {/* Client row */}
-              <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-surface-50 transition-colors"
-                onClick={() => expandedOrg===o.id ? setExpandedOrg(null) : loadOrgDetails(o.id)}>
-                <div className="w-9 h-9 bg-brand-100 text-brand-700 rounded-lg flex items-center justify-center font-bold text-sm flex-shrink-0">
-                  {o.name.charAt(0)}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-semibold text-surface-800">{o.name}</p>
-                    {o.slug==='rent-n-stay' && <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">Client #1</span>}
-                  </div>
-                  <p className="text-xs text-surface-400">{o.email} {o.city && `· ${o.city}`}</p>
-                </div>
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  {o.plan && <span className={`badge border text-xs ${PLAN_C[o.plan.name]}`}>{o.plan.display_name}</span>}
-                  <span className={`badge border text-xs ${STATUS_C[o.status]}`}>{o.status}</span>
-                  {o.plan && <span className="font-mono text-sm text-emerald-700 font-semibold">{formatCurrency(o.plan.price_monthly)}</span>}
-                  {expandedOrg===o.id ? <ChevronDown className="w-4 h-4 text-surface-400" /> : <ChevronRight className="w-4 h-4 text-surface-400" />}
-                </div>
-              </div>
-
-              {/* Expanded details */}
-              {expandedOrg===o.id && orgDetails[o.id] && (
-                <div className="border-t border-surface-100 bg-surface-50/50 px-5 py-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                    {[
-                      {l:'Buildings',v:orgDetails[o.id].buildings},
-                      {l:'Active Tenants',v:orgDetails[o.id].tenants},
-                      {l:'Total Flats',v:orgDetails[o.id].flats},
-                      {l:'Last Month Rev',v:formatCurrency(orgDetails[o.id].monthRevenue)},
-                    ].map(({l,v})=>(
-                      <div key={l} className="bg-white rounded-lg border border-surface-200 p-3">
-                        <p className="text-xs text-surface-400">{l}</p>
-                        <p className="font-bold text-surface-800 mt-0.5">{v}</p>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Users */}
-                  {orgDetails[o.id].users.length > 0 && (
-                    <div className="mb-4">
-                      <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-2">Users</p>
-                      <div className="flex flex-wrap gap-2">
-                        {orgDetails[o.id].users.map(u=>(
-                          <div key={u.email} className="flex items-center gap-1.5 bg-white border border-surface-200 rounded-lg px-3 py-1.5 text-xs">
-                            <div className="w-5 h-5 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-xs">
-                              {(u.full_name||u.email).charAt(0).toUpperCase()}
-                            </div>
-                            <span className="text-surface-700 font-medium">{u.full_name||u.email}</span>
-                            <span className="text-surface-400">{u.role}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={()=>{setEditOrg(o);setOrgForm({name:o.name,email:o.email||'',phone:o.phone||'',city:o.city||'',plan_id:o.plan_id||'',status:o.status});setOrgModal(true)}}
-                      className="btn-secondary btn-sm flex items-center gap-1.5"><Edit2 className="w-3.5 h-3.5"/>Edit Client</button>
-                    <button onClick={()=>{setUserForm(p=>({...p,org_id:o.id}));setUserModal(true);setGeneratedCreds(null)}}
-                      className="btn-secondary btn-sm flex items-center gap-1.5"><Users className="w-3.5 h-3.5"/>Add User</button>
-                    {o.status==='trial' && <button onClick={()=>updateStatus(o.id,'active')} className="btn-primary btn-sm flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5"/>Activate</button>}
-                    {o.status==='active' && <button onClick={()=>updateStatus(o.id,'suspended')} className="btn-secondary btn-sm flex items-center gap-1.5 text-amber-600"><AlertTriangle className="w-3.5 h-3.5"/>Suspend</button>}
-                    {o.status==='suspended' && <button onClick={()=>updateStatus(o.id,'active')} className="btn-primary btn-sm flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5"/>Reactivate</button>}
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* PLANS TAB */}
-      {tab === 'plans' && (
-        <div className="grid sm:grid-cols-3 gap-4">
-          {plans.map(p=>{
-            const clients=orgs.filter(o=>o.plan_id===p.id)
-            const activeMRR=clients.filter(o=>o.status==='active').reduce((s)=>s+Number(p.price_monthly),0)
+          {clients.map(c => {
+            const plan = PLANS.find(p=>p.id===c.plan_id)||PLANS[1]
+            const isExpanded = expandedClient === c.id
             return (
-              <div key={p.id} className={`card p-6 ${p.name==='growth'?'border-brand-300':''}`}>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-bold text-surface-800 text-lg">{p.display_name}</h3>
-                  {p.name==='growth'&&<span className="badge bg-brand-100 text-brand-700 border border-brand-200 text-xs">Popular</span>}
+              <div key={c.id} className={`card overflow-hidden border ${c.status==='suspended'?'border-red-200 opacity-70':''}`}>
+                <div className="p-4 flex items-center gap-4 cursor-pointer" onClick={()=>setExpandedClient(isExpanded?null:c.id)}>
+                  <div className="w-10 h-10 bg-gradient-to-br from-brand-500 to-teal-500 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {c.name.charAt(0)}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-surface-800">{c.name}</p>
+                      <span className={`badge border text-xs ${c.status==='active'?'bg-emerald-50 text-emerald-700 border-emerald-200':'bg-red-50 text-red-700 border-red-200'}`}>{c.status}</span>
+                    </div>
+                    <p className="text-xs text-surface-400">{c.contact_email} · {c.city||'—'}</p>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-mono font-bold text-brand-700">{formatCurrency(c.custom_price||plan.price)}/mo</p>
+                    <p className="text-xs text-surface-400">{plan.name} plan</p>
+                  </div>
+                  {isExpanded ? <ChevronDown className="w-4 h-4 text-surface-400"/> : <ChevronRight className="w-4 h-4 text-surface-400"/>}
                 </div>
-                <p className="text-3xl font-bold font-mono text-surface-900 mb-4">{formatCurrency(p.price_monthly)}<span className="text-sm text-surface-400 font-normal">/mo</span></p>
-                <div className="space-y-2 text-sm text-surface-600 mb-4">
-                  <p>🏢 {p.max_buildings?`Up to ${p.max_buildings} buildings`:'Unlimited buildings'}</p>
-                  <p>👥 {p.max_users?`Up to ${p.max_users} users`:'Unlimited users'}</p>
-                  <p>🏠 {p.max_tenants?`Up to ${p.max_tenants} tenants`:'Unlimited tenants'}</p>
-                  <p>🔍 Audit: {formatCurrency(p.audit_per_building)}/building</p>
-                </div>
-                <div className="pt-4 border-t border-surface-100 space-y-1 text-xs text-surface-500">
-                  <div className="flex justify-between"><span>{clients.length} total clients</span><span>{clients.filter(o=>o.status==='active').length} active</span></div>
-                  <div className="flex justify-between"><span>MRR from this plan</span><span className="font-mono text-emerald-700 font-semibold">{formatCurrency(activeMRR)}</span></div>
-                </div>
+
+                {isExpanded && (
+                  <div className="border-t border-surface-100 p-4 bg-surface-50 space-y-4">
+                    <div className="grid sm:grid-cols-3 gap-4 text-sm">
+                      <div><p className="text-xs text-surface-400 mb-1">Contact</p><p className="font-medium">{c.contact_name||'—'}</p></div>
+                      <div><p className="text-xs text-surface-400 mb-1">Phone</p><p className="font-medium">{c.contact_phone||'—'}</p></div>
+                      <div><p className="text-xs text-surface-400 mb-1">Onboarded</p><p className="font-medium">{fmtDate(c.onboarded_at||c.created_at)}</p></div>
+                    </div>
+                    {/* Plan change */}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-surface-500">Plan:</span>
+                        <select className="select py-1 text-sm w-32" value={c.plan_id||'growth'}
+                          onChange={async e => {
+                            await supabase.from('organizations').update({ plan_id: e.target.value }).eq('id', c.id)
+                            toast.success('Plan updated'); loadAll()
+                          }}>
+                          {PLANS.map(p=><option key={p.id} value={p.id}>{p.name} — ₹{p.price.toLocaleString('en-IN')}/mo</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-surface-500">Custom price:</span>
+                        <input type="number" className="input py-1 text-sm w-28" placeholder="Override"
+                          defaultValue={c.custom_price||''}
+                          onBlur={async e => {
+                            const val = e.target.value ? parseInt(e.target.value) : null
+                            await supabase.from('organizations').update({ custom_price: val }).eq('id', c.id)
+                            toast.success('Price updated'); loadAll()
+                          }} />
+                      </div>
+                      <button onClick={() => toggleClientStatus(c.id, c.status)}
+                        className={`btn-sm px-3 py-1.5 rounded-lg text-xs font-medium border ${c.status==='active'?'border-red-200 text-red-600 hover:bg-red-50':'border-emerald-200 text-emerald-700 hover:bg-emerald-50'}`}>
+                        {c.status==='active'?'Suspend':'Reactivate'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
         </div>
       )}
 
-      {/* ADD/EDIT ORG MODAL */}
-      <Modal open={orgModal} onClose={()=>setOrgModal(false)} title={editOrg?'Edit Client':'Add New Client'} size="md">
-        <div className="p-6 grid sm:grid-cols-2 gap-4">
-          <div className="form-group col-span-2">
-            <label className="label">Business Name *</label>
-            <input className="input" value={orgForm.name} onChange={e=>setOrgForm(p=>({...p,name:e.target.value}))} placeholder="ABC Property Management" />
+      {/* REVENUE */}
+      {tab === 'revenue' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {[
+              { label:'Monthly Recurring Revenue', value: formatCurrency(revenue.mrr), sub:'from active clients', color:'text-brand-700' },
+              { label:'Annual Recurring Revenue', value: formatCurrency(revenue.arr), sub:`₹${(revenue.arr/100000).toFixed(2)}L/year`, color:'text-emerald-700' },
+              { label:'Active Clients', value: activeClients.length, sub:`${suspendedClients.length} suspended`, color:'text-surface-800' },
+            ].map(({label,value,sub,color}) => (
+              <div key={label} className="card p-5">
+                <p className="text-xs text-surface-400 mb-2">{label}</p>
+                <p className={`text-2xl font-bold font-mono ${color}`}>{value}</p>
+                <p className="text-xs text-surface-400 mt-1">{sub}</p>
+              </div>
+            ))}
           </div>
-          <div className="form-group">
-            <label className="label">Email *</label>
-            <input type="email" className="input" value={orgForm.email} onChange={e=>setOrgForm(p=>({...p,email:e.target.value}))} />
-          </div>
-          <div className="form-group">
-            <label className="label">Phone</label>
-            <input className="input" value={orgForm.phone} onChange={e=>setOrgForm(p=>({...p,phone:e.target.value}))} />
-          </div>
-          <div className="form-group">
-            <label className="label">City</label>
-            <input className="input" value={orgForm.city} onChange={e=>setOrgForm(p=>({...p,city:e.target.value}))} placeholder="Bengaluru" />
-          </div>
-          <div className="form-group">
-            <label className="label">Plan</label>
-            <select className="select" value={orgForm.plan_id} onChange={e=>setOrgForm(p=>({...p,plan_id:e.target.value}))}>
-              <option value="">— Select plan —</option>
-              {plans.map(p=><option key={p.id} value={p.id}>{p.display_name} — {formatCurrency(p.price_monthly)}/mo</option>)}
-            </select>
-          </div>
-          <div className="form-group col-span-2">
-            <label className="label">Status</label>
-            <select className="select" value={orgForm.status} onChange={e=>setOrgForm(p=>({...p,status:e.target.value}))}>
-              <option value="trial">Trial</option>
-              <option value="active">Active (Paying)</option>
-              <option value="suspended">Suspended</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+          <div className="card overflow-hidden">
+            <div className="px-5 py-3 border-b border-surface-100 bg-surface-50"><h3 className="font-semibold text-surface-700">Revenue by Client</h3></div>
+            <table className="data-table">
+              <thead><tr><th>Client</th><th>Plan</th><th>Custom Price</th><th className="text-right">MRR</th><th className="text-right">ARR</th></tr></thead>
+              <tbody>
+                {clients.filter(c=>c.status==='active').map(c => {
+                  const plan = PLANS.find(p=>p.id===c.plan_id)||PLANS[1]
+                  const price = c.custom_price || plan.price
+                  return (
+                    <tr key={c.id}>
+                      <td className="font-medium">{c.name}</td>
+                      <td><span className="badge bg-brand-50 text-brand-700 border border-brand-200 text-xs">{plan.name}</span></td>
+                      <td className="text-xs text-surface-400">{c.custom_price ? formatCurrency(c.custom_price) : '—'}</td>
+                      <td className="text-right font-mono font-bold text-brand-700">{formatCurrency(price)}</td>
+                      <td className="text-right font-mono text-surface-600">{formatCurrency(price*12)}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-surface-50 border-t-2 border-surface-200">
+                  <td colSpan={3} className="px-4 py-3 font-bold text-xs text-surface-500 uppercase">Total</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-brand-700">{formatCurrency(revenue.mrr)}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-emerald-700">{formatCurrency(revenue.arr)}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
-        <div className="px-6 pb-6 flex gap-3 justify-end">
-          <button className="btn-secondary" onClick={()=>setOrgModal(false)}>Cancel</button>
-          <button className="btn-primary" onClick={saveOrg} disabled={saving}>{saving?<Spinner size={16}/>:(editOrg?'Update':'Create Client')}</button>
-        </div>
-      </Modal>
+      )}
 
-      {/* CREATE USER MODAL */}
-      <Modal open={userModal} onClose={()=>setUserModal(false)} title="Create User Account" size="md">
-        <div className="p-6 space-y-4">
-          {generatedCreds ? (
-            <div className="space-y-4">
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
-                <p className="font-semibold text-emerald-800 mb-3 flex items-center gap-2"><CheckCircle2 className="w-4 h-4"/>User created successfully!</p>
-                <p className="text-xs text-emerald-600 mb-3">Share these credentials with the user. Ask them to change their password on first login.</p>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-emerald-200">
-                    <div><p className="text-xs text-surface-400">Email</p><p className="font-mono text-sm text-surface-800">{generatedCreds.email}</p></div>
-                    <button onClick={()=>copyToClipboard(generatedCreds.email)} className="btn-ghost p-1.5"><Copy className="w-3.5 h-3.5"/></button>
-                  </div>
-                  <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-emerald-200">
-                    <div><p className="text-xs text-surface-400">Password</p><p className="font-mono text-sm text-surface-800">{generatedCreds.password}</p></div>
-                    <button onClick={()=>copyToClipboard(generatedCreds.password)} className="btn-ghost p-1.5"><Copy className="w-3.5 h-3.5"/></button>
-                  </div>
-                  <div className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-emerald-200">
-                    <div><p className="text-xs text-surface-400">App URL</p><p className="font-mono text-sm text-brand-600">app.cashmyrent.com</p></div>
-                    <button onClick={()=>copyToClipboard('https://app.cashmyrent.com')} className="btn-ghost p-1.5"><Copy className="w-3.5 h-3.5"/></button>
-                  </div>
+      {/* ── ONBOARDING WIZARD ── */}
+      <Modal open={wizardOpen} onClose={() => setWizardOpen(false)} title="Onboard New Client" size="lg">
+        {/* Step indicator */}
+        <div className="px-6 pt-4 pb-2">
+          <div className="flex items-center gap-2">
+            {ONBOARD_STEPS.map((s,i) => (
+              <div key={i} className="flex items-center gap-2 flex-1">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all ${i < step ? 'bg-emerald-500 text-white' : i === step ? 'bg-brand-600 text-white ring-4 ring-brand-100' : 'bg-surface-100 text-surface-400'}`}>
+                  {i < step ? '✓' : i+1}
                 </div>
-                <button onClick={()=>copyToClipboard(`CashMyRent Login\nURL: https://app.cashmyrent.com\nEmail: ${generatedCreds.email}\nPassword: ${generatedCreds.password}\nRole: ${generatedCreds.role}`)}
-                  className="btn-secondary w-full mt-3 flex items-center justify-center gap-2 text-sm">
-                  <Copy className="w-3.5 h-3.5"/> Copy All Credentials
-                </button>
+                <p className={`text-xs font-medium hidden sm:block ${i===step?'text-brand-700':i<step?'text-emerald-600':'text-surface-400'}`}>{s}</p>
+                {i < ONBOARD_STEPS.length-1 && <div className={`flex-1 h-0.5 ${i < step ? 'bg-emerald-400' : 'bg-surface-200'}`}/>}
               </div>
-              <button onClick={()=>{setGeneratedCreds(null);setUserForm({email:'',full_name:'',password:'',org_id:userForm.org_id,role:'admin'})}} className="btn-primary w-full">Create Another User</button>
+            ))}
+          </div>
+        </div>
+
+        <div className="px-6 py-4">
+          {/* Step 0: Company details */}
+          {step === 0 && (
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="col-span-2 form-group"><label className="label">Company Name *</label><input className="input" value={wizardData.company_name} onChange={e=>setWizardData(p=>({...p,company_name:e.target.value}))} placeholder="Rent N Stay Pvt Ltd" autoFocus /></div>
+              <div className="form-group"><label className="label">Contact Person</label><input className="input" value={wizardData.contact_name} onChange={e=>setWizardData(p=>({...p,contact_name:e.target.value}))} /></div>
+              <div className="form-group"><label className="label">Phone</label><input className="input" value={wizardData.phone} onChange={e=>setWizardData(p=>({...p,phone:e.target.value}))} /></div>
+              <div className="form-group"><label className="label">Email</label><input type="email" className="input" value={wizardData.email} onChange={e=>setWizardData(p=>({...p,email:e.target.value}))} /></div>
+              <div className="form-group"><label className="label">City</label><input className="input" value={wizardData.city} onChange={e=>setWizardData(p=>({...p,city:e.target.value}))} placeholder="Bengaluru" /></div>
             </div>
-          ) : (
-            <>
-              <div className="form-group">
-                <label className="label">Client / Organization *</label>
-                <select className="select" value={userForm.org_id} onChange={e=>setUserForm(p=>({...p,org_id:e.target.value}))}>
-                  <option value="">— Select client —</option>
-                  {orgs.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}
-                </select>
+          )}
+
+          {/* Step 1: Plan */}
+          {step === 1 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                {PLANS.map(plan => (
+                  <button key={plan.id} type="button" onClick={()=>setWizardData(p=>({...p,plan_id:plan.id}))}
+                    className={`p-4 rounded-xl border-2 text-left transition-all ${wizardData.plan_id===plan.id?'border-brand-500 bg-brand-50':'border-surface-200 hover:border-brand-300'}`}>
+                    <p className="font-bold text-surface-800">{plan.name}</p>
+                    <p className="text-xl font-mono font-bold text-brand-700 mt-1">₹{plan.price.toLocaleString('en-IN')}<span className="text-xs text-surface-400 font-normal">/mo</span></p>
+                    <div className="mt-2 space-y-1">
+                      <p className="text-xs text-surface-500">🏢 {plan.buildings===999?'Unlimited':plan.buildings} buildings</p>
+                      <p className="text-xs text-surface-500">👤 {plan.tenants===9999?'Unlimited':plan.tenants} tenants</p>
+                    </div>
+                  </button>
+                ))}
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="form-group">
-                  <label className="label">Full Name</label>
-                  <input className="input" value={userForm.full_name} onChange={e=>setUserForm(p=>({...p,full_name:e.target.value}))} placeholder="Ravi Kumar" />
+              <div className="form-group"><label className="label">Custom Price (optional — overrides plan price)</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-surface-500">₹</span>
+                  <input type="number" className="input" value={wizardData.custom_price} onChange={e=>setWizardData(p=>({...p,custom_price:e.target.value}))} placeholder={PLANS.find(p=>p.id===wizardData.plan_id)?.price.toString()} />
+                  <span className="text-xs text-surface-400">/month</span>
                 </div>
-                <div className="form-group">
-                  <label className="label">Role</label>
-                  <select className="select" value={userForm.role} onChange={e=>setUserForm(p=>({...p,role:e.target.value}))}>
-                    <option value="super_admin">Super Admin</option>
-                    <option value="admin">Admin</option>
-                    <option value="team">Team (collection only)</option>
-                  </select>
-                </div>
               </div>
-              <div className="form-group">
-                <label className="label">Email *</label>
-                <input type="email" className="input" value={userForm.email} onChange={e=>setUserForm(p=>({...p,email:e.target.value}))} placeholder="user@company.com" />
+            </div>
+          )}
+
+          {/* Step 2: Admin user */}
+          {step === 2 && (
+            <div className="space-y-4">
+              <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-xs text-brand-700">
+                Creating the admin login for <strong>{wizardData.company_name}</strong>. Share these credentials with the client.
               </div>
+              <div className="form-group"><label className="label">Admin Name</label><input className="input" value={wizardData.admin_name} onChange={e=>setWizardData(p=>({...p,admin_name:e.target.value}))} placeholder="Ravi Kumar" autoFocus /></div>
+              <div className="form-group"><label className="label">Admin Email *</label><input type="email" className="input" value={wizardData.admin_email} onChange={e=>setWizardData(p=>({...p,admin_email:e.target.value}))} /></div>
               <div className="form-group">
                 <label className="label">Password *</label>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
-                    <input type={showPassword?'text':'password'} className="input pr-10" value={userForm.password}
-                      onChange={e=>setUserForm(p=>({...p,password:e.target.value}))} placeholder="Min. 8 characters" />
-                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400"
-                      onClick={()=>setShowPassword(s=>!s)}>
-                      {showPassword?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}
-                    </button>
+                    <input type={showPassword?'text':'password'} className="input pr-10 font-mono" value={wizardData.admin_password} onChange={e=>setWizardData(p=>({...p,admin_password:e.target.value}))} />
+                    <button type="button" className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-400" onClick={()=>setShowPassword(!showPassword)}>{showPassword?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button>
                   </div>
                   <button onClick={generatePassword} className="btn-secondary btn-sm whitespace-nowrap">Generate</button>
                 </div>
               </div>
-              <div className="p-3 bg-surface-50 rounded-lg text-xs text-surface-500 border border-surface-200">
-                The user will be able to log in at <strong>app.cashmyrent.com</strong> with these credentials immediately.
+            </div>
+          )}
+
+          {/* Step 3: Confirm */}
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="p-4 bg-surface-50 rounded-xl border border-surface-200 space-y-3 text-sm">
+                <h4 className="font-semibold text-surface-800">Confirm Client Details</h4>
+                {[
+                  ['Company', wizardData.company_name],
+                  ['Contact', `${wizardData.contact_name} · ${wizardData.phone}`],
+                  ['Email', wizardData.email],
+                  ['Plan', `${PLANS.find(p=>p.id===wizardData.plan_id)?.name} — ₹${(wizardData.custom_price||PLANS.find(p=>p.id===wizardData.plan_id)?.price).toLocaleString('en-IN')}/mo`],
+                  ['Admin Login', wizardData.admin_email],
+                ].map(([k,v]) => (
+                  <div key={k} className="flex justify-between">
+                    <span className="text-surface-400">{k}</span>
+                    <span className="font-medium text-surface-800">{v}</span>
+                  </div>
+                ))}
               </div>
-              <div className="flex gap-3">
-                <button className="btn-secondary flex-1" onClick={()=>setUserModal(false)}>Cancel</button>
-                <button className="btn-primary flex-1" onClick={createUser} disabled={saving}>
-                  {saving?<Spinner size={16}/>:<><Send className="w-4 h-4 mr-1.5"/>Create User</>}
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
+                <p className="text-sm font-semibold text-emerald-800 mb-2">Credentials to share with client:</p>
+                <div className="font-mono text-sm space-y-1 text-emerald-700">
+                  <p>URL: https://app.cashmyrent.com</p>
+                  <p>Email: {wizardData.admin_email}</p>
+                  <p>Password: {wizardData.admin_password}</p>
+                </div>
+                <button onClick={() => { navigator.clipboard.writeText(`URL: https://app.cashmyrent.com\nEmail: ${wizardData.admin_email}\nPassword: ${wizardData.admin_password}`); toast.success('Copied!') }}
+                  className="flex items-center gap-1.5 text-xs text-emerald-700 mt-2 hover:underline">
+                  <Copy className="w-3 h-3"/> Copy credentials
                 </button>
               </div>
-            </>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 flex justify-between">
+          <button className="btn-secondary" onClick={() => step === 0 ? setWizardOpen(false) : setStep(s=>s-1)}>
+            {step === 0 ? 'Cancel' : '← Back'}
+          </button>
+          {step < 3 ? (
+            <button className="btn-primary" onClick={() => {
+              if (step===0 && !wizardData.company_name) return toast.error('Company name required')
+              if (step===2 && (!wizardData.admin_email || !wizardData.admin_password)) return toast.error('Email and password required')
+              setStep(s=>s+1)
+            }}>Next →</button>
+          ) : (
+            <button className="btn-primary flex items-center gap-2" onClick={launchClient} disabled={saving}>
+              {saving ? <Spinner size={16}/> : <><Zap className="w-4 h-4"/> Launch Client</>}
+            </button>
           )}
         </div>
       </Modal>
