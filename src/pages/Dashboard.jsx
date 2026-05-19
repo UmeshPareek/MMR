@@ -58,7 +58,7 @@ export default function Dashboard() {
         { data: prevSalaries },
       ] = await Promise.all([
         supabase.from('rent_collections').select('amount, building_id, tenant_id, for_month, payment_mode').eq('for_month', month),
-        supabase.from('expenses').select('amount, category, building_id').eq('expense_date', month).gte('expense_date', `${month}-01`).lte('expense_date', `${month}-31`),
+        supabase.from('expenses').select('amount, category, building_id').gte('expense_date', `${month}-01`).lte('expense_date', `${month}-31`),
         // Postpaid: April salary paid in May — so for month M, show salary from M-1
         supabase.from('staff_salaries').select('net_amount, for_month').eq('for_month', prevMonth),
         supabase.from('owner_payments').select('amount, building_id').eq('for_month', month),
@@ -122,7 +122,7 @@ export default function Dashboard() {
       const trendData = await Promise.all(months.map(async m => {
         const [{ data: mc }, { data: me }] = await Promise.all([
           supabase.from('rent_collections').select('amount').eq('for_month', m),
-          supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', `${m}-31`),
+          supabase.from('expenses').select('amount').gte('expense_date', `${m}-01`).lte('expense_date', `${m}-31`).gte('expense_date', `${m}-01`),
         ])
         return {
           month: m.slice(5), // 'MM'
