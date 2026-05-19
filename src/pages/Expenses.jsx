@@ -68,7 +68,7 @@ export default function Expenses() {
   async function loadExpenses() {
     setLoading(true)
     let q = supabase.from('expenses').select(`*, building:buildings(name), paidBy:profiles(full_name)`).order('expense_date', { ascending: false })
-    if (filterMonth) q = q.gte('expense_date', `${filterMonth}-01`).lte('expense_date', `${filterMonth}-31`)
+    if (filterMonth) { const me = new Date(parseInt(filterMonth.slice(0,4)), parseInt(filterMonth.slice(5,7)), 0).getDate(); q = q.gte('expense_date', `${filterMonth}-01`).lte('expense_date', `${filterMonth}-${String(me).padStart(2,'0')}`) }
     if (filterCategory) q = q.eq('category', filterCategory)
     const { data } = await q
     setExpenses(data || [])
