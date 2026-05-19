@@ -25,12 +25,12 @@ export default function Dashboard() {
   const [appStart, setAppStart] = useState('2024-01')
   const channelRef = useRef(null)
 
-  // Generate available months dynamically — fetched from DB on mount
+  // Generate available months from appStart to 1 month ahead of today
   const availableMonths = []
-  const start = new Date(appStart + '-01')
-  const now = new Date()
-  for (let d = new Date(start); d <= now; d.setMonth(d.getMonth() + 1)) {
-    availableMonths.push(new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 7))
+  const start = new Date(parseInt(appStart.slice(0,4)), parseInt(appStart.slice(5,7))-1, 1)
+  const ahead = new Date(); ahead.setMonth(ahead.getMonth() + 1)
+  for (let d = new Date(start); d <= ahead; d.setMonth(d.getMonth() + 1)) {
+    availableMonths.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`)
   }
   availableMonths.reverse()
 
@@ -86,18 +86,18 @@ export default function Dashboard() {
         { data: checkOuts, error: e11 },
         { data: currentSalaries, error: e12 },
       ] = await Promise.all([
-        supabase.from('rent_collections').select('amount,building_id,tenant_id,payment_mode').eq('for_month', month),
-        supabase.from('expenses').select('amount,category,building_id,expense_date').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr),
-        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', prevMonth),
-        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', month),
-        supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),
-        supabase.from('utility_bills').select('amount,building_id').eq('for_month', month),
-        supabase.from('meter_readings').select('amount_charged,building_id').eq('for_month', month),
-        supabase.from('buildings').select('id,name').neq('is_active', false),
-        supabase.from('tenants').select('id,monthly_rent,building_id,move_in_date').eq('status','active'),
-        supabase.from('rent_collections').select('tenant_id').eq('for_month', prevMonth),
-        supabase.from('tenants').select('security_deposit_paid,move_in_date').eq('status','active').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr),
-        supabase.from('tenants').select('move_out_date,notes').eq('status','vacated').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
+        supabase.from('rent_collections').select('amount,building_id,tenant_id,payment_mode').eq('for_month', month),              // → collections
+        supabase.from('expenses').select('amount,category,building_id,expense_date').gte('expense_date',`${month}-01`).lte('expense_date', monthEndStr), // → expenses
+        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', prevMonth),                                  // → prevSalaries
+        supabase.from('owner_payments').select('amount,building_id').eq('for_month', month),                                        // → ownerRents
+        supabase.from('utility_bills').select('amount,building_id').eq('for_month', month),                                         // → utilityBills
+        supabase.from('meter_readings').select('amount_charged,building_id').eq('for_month', month),                                // → meterReadings
+        supabase.from('buildings').select('id,name').neq('is_active', false),                                                       // → buildings
+        supabase.from('tenants').select('id,monthly_rent,building_id,move_in_date').eq('status','active'),                          // → allTenants
+        supabase.from('rent_collections').select('tenant_id').eq('for_month', prevMonth),                                           // → prevCollections
+        supabase.from('tenants').select('security_deposit_paid,move_in_date').eq('status','active').gte('move_in_date',`${month}-01`).lte('move_in_date', monthEndStr), // → checkIns
+        supabase.from('tenants').select('move_out_date,notes').eq('status','vacated').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),              // → checkOuts
+        supabase.from('staff_salaries').select('net_salary,for_month').eq('for_month', month),                                      // → currentSalaries
       ])
 
       const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12].filter(Boolean)
