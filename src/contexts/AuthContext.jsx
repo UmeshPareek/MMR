@@ -32,11 +32,12 @@ export function AuthProvider({ children }) {
       setProfile(profileData)
 
       if (profileData.org_id) {
-        const { data: orgData } = await supabase
+        const { data: orgData, error: orgError } = await supabase
           .from('organizations')
           .select('id, name, slug, city, logo_url')
           .eq('id', profileData.org_id)
           .single()
+        if (orgError) console.error('Org fetch error (check RLS on organizations table):', orgError.message, orgError.code)
         setOrg(orgData || null)
       } else {
         setOrg(null)
