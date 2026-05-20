@@ -169,20 +169,11 @@ export default function Buildings() {
 
   async function saveFlat() {
     if (!fForm.door_number || !fForm.monthly_rent) return toast.error('Door number and rent are required')
-    // Rent change requires admin permission
-    if (editFlat && parseFloat(fForm.monthly_rent) !== parseFloat(editFlat.monthly_rent)) {
-      if (!isAdmin && !isSuperAdmin) {
-        return toast.error('Only admin can change rent amount. Call 8217716904')
-      }
-      // Log the change
-      await supabase.from('rent_change_log').insert({
-        flat_id: editFlat.id,
-        old_rent: editFlat.monthly_rent,
-        new_rent: parseFloat(fForm.monthly_rent),
-        reason: fForm.notes || 'Rent updated',
-        changed_by: profile?.id,
-      })
+    const rentChanged = editFlat && parseFloat(fForm.monthly_rent) !== parseFloat(editFlat.monthly_rent)
+    if (rentChanged && !isAdmin && !isSuperAdmin) {
+      return toast.error('Only admin can change rent amount')
     }
+
     setSaving(true)
     const payload = { ...fForm, building_id: flatModal.buildingId, monthly_rent: parseFloat(fForm.monthly_rent) || 0, area_sqft: parseFloat(fForm.area_sqft) || null, floor_number: parseInt(fForm.floor_number) || null }
 
@@ -192,6 +183,17 @@ export default function Buildings() {
 
     setSaving(false)
     if (error) return toast.error(error.message)
+
+    // Log rent change only after successful update to avoid orphaned audit rows
+    if (rentChanged) {
+      await supabase.from('rent_change_log').insert({
+        flat_id: editFlat.id,
+        old_rent: editFlat.monthly_rent,
+        new_rent: parseFloat(fForm.monthly_rent),
+        reason: fForm.notes || 'Rent updated',
+        changed_by: profile?.id,
+      })
+    }
     toast.success(editFlat ? 'Flat updated' : 'Flat added')
     setFlatModal({ open: false, buildingId: null })
     // Force re-fetch flat list for this building

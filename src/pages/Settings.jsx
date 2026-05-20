@@ -29,7 +29,7 @@ export default function Settings() {
   const [editGroup, setEditGroup] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { loadAll() }, [])
+  useEffect(() => { if (profile) loadAll() }, [profile?.id])
 
   async function loadAll() {
     setLoading(true)
@@ -37,7 +37,9 @@ export default function Settings() {
       supabase.from('master_settings').select('*'),
       supabase.from('buildings').select('id, name, is_active, electricity_reading_enabled, water_reading_enabled').order('name'),
       supabase.from('expense_groups').select('*').eq('is_active', true).order('name'),
-      supabase.from('profiles').select('id, full_name, email, role, created_at').order('created_at', { ascending: false }),
+      profile?.org_id
+        ? supabase.from('profiles').select('id, full_name, email, role, created_at').eq('org_id', profile.org_id).order('created_at', { ascending: false })
+        : supabase.from('profiles').select('id, full_name, email, role, created_at').order('created_at', { ascending: false }),
     ])
     const settingsMap = {}
     ;(s || []).forEach(r => { settingsMap[r.setting_key] = r.setting_value })
@@ -174,7 +176,7 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200">
-        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['danger','⚠️ Danger Zone']].map(([k,l]) => (
+        {[['rates','Rates & Incentives'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
           <button key={k} className={`tab ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -193,9 +195,9 @@ export default function Settings() {
                 <p className="text-xs text-surface-400 mt-0.5">{desc}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <input type="number" className="input w-24 py-1.5 text-right font-mono"
+                <input type="number" min="0" className="input w-24 py-1.5 text-right font-mono"
                   defaultValue={settings[key] || ''}
-                  onBlur={e => saveSetting(key, e.target.value)}
+                  onBlur={e => { if (Number(e.target.value) >= 0) saveSetting(key, e.target.value) }}
                 />
                 <span className="text-xs text-surface-400 whitespace-nowrap">{unit}</span>
               </div>
@@ -353,8 +355,8 @@ export default function Settings() {
         </div>
       )}
 
-      {/* DANGER ZONE TAB */}
-      {tab === 'danger' && (
+      {/* DANGER ZONE TAB — super_admin only */}
+      {tab === 'danger' && isSuperAdmin && (
         <div className="space-y-4 max-w-2xl">
           <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
             <p className="font-bold mb-1">⚠️ Irreversible Actions</p>
