@@ -5,7 +5,7 @@ const ThemeContext = createContext({})
 export function ThemeProvider({ children }) {
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem('cmr_theme')
-    return saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches
+    return saved ? saved === 'dark' : true  // dark by default
   })
 
   useEffect(() => {

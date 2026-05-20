@@ -4,6 +4,128 @@ import { formatCurrency, debounce } from '@/utils/helpers'
 import { Spinner } from '@/components/ui'
 import { Download, RefreshCw, Building2, AlertTriangle, LogIn, LogOut, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 
+/* ── Animated network nodes for hero background ─────────────────────────── */
+function HeroNodes() {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    let animId, w, h
+
+    // Mix of hub nodes (buildings) and satellite nodes (tenants/data)
+    let nodes = []
+
+    function init() {
+      w = canvas.width  = canvas.offsetWidth
+      h = canvas.height = canvas.offsetHeight
+      nodes = []
+
+      // 6 slow "hub" nodes — larger, teal-bright
+      for (let i = 0; i < 6; i++) nodes.push({
+        x: Math.random() * w, y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.12, vy: (Math.random() - 0.5) * 0.12,
+        r: Math.random() * 3 + 4, hub: true,
+        pulse: Math.random() * Math.PI * 2,
+      })
+      // 28 faster satellite nodes — smaller, dimmer
+      for (let i = 0; i < 28; i++) nodes.push({
+        x: Math.random() * w, y: Math.random() * h,
+        vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
+        r: Math.random() * 1.5 + 1, hub: false,
+        pulse: Math.random() * Math.PI * 2,
+      })
+    }
+
+    const handleResize = () => init()
+    window.addEventListener('resize', handleResize)
+    init()
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h)
+
+      // Draw connection lines
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const dx = nodes[i].x - nodes[j].x
+          const dy = nodes[i].y - nodes[j].y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          const maxDist = 170
+
+          if (dist < maxDist) {
+            const alpha = (1 - dist / maxDist) * (nodes[i].hub || nodes[j].hub ? 0.25 : 0.12)
+            ctx.beginPath()
+            ctx.strokeStyle = `rgba(45,212,191,${alpha})`   // brand-400 teal
+            ctx.lineWidth = nodes[i].hub || nodes[j].hub ? 1 : 0.6
+            ctx.moveTo(nodes[i].x, nodes[i].y)
+            ctx.lineTo(nodes[j].x, nodes[j].y)
+            ctx.stroke()
+          }
+        }
+      }
+
+      // Draw nodes
+      const t = performance.now() / 1000
+      nodes.forEach(n => {
+        n.pulse += 0.018
+
+        if (n.hub) {
+          // Pulse ring
+          const ringR = n.r + 4 + Math.sin(n.pulse) * 2
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2)
+          ctx.strokeStyle = `rgba(20,184,166,0.18)`
+          ctx.lineWidth = 1
+          ctx.stroke()
+
+          // Glow fill
+          const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 3)
+          grd.addColorStop(0, 'rgba(45,212,191,0.6)')
+          grd.addColorStop(1, 'rgba(45,212,191,0)')
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI * 2)
+          ctx.fillStyle = grd
+          ctx.fill()
+
+          // Core dot
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+          ctx.fillStyle = 'rgba(94,234,212,0.9)'  // brand-300
+          ctx.fill()
+        } else {
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(20,184,166,${0.3 + Math.sin(n.pulse) * 0.1})`
+          ctx.fill()
+        }
+
+        // Move
+        n.x += n.vx; n.y += n.vy
+        if (n.x < -20) n.x = w + 20
+        if (n.x > w + 20) n.x = -20
+        if (n.y < -20) n.y = h + 20
+        if (n.y > h + 20) n.y = -20
+      })
+
+      animId = requestAnimationFrame(draw)
+    }
+
+    draw()
+    return () => {
+      cancelAnimationFrame(animId)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+    />
+  )
+}
+
 function useCountUp(target, duration = 900) {
   const [value, setValue] = useState(0)
   const prevRef = useRef(0)
@@ -259,47 +381,51 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* ── Hero header ── */}
-      <div className="rounded-xl bg-surface-900 dark:bg-surface-800 p-5 sm:p-6 text-white relative overflow-hidden border border-surface-800 dark:border-surface-700">
-        <div className="absolute inset-0 opacity-[0.04]" style={{backgroundImage:'linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)', backgroundSize:'32px 32px'}}/>
+      {/* ── Hero ── */}
+      <div className="rounded-xl p-5 sm:p-6 text-white relative overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #042f2e 0%, #0f4f47 45%, #0d9488 100%)' }}>
+        <HeroNodes />
         <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div>
-            <p className="text-surface-400 text-xs font-medium mb-1 uppercase tracking-wider">Portfolio Overview</p>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {loading ? '—' : formatCurrency(animatedIncome)}
+            <p className="text-brand-300/70 text-[11px] font-semibold mb-1 uppercase tracking-widest">Portfolio Overview</p>
+            <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
+              {loading ? <span className="text-brand-300/50">—</span> : formatCurrency(animatedIncome)}
             </h1>
-            <p className="text-surface-400 text-sm mt-1">Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}</p>
+            <p className="text-brand-200/60 text-sm mt-1">
+              Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}
+            </p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-1.5 text-sm">
-                <Users className="w-4 h-4 text-surface-500"/>
+                <Users className="w-4 h-4 text-brand-300/60"/>
                 <span className="text-white font-semibold">{animatedTenants}</span>
-                <span className="text-surface-400">active tenants</span>
+                <span className="text-brand-200/60">active tenants</span>
               </div>
               <div className="flex items-center gap-1.5 text-sm">
-                <Building2 className="w-4 h-4 text-surface-500"/>
+                <Building2 className="w-4 h-4 text-brand-300/60"/>
                 <span className="text-white font-semibold">{buildingPnl.length}</span>
-                <span className="text-surface-400">buildings</span>
+                <span className="text-brand-200/60">buildings</span>
               </div>
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <select className="bg-white/10 border border-white/20 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none backdrop-blur-sm"
+            <select
+              className="bg-black/20 border border-white/15 text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none backdrop-blur-sm"
               value={month} onChange={e => setMonth(e.target.value)}>
               {availableMonths.map(m => (
-                <option key={m} value={m} style={{color:'#0C0C0C'}}>
+                <option key={m} value={m} style={{color:'#0f172a', background:'#f8fafc'}}>
                   {new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}
                 </option>
               ))}
             </select>
-            <div className="flex bg-white/10 border border-white/20 rounded-lg overflow-hidden">
-              <button onClick={()=>setViewMode('consolidated')} className={`px-3 py-1.5 text-xs font-medium transition-all ${viewMode==='consolidated'?'bg-white text-brand-700':'text-white hover:bg-white/10'}`}>Consolidated</button>
-              <button onClick={()=>setViewMode('building')} className={`px-3 py-1.5 text-xs font-medium transition-all ${viewMode==='building'?'bg-white text-brand-700':'text-white hover:bg-white/10'}`}>By Building</button>
+            <div className="flex bg-black/20 border border-white/15 rounded-lg overflow-hidden">
+              <button onClick={()=>setViewMode('consolidated')} className={`px-3 py-1.5 text-xs font-semibold transition-all ${viewMode==='consolidated'?'bg-white/90 text-brand-800':'text-white/80 hover:bg-white/10'}`}>Consolidated</button>
+              <button onClick={()=>setViewMode('building')}    className={`px-3 py-1.5 text-xs font-semibold transition-all ${viewMode==='building'   ?'bg-white/90 text-brand-800':'text-white/80 hover:bg-white/10'}`}>By Building</button>
             </div>
-            <button onClick={downloadMasterExcel} className="flex items-center gap-2 bg-white text-brand-700 px-3 py-1.5 rounded-lg text-sm font-semibold hover:bg-brand-50 transition-colors">
-              <Download className="w-4 h-4"/> Excel
+            <button onClick={downloadMasterExcel} className="flex items-center gap-2 bg-white/90 text-brand-800 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-white transition-colors shadow-sm">
+              <Download className="w-3.5 h-3.5"/> Excel
             </button>
-            <button onClick={load} className="p-2 bg-white/10 border border-white/20 rounded-lg hover:bg-white/20 transition-colors">
-              <RefreshCw className="w-4 h-4 text-white"/>
+            <button onClick={load} className="p-2 bg-black/20 border border-white/15 rounded-lg hover:bg-black/30 transition-colors">
+              <RefreshCw className="w-4 h-4 text-brand-200"/>
             </button>
           </div>
         </div>
@@ -312,10 +438,10 @@ export default function Dashboard() {
               { label:'Collection Rate', value: `${animatedCollRate}%`, sub:`of ₹${(rentExpected.expected/100000).toFixed(1)}L expected`, up: collRate >= 80 },
               { label:'Outstanding', value: formatCurrency(animatedOutstanding), sub:`${outstanding.count} tenants`, up: outstanding.amount === 0 },
             ].map(({label,value,sub,up}) => (
-              <div key={label} className="bg-white/5 border border-white/10 rounded-lg p-3">
-                <p className="text-surface-500 text-xs mb-1 font-medium">{label}</p>
+              <div key={label} className="bg-black/25 backdrop-blur-sm border border-white/10 rounded-xl p-3">
+                <p className="text-brand-200/60 text-[11px] mb-1 font-medium uppercase tracking-wider">{label}</p>
                 <p className="text-white font-display font-bold text-lg leading-tight">{value}</p>
-                <p className="text-surface-500 text-xs mt-0.5">{sub}</p>
+                <p className="text-brand-300/50 text-xs mt-0.5">{sub}</p>
               </div>
             ))}
           </div>
