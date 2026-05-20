@@ -260,25 +260,25 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* ── Hero header ── */}
-      <div className="rounded-2xl bg-gradient-to-br from-brand-700 via-brand-600 to-teal-500 p-6 text-white relative overflow-hidden">
-        <div className="absolute inset-0 opacity-10" style={{backgroundImage:'radial-gradient(circle at 70% 50%, white 1px, transparent 1px)', backgroundSize:'24px 24px'}}/>
+      <div className="rounded-xl bg-surface-900 dark:bg-surface-800 p-5 sm:p-6 text-white relative overflow-hidden border border-surface-800 dark:border-surface-700">
+        <div className="absolute inset-0 opacity-[0.04]" style={{backgroundImage:'linear-gradient(to right, white 1px, transparent 1px), linear-gradient(to bottom, white 1px, transparent 1px)', backgroundSize:'32px 32px'}}/>
         <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div>
-            <p className="text-brand-100 text-sm font-medium mb-1">CashMyRent · Portfolio Overview</p>
+            <p className="text-surface-400 text-xs font-medium mb-1 uppercase tracking-wider">Portfolio Overview</p>
             <h1 className="text-3xl font-bold tracking-tight">
               {loading ? '—' : formatCurrency(animatedIncome)}
             </h1>
-            <p className="text-brand-100 text-sm mt-1">Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}</p>
+            <p className="text-surface-400 text-sm mt-1">Rent collected · {new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'long',year:'numeric'})}</p>
             <div className="flex items-center gap-4 mt-3">
               <div className="flex items-center gap-1.5 text-sm">
-                <Users className="w-4 h-4 text-brand-200"/>
+                <Users className="w-4 h-4 text-surface-500"/>
                 <span className="text-white font-semibold">{animatedTenants}</span>
-                <span className="text-brand-200">active tenants</span>
+                <span className="text-surface-400">active tenants</span>
               </div>
               <div className="flex items-center gap-1.5 text-sm">
-                <Building2 className="w-4 h-4 text-brand-200"/>
+                <Building2 className="w-4 h-4 text-surface-500"/>
                 <span className="text-white font-semibold">{buildingPnl.length}</span>
-                <span className="text-brand-200">buildings</span>
+                <span className="text-surface-400">buildings</span>
               </div>
             </div>
           </div>
@@ -312,10 +312,10 @@ export default function Dashboard() {
               { label:'Collection Rate', value: `${animatedCollRate}%`, sub:`of ₹${(rentExpected.expected/100000).toFixed(1)}L expected`, up: collRate >= 80 },
               { label:'Outstanding', value: formatCurrency(animatedOutstanding), sub:`${outstanding.count} tenants`, up: outstanding.amount === 0 },
             ].map(({label,value,sub,up}) => (
-              <div key={label} className="bg-white/10 backdrop-blur-sm border border-white/15 rounded-xl p-3">
-                <p className="text-brand-100 text-xs mb-1">{label}</p>
-                <p className="text-white font-bold text-lg leading-tight">{value}</p>
-                <p className="text-brand-200 text-xs mt-0.5">{sub}</p>
+              <div key={label} className="bg-white/5 border border-white/10 rounded-lg p-3">
+                <p className="text-surface-500 text-xs mb-1 font-medium">{label}</p>
+                <p className="text-white font-display font-bold text-lg leading-tight">{value}</p>
+                <p className="text-surface-500 text-xs mt-0.5">{sub}</p>
               </div>
             ))}
           </div>

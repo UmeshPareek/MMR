@@ -23,13 +23,12 @@ export default function TeamHome() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState({});
-  const [filter, setFilter] = useState('unpaid'); // unpaid | all
+  const [filter, setFilter] = useState('unpaid');
 
   const channelRef = useRef(null);
 
   useEffect(() => {
     load();
-
     if (channelRef.current) supabase.removeChannel(channelRef.current);
     const channel = supabase
       .channel('teamhome-realtime')
@@ -37,7 +36,6 @@ export default function TeamHome() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'flat_utilities' }, () => load())
       .subscribe();
     channelRef.current = channel;
-
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
   }, [selectedMonth, filter]);
 
@@ -60,9 +58,7 @@ export default function TeamHome() {
 
       const tenantMap = {}, collMap = {}, utilMap = {};
       (tenants || []).forEach(t => { tenantMap[t.flat_id] = t; });
-      (collections || []).forEach(c => {
-        collMap[c.flat_id] = (collMap[c.flat_id] || 0) + Number(c.amount);
-      });
+      (collections || []).forEach(c => { collMap[c.flat_id] = (collMap[c.flat_id] || 0) + Number(c.amount); });
       (utils || []).forEach(u => { utilMap[u.flat_id] = u; });
 
       const rows = (flats || []).map(flat => {
@@ -83,7 +79,6 @@ export default function TeamHome() {
 
       const filtered = filter === 'unpaid' ? rows.filter(r => r.status !== 'paid') : rows;
 
-      // Group by building
       const bMap = {};
       filtered.forEach(r => {
         if (!bMap[r.buildingId]) bMap[r.buildingId] = { name: r.buildingName, flats: [] };
@@ -93,14 +88,13 @@ export default function TeamHome() {
       const list = Object.entries(bMap).map(([id, v]) => {
         v.flats.sort((a, b) => a.doorNumber.localeCompare(b.doorNumber));
         return { id, ...v,
-          unpaid: v.flats.filter(f => f.status === 'unpaid').length,
+          unpaid:  v.flats.filter(f => f.status === 'unpaid').length,
           partial: v.flats.filter(f => f.status === 'partial').length,
-          paid: v.flats.filter(f => f.status === 'paid').length,
+          paid:    v.flats.filter(f => f.status === 'paid').length,
         };
       }).sort((a, b) => a.name.localeCompare(b.name));
 
       setData(list);
-      // Auto-expand all
       const exp = {};
       list.forEach(b => { exp[b.id] = true; });
       setExpanded(exp);
@@ -112,54 +106,95 @@ export default function TeamHome() {
   }
 
   const totalBalance = data.flatMap(b => b.flats).reduce((s, f) => s + f.balance, 0);
-  const totalUnpaid = data.flatMap(b => b.flats).filter(f => f.status !== 'paid').length;
+  const totalUnpaid  = data.flatMap(b => b.flats).filter(f => f.status !== 'paid').length;
+  const totalPaid    = data.flatMap(b => b.flats).filter(f => f.status === 'paid').length;
+  const totalFlats   = data.flatMap(b => b.flats).length;
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   const statusIcon = (s) => {
-    if (s === 'paid') return <CheckCircle2 className="w-4 h-4 text-emerald-500" />;
-    if (s === 'partial') return <Clock className="w-4 h-4 text-amber-500" />;
-    return <XCircle className="w-4 h-4 text-red-500" />;
+    if (s === 'paid')    return <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />;
+    if (s === 'partial') return <Clock        className="w-4 h-4 text-amber-500  flex-shrink-0" />;
+    return                      <XCircle      className="w-4 h-4 text-red-400    flex-shrink-0" />;
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
-      {/* Greeting */}
-      <div className="flex items-start justify-between">
+      {/* Greeting header */}
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-surface-900">
-            {new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 17 ? 'Good afternoon' : 'Good evening'}, {profile?.full_name?.split(' ')[0]}
+          <h1 className="text-lg font-display font-bold text-surface-900 dark:text-surface-50 tracking-tight">
+            {greeting}, {profile?.full_name?.split(' ')[0]} 👋
           </h1>
           <p className="text-sm text-surface-500 mt-0.5">
-            {totalUnpaid > 0 ? `${totalUnpaid} flats pending collection` : 'All collections done for this month'}
+            {totalUnpaid > 0
+              ? `${totalUnpaid} flat${totalUnpaid > 1 ? 's' : ''} pending collection`
+              : 'All collections done!'}
           </p>
         </div>
-        <button onClick={() => navigate('/payments')}
-          className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Log Payment
+        <button
+          onClick={() => navigate('/payments')}
+          className="btn-primary flex-shrink-0"
+        >
+          <Plus className="w-4 h-4" />
+          <span className="hidden xs:inline">Log Payment</span>
+          <span className="xs:hidden">Pay</span>
         </button>
       </div>
 
-      {/* Quick stats */}
+      {/* Outstanding banner */}
       {totalBalance > 0 && (
-        <div className="card p-4 border-l-4 border-amber-400 flex items-center justify-between">
+        <div className="card p-4 border-l-4 border-amber-400 flex items-center justify-between gap-3">
           <div>
-            <p className="text-xs text-surface-500">Outstanding this month</p>
-            <p className="text-2xl font-bold font-mono text-amber-600">{formatCurrency(totalBalance)}</p>
+            <p className="text-xs text-surface-500 font-medium">Outstanding this month</p>
+            <p className="text-2xl font-display font-bold font-mono text-amber-600 dark:text-amber-400 mt-0.5">
+              {formatCurrency(totalBalance)}
+            </p>
           </div>
-          <AlertTriangle className="w-8 h-8 text-amber-300" />
+          <AlertTriangle className="w-8 h-8 text-amber-300 flex-shrink-0" />
         </div>
       )}
 
-      {/* Filters */}
-      <div className="flex items-center gap-3">
-        <select className="select w-auto py-1.5 text-sm" value={selectedMonth}
-          onChange={e => setSelectedMonth(e.target.value)}>
+      {/* Progress bar when all paid */}
+      {totalFlats > 0 && (
+        <div className="card p-3 flex items-center gap-3">
+          <div className="flex-1">
+            <div className="flex items-center justify-between mb-1.5 text-xs">
+              <span className="text-surface-500 font-medium">{totalPaid}/{totalFlats} collected</span>
+              <span className={`font-semibold ${totalPaid === totalFlats ? 'text-emerald-600' : 'text-brand-600'}`}>
+                {Math.round((totalPaid / totalFlats) * 100)}%
+              </span>
+            </div>
+            <div className="h-2 bg-surface-100 dark:bg-surface-700 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${Math.round((totalPaid / totalFlats) * 100)}%`,
+                  background: totalPaid === totalFlats
+                    ? 'linear-gradient(90deg,#059669,#10b981)'
+                    : 'linear-gradient(90deg,#0d9488,#14b8a6)',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Month + filter controls */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <select
+          className="select w-auto py-1.5 text-sm flex-shrink-0"
+          value={selectedMonth}
+          onChange={e => setSelectedMonth(e.target.value)}
+        >
           {months.map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <div className="flex gap-1">
           {[
             { v: 'unpaid', label: 'Pending' },
-            { v: 'all', label: 'All Flats' },
+            { v: 'all',    label: 'All' },
           ].map(({ v, label }) => (
             <button key={v} onClick={() => setFilter(v)}
               className={`btn btn-sm ${filter === v ? 'btn-primary' : 'btn-secondary'}`}>
@@ -171,77 +206,122 @@ export default function TeamHome() {
 
       {/* Building list */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="w-7 h-7 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+        <div className="space-y-3">
+          {[1, 2].map(i => (
+            <div key={i} className="card p-4 space-y-3">
+              <div className="skeleton h-4 w-32 rounded" />
+              <div className="skeleton h-3 w-24 rounded" />
+            </div>
+          ))}
         </div>
       ) : data.length === 0 ? (
         <div className="card p-12 text-center">
           <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
-          <p className="font-semibold text-surface-700">All collections done for {selectedMonth}</p>
-          <p className="text-surface-400 text-sm mt-1">Every flat has paid their rent.</p>
+          <p className="font-display font-semibold text-surface-700 dark:text-surface-300">All collected for {selectedMonth}</p>
+          <p className="text-surface-400 text-sm mt-1">Every flat has paid.</p>
         </div>
       ) : (
         <div className="space-y-3">
           {data.map(building => (
             <div key={building.id} className="card overflow-hidden">
-              <button onClick={() => setExpanded(p => ({ ...p, [building.id]: !p[building.id] }))}
-                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-50 transition-colors text-left">
-                {expanded[building.id] ? <ChevronDown className="w-4 h-4 text-surface-400" /> : <ChevronRight className="w-4 h-4 text-surface-400" />}
-                <Building2 className="w-4 h-4 text-surface-400" />
-                <span className="font-semibold text-surface-800 flex-1">{building.name}</span>
-                <div className="flex items-center gap-2">
-                  {building.unpaid > 0 && <span className="badge bg-red-50 text-red-700 border border-red-200 text-xs">{building.unpaid} unpaid</span>}
-                  {building.partial > 0 && <span className="badge bg-amber-50 text-amber-700 border border-amber-200 text-xs">{building.partial} partial</span>}
-                  {building.paid > 0 && <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs">{building.paid} paid</span>}
+              {/* Building header */}
+              <button
+                onClick={() => setExpanded(p => ({ ...p, [building.id]: !p[building.id] }))}
+                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-surface-50 dark:hover:bg-white/3 transition-colors text-left"
+              >
+                {expanded[building.id]
+                  ? <ChevronDown  className="w-4 h-4 text-surface-400 flex-shrink-0" />
+                  : <ChevronRight className="w-4 h-4 text-surface-400 flex-shrink-0" />}
+                <Building2 className="w-4 h-4 text-surface-400 flex-shrink-0" />
+                <span className="font-semibold text-surface-800 dark:text-surface-200 flex-1 text-sm">{building.name}</span>
+                <div className="flex items-center gap-1.5">
+                  {building.unpaid  > 0 && <span className="badge bg-red-50     text-red-700     border border-red-200     dark:bg-red-900/20     dark:text-red-400     dark:border-red-800/40     text-xs">{building.unpaid}  unpaid</span>}
+                  {building.partial > 0 && <span className="badge bg-amber-50   text-amber-700   border border-amber-200   dark:bg-amber-900/20   dark:text-amber-400   dark:border-amber-800/40   text-xs">{building.partial} partial</span>}
+                  {building.paid    > 0 && <span className="badge bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/40 text-xs">{building.paid}    paid</span>}
                 </div>
               </button>
 
+              {/* Flat cards */}
               {expanded[building.id] && (
-                <div className="border-t border-surface-100 divide-y divide-surface-100">
+                <div className="border-t border-surface-100 dark:border-white/5 divide-y divide-surface-100 dark:divide-white/5">
                   {building.flats.map(flat => (
-                    <div key={flat.id} className={`flex items-center gap-3 px-4 py-3 ${flat.status === 'unpaid' ? 'bg-red-50/30' : flat.status === 'partial' ? 'bg-amber-50/20' : ''}`}>
-                      {statusIcon(flat.status)}
-                      <div className="w-16 flex-shrink-0">
-                        <p className="font-mono font-semibold text-sm text-surface-800">{flat.doorNumber}</p>
+                    <div
+                      key={flat.id}
+                      className={`px-4 py-3 ${
+                        flat.status === 'unpaid'  ? 'bg-red-50/40  dark:bg-red-900/10' :
+                        flat.status === 'partial' ? 'bg-amber-50/30 dark:bg-amber-900/10' : ''
+                      }`}
+                    >
+                      {/* Row: icon + door + name | amount + action */}
+                      <div className="flex items-center gap-3">
+                        {statusIcon(flat.status)}
+
+                        {/* Door number */}
+                        <span className="font-mono font-bold text-sm text-surface-800 dark:text-surface-200 w-12 flex-shrink-0">
+                          {flat.doorNumber}
+                        </span>
+
+                        {/* Tenant name */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-surface-800 dark:text-surface-200 truncate">{flat.tenant}</p>
+                        </div>
+
+                        {/* Amount */}
+                        <div className="text-right flex-shrink-0">
+                          {flat.status === 'paid' ? (
+                            <p className="text-sm font-mono font-semibold text-emerald-600 dark:text-emerald-400">
+                              {formatCurrency(flat.paid)}
+                            </p>
+                          ) : (
+                            <>
+                              <p className="text-sm font-mono font-bold text-red-600 dark:text-red-400">
+                                ₹{flat.balance.toLocaleString('en-IN')}
+                              </p>
+                              {flat.paid > 0 && (
+                                <p className="text-[10px] text-surface-400 font-mono">{formatCurrency(flat.paid)} paid</p>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Pay button */}
+                        {flat.status !== 'paid' && (
+                          <button
+                            onClick={() => navigate('/payments')}
+                            className="btn-primary btn-sm flex-shrink-0 px-3"
+                          >
+                            Pay
+                          </button>
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-surface-700 truncate">{flat.tenant}</p>
-                        {flat.phone && (
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <a href={`tel:${flat.phone}`} className="text-xs text-brand-600 flex items-center gap-1">
+
+                      {/* Second row: phone, whatsapp, utility icons */}
+                      {(flat.phone || !flat.hasElec || !flat.hasWater) && (
+                        <div className="flex items-center gap-3 mt-1.5 pl-7">
+                          {flat.phone && (
+                            <a
+                              href={`tel:${flat.phone}`}
+                              className="flex items-center gap-1 text-xs text-surface-400 dark:text-surface-500 hover:text-brand-600 transition-colors"
+                            >
                               <Phone className="w-3 h-3" />{flat.phone}
                             </a>
-                            {flat.status !== 'paid' && (
-                              <a
-                                href={`https://wa.me/91${flat.phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hi ${flat.tenant}, your rent of ₹${flat.expected} is pending for ${selectedMonth}. Balance due: ₹${flat.balance}. Please pay at the earliest. - CashMyRent`)}`}
-                                target="_blank" rel="noreferrer"
-                                className="text-emerald-600 hover:text-emerald-700 transition-colors"
-                                title="WhatsApp reminder"
-                              >
-                                <WaIcon />
-                              </a>
-                            )}
+                          )}
+                          {flat.phone && flat.status !== 'paid' && (
+                            <a
+                              href={`https://wa.me/91${flat.phone.replace(/\D/g,'')}?text=${encodeURIComponent(`Hi ${flat.tenant}, your rent of ₹${flat.expected} is pending for ${selectedMonth}. Balance due: ₹${flat.balance}. Please pay at the earliest. - CashMyRent`)}`}
+                              target="_blank" rel="noreferrer"
+                              className="text-emerald-600 hover:text-emerald-700 transition-colors"
+                              title="Send WhatsApp reminder"
+                            >
+                              <WaIcon />
+                            </a>
+                          )}
+                          <div className="flex gap-1.5 ml-auto">
+                            {!flat.hasElec  && <Zap      className="w-3.5 h-3.5 text-amber-400" title="Electricity not entered" />}
+                            {!flat.hasWater && <Droplets className="w-3.5 h-3.5 text-blue-400"  title="Water not entered" />}
                           </div>
-                        )}
-                      </div>
-                      <div className="text-right flex-shrink-0">
-                        {flat.status === 'paid' ? (
-                          <p className="text-sm font-mono font-semibold text-emerald-600">{formatCurrency(flat.paid)}</p>
-                        ) : (
-                          <>
-                            <p className="text-sm font-mono font-semibold text-red-600">{formatCurrency(flat.balance)} due</p>
-                            {flat.paid > 0 && <p className="text-xs text-surface-400 font-mono">{formatCurrency(flat.paid)} paid</p>}
-                          </>
-                        )}
-                      </div>
-                      <div className="flex gap-1 flex-shrink-0">
-                        {!flat.hasElec && <Zap className="w-3.5 h-3.5 text-amber-400" title="Electricity not entered" />}
-                        {!flat.hasWater && <Droplets className="w-3.5 h-3.5 text-blue-400" title="Water not entered" />}
-                      </div>
-                      <button onClick={() => navigate('/payments')}
-                        className="btn btn-sm btn-secondary text-xs flex-shrink-0">
-                        + Pay
-                      </button>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

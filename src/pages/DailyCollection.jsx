@@ -313,8 +313,8 @@ export default function DailyCollection() {
 
               {/* Flat rows */}
               {expandedBuildings[building.id] && (
-                <div className="border-t border-surface-100">
-                  <table className="data-table">
+                <div className="border-t border-surface-100 overflow-x-auto">
+                  <table className="data-table min-w-[700px]">
                     <thead>
                       <tr>
                         <th>Flat</th>
