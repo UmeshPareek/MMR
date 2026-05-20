@@ -16,23 +16,33 @@ export function AuthProvider({ children }) {
   async function fetchProfile(userId) {
     profileLoading.current = true
     try {
-      const { data, error } = await supabase
+      const { data: profileData, error } = await supabase
         .from('profiles')
-        .select('*, organization:organizations(id, name, slug, city, logo_url)')
+        .select('*')
         .eq('id', userId)
         .single()
 
-      if (!error && data) {
-        const { organization, ...profileData } = data
-        setProfile(profileData)
-        setOrg(organization || null)
+      if (error || !profileData) {
+        console.error('Profile fetch error:', error)
+        setLoading(false)
+        profileLoading.current = false
+        return
+      }
+
+      setProfile(profileData)
+
+      if (profileData.org_id) {
+        const { data: orgData } = await supabase
+          .from('organizations')
+          .select('id, name, slug, city, logo_url')
+          .eq('id', profileData.org_id)
+          .single()
+        setOrg(orgData || null)
       } else {
-        setProfile(null)
         setOrg(null)
       }
-    } catch {
-      setProfile(null)
-      setOrg(null)
+    } catch (e) {
+      console.error('fetchProfile exception:', e)
     } finally {
       profileLoading.current = false
       setLoading(false)
