@@ -1,20 +1,19 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import {
-  Plus, Download, Camera, Upload, X, CheckCircle2,
+  Download, Camera, Upload, X, CheckCircle2,
   Clock, XCircle, Building2, ChevronDown, ChevronRight,
-  Phone, Lock, Trash2, Eye, ImageIcon, Filter, RefreshCw, Receipt
+  Phone, Lock, Trash2, Eye, ImageIcon, RefreshCw, Receipt, Pencil
 } from 'lucide-react';
 
 function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mode, payment_date, for_month, transaction_ref }) {
   const doc = new jsPDF({ format: 'a5', unit: 'mm', orientation: 'portrait' })
   const W = 148, pad = 12
 
-  // Header band
   doc.setFillColor(13, 148, 136)
   doc.rect(0, 0, W, 28, 'F')
   doc.setTextColor(255, 255, 255)
@@ -23,9 +22,8 @@ function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mo
   doc.text('RENT RECEIPT', W / 2, 12, { align: 'center' })
   doc.setFontSize(9)
   doc.setFont('helvetica', 'normal')
-  doc.text('CashMyRent · Rent N Stay', W / 2, 20, { align: 'center' })
+  doc.text('CashMyRent', W / 2, 20, { align: 'center' })
 
-  // Body
   doc.setTextColor(30, 41, 59)
   let y = 38
 
@@ -43,40 +41,25 @@ function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mo
   row('Tenant', tenantName)
   row('Flat / Room', flatNumber)
   row('Building', buildingName)
-
-  // Divider
-  doc.setDrawColor(226, 232, 240)
-  doc.line(pad, y, W - pad, y)
-  y += 6
-
+  doc.setDrawColor(226, 232, 240); doc.line(pad, y, W - pad, y); y += 6
   row('For Month', for_month)
   row('Payment Date', payment_date)
   row('Payment Mode', String(payment_mode || '').toUpperCase())
   if (transaction_ref) row('Reference', transaction_ref)
+  doc.setDrawColor(226, 232, 240); doc.line(pad, y, W - pad, y); y += 8
 
-  // Divider
-  doc.setDrawColor(226, 232, 240)
-  doc.line(pad, y, W - pad, y)
-  y += 8
-
-  // Amount box
   doc.setFillColor(240, 253, 250)
   doc.roundedRect(pad, y, W - pad * 2, 20, 3, 3, 'F')
   doc.setTextColor(15, 118, 110)
-  doc.setFontSize(11)
-  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11); doc.setFont('helvetica', 'bold')
   doc.text('Amount Paid', pad + 4, y + 7)
   doc.setFontSize(16)
   doc.text(formatCurrency(amount), W - pad - 4, y + 12, { align: 'right' })
   y += 30
 
-  // Footer note
-  doc.setFontSize(7.5)
-  doc.setFont('helvetica', 'normal')
-  doc.setTextColor(148, 163, 184)
+  doc.setFontSize(7.5); doc.setFont('helvetica', 'normal'); doc.setTextColor(148, 163, 184)
   doc.text('This is a computer-generated receipt and does not require a signature.', W / 2, y, { align: 'center' })
   doc.text(`Printed on ${new Date().toLocaleDateString('en-IN')}`, W / 2, y + 5, { align: 'center' })
-
   doc.save(`Receipt_${flatNumber}_${for_month}.pdf`)
 }
 
@@ -120,7 +103,7 @@ function ProofUpload({ proofKey, label, hint, value, onChange }) {
       toast.error('Upload failed: ' + e.message);
     } finally {
       setUploading(false);
-      inputRef.current.value = '';
+      if (inputRef.current) inputRef.current.value = '';
     }
   }
 
@@ -157,40 +140,38 @@ export default function Payments() {
   const months = lastNMonths(6);
   const [selectedMonth, setSelectedMonth] = useState(months[months.length - 1]);
 
-  // Building-wise data
   const [buildings, setBuildings] = useState([]);
-  const [buildingData, setBuildingData] = useState({}); // {buildingId: {flats: [], collections: {}}}
+  const [buildingData, setBuildingData] = useState({});
   const [expanded, setExpanded] = useState({});
   const [loading, setLoading] = useState(false);
 
-  // Quick pay form — inline per flat
-  const [activeFlat, setActiveFlat] = useState(null); // flat being paid
+  // New payment form
+  const [activeFlat, setActiveFlat] = useState(null);
   const [form, setForm] = useState({
     amount: '', payment_mode: 'upi', payment_date: new Date().toISOString().slice(0, 10),
     transaction_ref: '', notes: '',
     cash_voucher_url: null, cash_photo_url: null, payer_photo_url: null,
   });
+
+  // Edit payment form
+  const [editPayment, setEditPayment] = useState(null);
+  const [editForm, setEditForm] = useState({
+    amount: '', payment_mode: 'upi', payment_date: '',
+    transaction_ref: '', notes: '',
+  });
+
   const [saving, setSaving] = useState(false);
+  const [viewProofs, setViewProofs] = useState(null);
+  const [viewMode, setViewMode] = useState('log');
   const channelRef = useRef(null);
-
-  // View proofs
-  const [viewProofs, setViewProofs] = useState(null)
-  const [editModeId, setEditModeId] = useState(null)
-  const [editModeVal, setEditModeVal] = useState('');
-
-  // History view
-  const [viewMode, setViewMode] = useState('log'); // log | history
 
   useEffect(() => {
     loadAll();
-
     if (channelRef.current) supabase.removeChannel(channelRef.current);
-    const channel = supabase
-      .channel('payments-realtime')
+    const channel = supabase.channel('payments-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => loadAll())
       .subscribe();
     channelRef.current = channel;
-
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
   }, [selectedMonth]);
 
@@ -222,7 +203,6 @@ export default function Payments() {
         collMap[c.flat_id].push(c);
       });
 
-      // Group by building
       const bData = {};
       (bList || []).forEach(b => { bData[b.id] = { flats: [], stats: { paid: 0, partial: 0, unpaid: 0, total: 0 } }; });
       (flats || []).forEach(f => {
@@ -239,7 +219,6 @@ export default function Payments() {
 
       setBuildingData(bData);
 
-      // Auto-expand buildings with unpaid flats
       const exp = {};
       Object.entries(bData).forEach(([id, d]) => {
         if (d.stats.unpaid > 0 || d.stats.partial > 0) exp[id] = true;
@@ -263,6 +242,17 @@ export default function Payments() {
     });
   }
 
+  function openEditPayment(coll) {
+    setEditPayment(coll);
+    setEditForm({
+      amount: String(coll.amount),
+      payment_mode: coll.payment_mode,
+      payment_date: coll.payment_date,
+      transaction_ref: coll.transaction_ref || '',
+      notes: coll.notes || '',
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!activeFlat?.tenant) return toast.error('No active tenant for this flat');
@@ -272,7 +262,6 @@ export default function Payments() {
       if (!form.cash_photo_url) return toast.error('Cash photo required');
       if (!form.payer_photo_url) return toast.error('Payer photo required');
     }
-
     setSaving(true);
     try {
       const { error } = await supabase.from('rent_collections').insert({
@@ -301,18 +290,31 @@ export default function Payments() {
     }
   }
 
-  async function saveMode(id) {
-    if (!editModeVal) return toast.error('Select a mode')
-    const { error } = await supabase.from('rent_collections').update({ payment_mode: editModeVal }).eq('id', id)
-    if (error) return toast.error(error.message)
-    toast.success('Payment mode updated ✓')
-    setEditModeId(null)
-    setEditModeVal('')
-    loadAll()
+  async function handleEditSubmit(e) {
+    e.preventDefault();
+    if (!editForm.amount || Number(editForm.amount) <= 0) return toast.error('Enter amount');
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('rent_collections').update({
+        amount: Number(editForm.amount),
+        payment_mode: editForm.payment_mode,
+        payment_date: editForm.payment_date,
+        transaction_ref: editForm.transaction_ref || null,
+        notes: editForm.notes || null,
+      }).eq('id', editPayment.id);
+      if (error) throw error;
+      toast.success('Payment updated');
+      setEditPayment(null);
+      loadAll();
+    } catch (e) {
+      toast.error(e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function handleDelete(id) {
-    if (!confirm('Delete this payment?')) return;
+    if (!confirm('Delete this payment entry?')) return;
     const { error } = await supabase.from('rent_collections').delete().eq('id', id);
     if (error) toast.error(error.message);
     else { toast.success('Deleted'); loadAll(); }
@@ -335,7 +337,6 @@ export default function Payments() {
     toast.success('Exported');
   }
 
-  // All collections flat list for history
   const allCollections = Object.values(buildingData).flatMap(b =>
     b.flats.flatMap(f => f.colls.map(c => ({
       ...c,
@@ -356,7 +357,7 @@ export default function Payments() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-surface-900">Rent Collection</h1>
-          <p className="text-sm text-surface-500 mt-0.5">Tap a flat to log payment</p>
+          <p className="text-sm text-surface-500 mt-0.5">Tap a flat to log or edit payment</p>
         </div>
         <div className="flex items-center gap-2">
           <select className="select w-auto py-1.5 text-sm" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)}>
@@ -389,7 +390,7 @@ export default function Payments() {
         <button onClick={() => setViewMode('history')} className={`tab ${viewMode === 'history' ? 'active' : ''}`}>History ({allCollections.length})</button>
       </div>
 
-      {/* ── LOG MODE — Building-wise checklist ── */}
+      {/* ── LOG MODE ── */}
       {viewMode === 'log' && (
         <div className="space-y-3">
           {loading ? (
@@ -420,19 +421,16 @@ export default function Payments() {
                       <div key={flat.id}>
                         {/* Flat row */}
                         <div className={`flex items-center gap-3 px-4 py-3 ${flat.status === 'unpaid' ? 'bg-red-50/30' : flat.status === 'partial' ? 'bg-amber-50/20' : ''}`}>
-                          {/* Status icon */}
                           <div className="flex-shrink-0">
                             {flat.status === 'paid' && <CheckCircle2 className="w-5 h-5 text-emerald-500" />}
                             {flat.status === 'partial' && <Clock className="w-5 h-5 text-amber-500" />}
                             {flat.status === 'unpaid' && <XCircle className="w-5 h-5 text-red-400" />}
                           </div>
 
-                          {/* Room */}
                           <div className="w-12 flex-shrink-0">
                             <p className="font-mono font-bold text-surface-800 text-sm">{flat.door_number}</p>
                           </div>
 
-                          {/* Tenant */}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-surface-700 truncate">{flat.tenant?.full_name || <span className="text-surface-400">No tenant</span>}</p>
                             {flat.tenant?.phone && (
@@ -442,7 +440,6 @@ export default function Payments() {
                             )}
                           </div>
 
-                          {/* Amount & action */}
                           <div className="flex items-center gap-2 flex-shrink-0">
                             <div className="text-right">
                               {flat.status === 'paid' ? (
@@ -455,7 +452,7 @@ export default function Payments() {
                               )}
                             </div>
 
-                            {/* Mode badges for paid */}
+                            {/* Mode badges */}
                             {flat.colls.length > 0 && (
                               <div className="flex gap-1 flex-wrap max-w-[80px]">
                                 {[...new Set(flat.colls.map(c => c.payment_mode))].map(m => (
@@ -464,48 +461,63 @@ export default function Payments() {
                               </div>
                             )}
 
-                            {/* Action button */}
-                            {flat.tenant && flat.status !== 'paid' && (
-                              <button onClick={() => setActiveFlat(activeFlat?.id === flat.id ? null : flat)}
-                                className={`btn btn-sm flex-shrink-0 ${activeFlat?.id === flat.id ? 'btn-secondary' : 'btn-primary'}`}>
-                                {activeFlat?.id === flat.id ? 'Cancel' : '+ Pay'}
-                              </button>
-                            )}
-                            {flat.status === 'paid' && (
+                            {/* Always show + Pay for tenants — allows additional / part payments */}
+                            {flat.tenant && (
                               <button
-                                onClick={() => printReceipt({
-                                  tenantName: flat.tenant?.full_name || '—',
-                                  flatNumber: flat.door_number,
-                                  buildingName: buildings.find(x => x.id === flat.building_id)?.name || '—',
-                                  amount: flat.paid,
-                                  payment_mode: flat.colls[0]?.payment_mode,
-                                  payment_date: flat.colls[flat.colls.length - 1]?.payment_date,
-                                  for_month: selectedMonth,
-                                  transaction_ref: flat.colls[0]?.transaction_ref,
-                                })}
-                                className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600"
-                                title="Print receipt"
-                              >
-                                <Receipt className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                            {flat.status === 'paid' && (isAdmin || isSuperAdmin) && (
-                              <button onClick={() => handleDelete(flat.colls[0]?.id)} className="btn-ghost btn-sm p-1.5 text-surface-300 hover:text-red-400">
-                                <Trash2 className="w-3.5 h-3.5" />
+                                onClick={() => activeFlat?.id === flat.id ? setActiveFlat(null) : openPay(flat)}
+                                className={`btn btn-sm flex-shrink-0 ${activeFlat?.id === flat.id ? 'btn-secondary' : 'btn-primary'}`}>
+                                {activeFlat?.id === flat.id ? 'Cancel' : flat.status === 'paid' ? '+ More' : '+ Pay'}
                               </button>
                             )}
                           </div>
                         </div>
 
-                        {/* Inline payment form */}
+                        {/* Existing payment entries — with edit & delete per entry */}
+                        {flat.colls.length > 0 && (
+                          <div className="px-4 py-2 bg-surface-50/70 border-t border-surface-100 space-y-1.5">
+                            {flat.colls.map(c => (
+                              <div key={c.id} className="flex items-center gap-2 text-xs py-1">
+                                <span className="text-surface-400 w-20 flex-shrink-0">{c.payment_date}</span>
+                                <span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span>
+                                <span className="font-mono font-semibold text-emerald-700 flex-1">{formatCurrency(c.amount)}</span>
+                                {c.transaction_ref && <span className="text-surface-400 truncate max-w-[80px]">{c.transaction_ref}</span>}
+                                {/* Per-payment actions */}
+                                <button onClick={() => printReceipt({
+                                  tenantName: flat.tenant?.full_name || '—',
+                                  flatNumber: flat.door_number,
+                                  buildingName: buildings.find(x => x.id === flat.building_id)?.name || '—',
+                                  amount: c.amount, payment_mode: c.payment_mode,
+                                  payment_date: c.payment_date, for_month: selectedMonth,
+                                  transaction_ref: c.transaction_ref,
+                                })} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Print receipt">
+                                  <Receipt className="w-3.5 h-3.5" />
+                                </button>
+                                {(isAdmin || isSuperAdmin) && (
+                                  <>
+                                    <button onClick={() => openEditPayment(c)} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Edit payment">
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button onClick={() => handleDelete(c.id)} className="p-1 text-surface-300 hover:text-red-500 transition-colors" title="Delete">
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Inline new payment form */}
                         {activeFlat?.id === flat.id && (
                           <div className="bg-brand-50/50 border-t border-brand-100 px-4 py-4">
                             <form onSubmit={handleSubmit} className="space-y-3">
                               <div className="flex items-center justify-between mb-1">
                                 <p className="text-sm font-semibold text-brand-800">
-                                  Log payment — {flat.tenant?.full_name} ({flat.door_number})
+                                  {flat.status === 'paid' ? 'Additional payment — ' : 'Log payment — '}{flat.tenant?.full_name} ({flat.door_number})
                                 </p>
-                                <p className="text-xs text-surface-500">Expected: {formatCurrency(flat.expected)}</p>
+                                <p className="text-xs text-surface-500">
+                                  {flat.status === 'paid' ? `Already paid: ${formatCurrency(flat.paid)}` : `Balance: ${formatCurrency(flat.balance)}`}
+                                </p>
                               </div>
 
                               <div className="grid grid-cols-2 gap-3">
@@ -513,7 +525,7 @@ export default function Payments() {
                                   <label className="label">Amount (₹) *</label>
                                   <input type="number" className="input" value={form.amount}
                                     onChange={e => setForm(p => ({ ...p, amount: e.target.value }))}
-                                    placeholder={flat.balance} required />
+                                    placeholder={flat.balance > 0 ? flat.balance : flat.expected} required />
                                 </div>
                                 <div>
                                   <label className="label">Date *</label>
@@ -522,7 +534,6 @@ export default function Payments() {
                                 </div>
                               </div>
 
-                              {/* Mode selector — big tap targets */}
                               <div>
                                 <label className="label">Payment Mode *</label>
                                 <div className="flex flex-wrap gap-2">
@@ -536,7 +547,6 @@ export default function Payments() {
                                 </div>
                               </div>
 
-                              {/* Reference — only for digital */}
                               {form.payment_mode !== 'cash' && (
                                 <div>
                                   <label className="label">Transaction Reference</label>
@@ -546,7 +556,6 @@ export default function Payments() {
                                 </div>
                               )}
 
-                              {/* Cash proofs */}
                               {form.payment_mode === 'cash' && (
                                 <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
                                   <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5">
@@ -590,8 +599,8 @@ export default function Payments() {
                 <thead>
                   <tr>
                     <th>Date</th><th>Building</th><th>Room</th><th>Tenant</th>
-                    <th>Mode</th><th className="text-right">Amount</th><th>Proof</th>
-                    <th>Action</th>
+                    <th>Mode</th><th className="text-right">Amount</th><th>Ref</th><th>Proof</th>
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -602,59 +611,37 @@ export default function Payments() {
                       <td className="font-mono font-semibold text-surface-800">{c.flatNumber}</td>
                       <td className="text-surface-700">{c.tenantName}</td>
                       <td>
-                        {editModeId === c.id ? (
-                          <div className="flex items-center gap-1">
-                            <select className="select py-0.5 text-xs w-24" value={editModeVal} onChange={e => setEditModeVal(e.target.value)}>
-                              {['rentok','upi','cash','bank_transfer','other'].map(m => (
-                                <option key={m} value={m}>{MODE_LABELS[m]||m}</option>
-                              ))}
-                            </select>
-                            <button onClick={() => saveMode(c.id)} className="btn-primary btn-sm px-2 py-0.5 text-xs">✓</button>
-                            <button onClick={() => setEditModeId(null)} className="btn-ghost btn-sm px-1 py-0.5 text-xs">✕</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1 group">
-                            <span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span>
-                            {(isAdmin || isSuperAdmin) && (
-                              <button onClick={() => { setEditModeId(c.id); setEditModeVal(c.payment_mode) }}
-                                className="opacity-0 group-hover:opacity-100 btn-ghost p-0.5 text-surface-400 hover:text-brand-600 transition-opacity" title="Edit mode">
-                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                              </button>
-                            )}
-                          </div>
-                        )}
+                        <span className={`badge border text-xs ${MODE_COLORS[c.payment_mode] || ''}`}>{MODE_LABELS[c.payment_mode] || c.payment_mode}</span>
                       </td>
                       <td className="text-right font-mono font-semibold text-emerald-700">{formatCurrency(c.amount)}</td>
+                      <td className="text-xs text-surface-400 max-w-[100px] truncate">{c.transaction_ref || '—'}</td>
                       <td>
                         {c.payment_mode === 'cash' ? (
                           <button onClick={() => setViewProofs(c)}
                             className={`btn btn-sm text-xs flex items-center gap-1 ${c.cash_voucher_url ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
-                            <ImageIcon className="w-3 h-3" />{c.cash_voucher_url ? 'View' : 'Missing'}
+                            <Camera className="w-3 h-3" />{c.cash_voucher_url ? 'View' : 'Missing'}
                           </button>
                         ) : <span className="text-surface-300 text-xs">—</span>}
                       </td>
                       <td>
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => printReceipt({
-                              tenantName: c.tenantName,
-                              flatNumber: c.flatNumber,
-                              buildingName: c.buildingName,
-                              amount: c.amount,
-                              payment_mode: c.payment_mode,
-                              payment_date: c.payment_date,
-                              for_month: selectedMonth,
-                              transaction_ref: c.transaction_ref,
-                            })}
-                            className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600"
-                            title="Print receipt"
-                          >
+                          <button onClick={() => printReceipt({
+                            tenantName: c.tenantName, flatNumber: c.flatNumber,
+                            buildingName: c.buildingName, amount: c.amount,
+                            payment_mode: c.payment_mode, payment_date: c.payment_date,
+                            for_month: selectedMonth, transaction_ref: c.transaction_ref,
+                          })} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Print receipt">
                             <Receipt className="w-3.5 h-3.5" />
                           </button>
                           {(isAdmin || isSuperAdmin) ? (
-                            <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
+                            <>
+                              <button onClick={() => openEditPayment(c)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500" title="Delete">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </>
                           ) : (
                             <Lock className="w-3.5 h-3.5 text-surface-300" />
                           )}
@@ -669,7 +656,7 @@ export default function Payments() {
                     <td className="px-4 py-2 text-right font-mono font-bold text-emerald-700">
                       {formatCurrency(allCollections.reduce((s, c) => s + Number(c.amount), 0))}
                     </td>
-                    <td colSpan={2} />
+                    <td colSpan={3} />
                   </tr>
                 </tfoot>
               </table>
@@ -678,7 +665,68 @@ export default function Payments() {
         </div>
       )}
 
-      {/* Proof viewer */}
+      {/* ── EDIT PAYMENT MODAL ── */}
+      {editPayment && (
+        <div className="modal-overlay" onClick={() => setEditPayment(null)}>
+          <div className="modal-content max-w-md" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-surface-100">
+              <h3 className="font-semibold text-surface-800">Edit Payment</h3>
+              <button onClick={() => setEditPayment(null)} className="text-surface-400 hover:text-surface-600"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="px-5 py-4 space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Amount (₹) *</label>
+                  <input type="number" className="input" value={editForm.amount}
+                    onChange={e => setEditForm(p => ({ ...p, amount: e.target.value }))} required autoFocus />
+                </div>
+                <div>
+                  <label className="label">Date *</label>
+                  <input type="date" className="input" value={editForm.payment_date}
+                    onChange={e => setEditForm(p => ({ ...p, payment_date: e.target.value }))} required />
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Payment Mode *</label>
+                <div className="flex flex-wrap gap-2">
+                  {MODES.map(m => (
+                    <button key={m} type="button"
+                      onClick={() => setEditForm(p => ({ ...p, payment_mode: m }))}
+                      className={`px-3 py-1.5 rounded-md text-sm font-medium border transition-all ${editForm.payment_mode === m ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-surface-600 border-surface-300 hover:border-brand-400'}`}>
+                      {MODE_LABELS[m]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="label">Transaction Reference</label>
+                <input className="input" value={editForm.transaction_ref}
+                  onChange={e => setEditForm(p => ({ ...p, transaction_ref: e.target.value }))}
+                  placeholder="UPI ref / cheque no. / app ID" />
+              </div>
+
+              <div>
+                <label className="label">Notes</label>
+                <input className="input" value={editForm.notes}
+                  onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))}
+                  placeholder="Optional note" />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button type="button" onClick={() => setEditPayment(null)} className="btn-secondary flex-1">Cancel</button>
+                <button type="submit" disabled={saving} className="btn-primary flex-1 flex items-center justify-center gap-2">
+                  {saving ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  {saving ? 'Saving…' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Cash proof viewer */}
       {viewProofs && (
         <div className="modal-overlay" onClick={() => setViewProofs(null)}>
           <div className="modal-content max-w-sm p-5" onClick={e => e.stopPropagation()}>
