@@ -23,7 +23,7 @@ export default function SuperAdmin() {
   const [wizardOpen, setWizardOpen] = useState(false)
   const [step, setStep] = useState(0)
   const [wizardData, setWizardData] = useState({
-    company_name: '', contact_name: '', email: '', phone: '', city: '', website: '',
+    company_name: '', contact_name: '', email: '', phone: '', city: '', website: '', logo_url: '',
     plan_id: 'growth', custom_price: '',
     admin_email: '', admin_password: '', admin_name: '',
   })
@@ -68,6 +68,7 @@ export default function SuperAdmin() {
         name: wizardData.company_name, slug,
         contact_name: wizardData.contact_name, contact_email: wizardData.email,
         contact_phone: wizardData.phone, city: wizardData.city,
+        logo_url: wizardData.logo_url || null,
         plan_id: wizardData.plan_id,
         custom_price: wizardData.custom_price ? parseInt(wizardData.custom_price) : null,
         status: 'active', onboarded_at: new Date().toISOString(),
@@ -225,13 +226,54 @@ export default function SuperAdmin() {
 
                 {isExpanded && (
                   <div className="border-t border-surface-100 p-4 bg-surface-50 space-y-4">
-                    <div className="grid sm:grid-cols-3 gap-4 text-sm">
-                      <div><p className="text-xs text-surface-400 mb-1">Contact</p><p className="font-medium">{c.contact_name||'—'}</p></div>
-                      <div><p className="text-xs text-surface-400 mb-1">Phone</p><p className="font-medium">{c.contact_phone||'—'}</p></div>
-                      <div><p className="text-xs text-surface-400 mb-1">Onboarded</p><p className="font-medium">{fmtDate(c.onboarded_at||c.created_at)}</p></div>
+                    {/* Editable org details */}
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-surface-400 mb-1">Company Name</p>
+                        <input className="input py-1.5 text-sm" defaultValue={c.name}
+                          onBlur={async e => {
+                            if (!e.target.value.trim()) return
+                            await supabase.from('organizations').update({ name: e.target.value.trim() }).eq('id', c.id)
+                            toast.success('Name updated'); loadAll()
+                          }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-surface-400 mb-1">City</p>
+                        <input className="input py-1.5 text-sm" defaultValue={c.city||''}
+                          onBlur={async e => {
+                            await supabase.from('organizations').update({ city: e.target.value.trim()||null }).eq('id', c.id)
+                            toast.success('City updated'); loadAll()
+                          }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-surface-400 mb-1">Contact Person</p>
+                        <input className="input py-1.5 text-sm" defaultValue={c.contact_name||''}
+                          onBlur={async e => {
+                            await supabase.from('organizations').update({ contact_name: e.target.value.trim()||null }).eq('id', c.id)
+                            toast.success('Contact updated'); loadAll()
+                          }} />
+                      </div>
+                      <div>
+                        <p className="text-xs text-surface-400 mb-1">Phone</p>
+                        <input className="input py-1.5 text-sm" defaultValue={c.contact_phone||''}
+                          onBlur={async e => {
+                            await supabase.from('organizations').update({ contact_phone: e.target.value.trim()||null }).eq('id', c.id)
+                            toast.success('Phone updated'); loadAll()
+                          }} />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <p className="text-xs text-surface-400 mb-1">Logo URL <span className="text-surface-300">(shows in sidebar)</span></p>
+                        <input className="input py-1.5 text-sm" defaultValue={c.logo_url||''}
+                          placeholder="https://example.com/logo.png"
+                          onBlur={async e => {
+                            await supabase.from('organizations').update({ logo_url: e.target.value.trim()||null }).eq('id', c.id)
+                            toast.success('Logo updated'); loadAll()
+                          }} />
+                      </div>
                     </div>
-                    {/* Plan change */}
-                    <div className="flex items-center gap-3 flex-wrap">
+
+                    {/* Plan + billing */}
+                    <div className="flex items-center gap-3 flex-wrap pt-1 border-t border-surface-200">
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-surface-500">Plan:</span>
                         <select className="select py-1 text-sm w-32" value={c.plan_id||'growth'}
@@ -257,6 +299,7 @@ export default function SuperAdmin() {
                         {c.status==='active'?'Suspend':'Reactivate'}
                       </button>
                     </div>
+                    <p className="text-[10px] text-surface-300">Onboarded {fmtDate(c.onboarded_at||c.created_at)}</p>
                   </div>
                 )}
               </div>
@@ -338,6 +381,7 @@ export default function SuperAdmin() {
               <div className="form-group"><label className="label">Phone</label><input className="input" value={wizardData.phone} onChange={e=>setWizardData(p=>({...p,phone:e.target.value}))} /></div>
               <div className="form-group"><label className="label">Email</label><input type="email" className="input" value={wizardData.email} onChange={e=>setWizardData(p=>({...p,email:e.target.value}))} /></div>
               <div className="form-group"><label className="label">City</label><input className="input" value={wizardData.city} onChange={e=>setWizardData(p=>({...p,city:e.target.value}))} placeholder="Bengaluru" /></div>
+              <div className="col-span-2 form-group"><label className="label">Logo URL <span className="text-surface-400 font-normal">(optional — shows in sidebar)</span></label><input className="input" value={wizardData.logo_url} onChange={e=>setWizardData(p=>({...p,logo_url:e.target.value}))} placeholder="https://example.com/logo.png" /></div>
             </div>
           )}
 
