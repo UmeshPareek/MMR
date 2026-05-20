@@ -2,129 +2,11 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, debounce } from '@/utils/helpers'
 import { Spinner } from '@/components/ui'
+import { useAuth } from '@/contexts/AuthContext'
 import { Download, RefreshCw, Building2, AlertTriangle, LogIn, LogOut, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react'
-
-/* ── Animated network nodes for hero background ─────────────────────────── */
-function HeroNodes() {
-  const canvasRef = useRef(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const ctx = canvas.getContext('2d')
-    let animId, w, h
-
-    // Mix of hub nodes (buildings) and satellite nodes (tenants/data)
-    let nodes = []
-
-    function init() {
-      w = canvas.width  = canvas.offsetWidth
-      h = canvas.height = canvas.offsetHeight
-      nodes = []
-
-      // 6 slow "hub" nodes — larger, teal-bright
-      for (let i = 0; i < 6; i++) nodes.push({
-        x: Math.random() * w, y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.12, vy: (Math.random() - 0.5) * 0.12,
-        r: Math.random() * 3 + 4, hub: true,
-        pulse: Math.random() * Math.PI * 2,
-      })
-      // 28 faster satellite nodes — smaller, dimmer
-      for (let i = 0; i < 28; i++) nodes.push({
-        x: Math.random() * w, y: Math.random() * h,
-        vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-        r: Math.random() * 1.5 + 1, hub: false,
-        pulse: Math.random() * Math.PI * 2,
-      })
-    }
-
-    const handleResize = () => init()
-    window.addEventListener('resize', handleResize)
-    init()
-
-    function draw() {
-      ctx.clearRect(0, 0, w, h)
-
-      // Draw connection lines
-      for (let i = 0; i < nodes.length; i++) {
-        for (let j = i + 1; j < nodes.length; j++) {
-          const dx = nodes[i].x - nodes[j].x
-          const dy = nodes[i].y - nodes[j].y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          const maxDist = 170
-
-          if (dist < maxDist) {
-            const alpha = (1 - dist / maxDist) * (nodes[i].hub || nodes[j].hub ? 0.25 : 0.12)
-            ctx.beginPath()
-            ctx.strokeStyle = `rgba(45,212,191,${alpha})`   // brand-400 teal
-            ctx.lineWidth = nodes[i].hub || nodes[j].hub ? 1 : 0.6
-            ctx.moveTo(nodes[i].x, nodes[i].y)
-            ctx.lineTo(nodes[j].x, nodes[j].y)
-            ctx.stroke()
-          }
-        }
-      }
-
-      // Draw nodes
-      const t = performance.now() / 1000
-      nodes.forEach(n => {
-        n.pulse += 0.018
-
-        if (n.hub) {
-          // Pulse ring
-          const ringR = n.r + 4 + Math.sin(n.pulse) * 2
-          ctx.beginPath()
-          ctx.arc(n.x, n.y, ringR, 0, Math.PI * 2)
-          ctx.strokeStyle = `rgba(20,184,166,0.18)`
-          ctx.lineWidth = 1
-          ctx.stroke()
-
-          // Glow fill
-          const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 3)
-          grd.addColorStop(0, 'rgba(45,212,191,0.6)')
-          grd.addColorStop(1, 'rgba(45,212,191,0)')
-          ctx.beginPath()
-          ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI * 2)
-          ctx.fillStyle = grd
-          ctx.fill()
-
-          // Core dot
-          ctx.beginPath()
-          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
-          ctx.fillStyle = 'rgba(94,234,212,0.9)'  // brand-300
-          ctx.fill()
-        } else {
-          ctx.beginPath()
-          ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2)
-          ctx.fillStyle = `rgba(20,184,166,${0.3 + Math.sin(n.pulse) * 0.1})`
-          ctx.fill()
-        }
-
-        // Move
-        n.x += n.vx; n.y += n.vy
-        if (n.x < -20) n.x = w + 20
-        if (n.x > w + 20) n.x = -20
-        if (n.y < -20) n.y = h + 20
-        if (n.y > h + 20) n.y = -20
-      })
-
-      animId = requestAnimationFrame(draw)
-    }
-
-    draw()
-    return () => {
-      cancelAnimationFrame(animId)
-      window.removeEventListener('resize', handleResize)
-    }
-  }, [])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
-    />
-  )
-}
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
+import toast from 'react-hot-toast'
+import * as XLSX from 'xlsx'
 
 function useCountUp(target, duration = 900) {
   const [value, setValue] = useState(0)
@@ -144,15 +26,13 @@ function useCountUp(target, duration = 900) {
   }, [target, duration])
   return value
 }
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
-import toast from 'react-hot-toast'
-import * as XLSX from 'xlsx'
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7)
 }
 
 export default function Dashboard() {
+  const { org } = useAuth()
   const [month, setMonth] = useState(currentMonth())
   const [pnl, setPnl] = useState(null)
   const [buildingPnl, setBuildingPnl] = useState([])
@@ -351,10 +231,11 @@ export default function Dashboard() {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((salaries||[]).map(s=>({ Staff:s.staff?.full_name, Gross:s.gross_salary, Net:s.net_salary||s.net_amount, Date:s.payment_date }))), 'Staff Salary')
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((utilityBills||[]).map(u=>({ Building:u.building?.name, Type:u.utility_type, Amount:u.amount, Month:u.for_month }))), 'Utility Bills')
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildingPnl.map(b=>({ Building:b.name, Rent:b.income, 'Owner Rent':b.ownerRent, Expenses:b.expenses, Utility:b.util, Net:b.net }))), 'Building P&L')
-      if (pnl) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['CashMyRent P&L',month],[''],['Rent Collected',pnl.income],['Utility Billed',pnl.utilCharged],['TOTAL INCOME',pnl.income+pnl.utilCharged],[''],['Owner Rent',pnl.ownerRentTotal],['Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal],['TOTAL EXPENSES',pnl.totalExpenses],[''],['NET PROFIT',pnl.grossProfit],['MARGIN',pnl.margin+'%']]), 'P&L Summary')
+      const orgLabel = org?.name || 'CashMyRent'
+      if (pnl) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[`${orgLabel} P&L`,month],['Powered by CashMyRent',''],[''],['Rent Collected',pnl.income],['Utility Billed',pnl.utilCharged],['TOTAL INCOME',pnl.income+pnl.utilCharged],[''],['Owner Rent',pnl.ownerRentTotal],['Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal],['TOTAL EXPENSES',pnl.totalExpenses],[''],['NET PROFIT',pnl.grossProfit],['MARGIN',pnl.margin+'%']]), 'P&L Summary')
       if (ciData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, Phone:t.phone, 'Move In':t.move_in_date, Rent:t.monthly_rent, Deposit:t.security_deposit_paid||0 }))), 'Check-Ins')
       if (coData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(coData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, 'Exit Date':t.move_out_date, Type:t.notes?.includes('RUNAWAY')?'Runaway':'Normal' }))), 'Check-Outs')
-      XLSX.writeFile(wb, `CashMyRent_${month}.xlsx`)
+      XLSX.writeFile(wb, `${orgLabel}_${month}.xlsx`)
       toast.dismiss(tid); toast.success('Downloaded ✓')
     } catch(e) {
       toast.dismiss(tid)
@@ -384,10 +265,9 @@ export default function Dashboard() {
       {/* ── Hero ── */}
       <div className="rounded-xl p-5 sm:p-6 text-white relative overflow-hidden"
         style={{ background: 'linear-gradient(135deg, #042f2e 0%, #0f4f47 45%, #0d9488 100%)' }}>
-        <HeroNodes />
-        <div className="relative flex items-start justify-between flex-wrap gap-4">
+        <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
-            <p className="text-brand-300/70 text-[11px] font-semibold mb-1 uppercase tracking-widest">Portfolio Overview</p>
+            <p className="text-brand-300/70 text-[11px] font-semibold mb-1 uppercase tracking-widest">{org?.name || 'Portfolio'} · Overview</p>
             <h1 className="text-3xl sm:text-4xl font-display font-bold tracking-tight">
               {loading ? <span className="text-brand-300/50">—</span> : formatCurrency(animatedIncome)}
             </h1>

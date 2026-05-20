@@ -3,27 +3,36 @@ import { supabase } from '@/lib/supabase'
 
 const AuthContext = createContext({})
 
-const INACTIVITY_TIMEOUT = 30 * 60 * 1000 // 30 minutes
+const INACTIVITY_TIMEOUT = 30 * 60 * 1000
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null)
+  const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
+  const [org, setOrg]         = useState(null)
   const [loading, setLoading] = useState(true)
-  const inactivityTimer = useRef(null)
-  const profileLoading = useRef(false)
+  const inactivityTimer  = useRef(null)
+  const profileLoading   = useRef(false)
 
   async function fetchProfile(userId) {
     profileLoading.current = true
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('*')
+        .select('*, organization:organizations(id, name, slug, city, logo_url)')
         .eq('id', userId)
         .single()
-      if (!error && data) setProfile(data)
-      else setProfile(null)
-    } catch (e) {
+
+      if (!error && data) {
+        const { organization, ...profileData } = data
+        setProfile(profileData)
+        setOrg(organization || null)
+      } else {
+        setProfile(null)
+        setOrg(null)
+      }
+    } catch {
       setProfile(null)
+      setOrg(null)
     } finally {
       profileLoading.current = false
       setLoading(false)
@@ -33,6 +42,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     clearTimeout(inactivityTimer.current)
     setProfile(null)
+    setOrg(null)
     setUser(null)
     await supabase.auth.signOut()
   }, [])
@@ -50,24 +60,14 @@ export function AuthProvider({ children }) {
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-        resetTimer()
-      } else {
-        setLoading(false)
-      }
+      if (session?.user) { fetchProfile(session.user.id); resetTimer() }
+      else setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-        resetTimer()
-      } else {
-        setProfile(null)
-        setLoading(false)
-        clearTimeout(inactivityTimer.current)
-      }
+      if (session?.user) { fetchProfile(session.user.id); resetTimer() }
+      else { setProfile(null); setOrg(null); setLoading(false); clearTimeout(inactivityTimer.current) }
     })
 
     const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click']
@@ -90,13 +90,13 @@ export function AuthProvider({ children }) {
   }
 
   const isPlatformAdmin = profile?.is_platform_admin === true
-  const isSuperAdmin = profile?.role === 'super_admin' || isPlatformAdmin
-  const isAdmin = profile?.role === 'admin' || isSuperAdmin
-  const isTeam = !!profile
+  const isSuperAdmin    = profile?.role === 'super_admin' || isPlatformAdmin
+  const isAdmin         = profile?.role === 'admin' || isSuperAdmin
+  const isTeam          = !!profile
 
   return (
     <AuthContext.Provider value={{
-      user, profile, loading,
+      user, profile, org, loading,
       signIn, signOut,
       isSuperAdmin, isAdmin, isTeam, isPlatformAdmin,
       fetchProfile,
