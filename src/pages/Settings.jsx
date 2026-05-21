@@ -92,8 +92,14 @@ export default function Settings() {
     if (newRole === 'super_admin' && !profile?.is_platform_admin) {
       return toast.error('Only Platform Admin can grant Super Admin role')
     }
-    const { error } = await supabase.from('profiles').update({ role: newRole }).eq('id', id)
-    if (error) return toast.error(error.message)
+    const { data: { session } } = await supabase.auth.getSession()
+    const res = await fetch('/api/update-user-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+      body: JSON.stringify({ userId: id, newRole }),
+    })
+    const result = await res.json()
+    if (!res.ok) return toast.error(result.error || 'Failed to update role')
     toast.success(`Role updated to ${newRole} ✓`); loadAll()
   }
 
