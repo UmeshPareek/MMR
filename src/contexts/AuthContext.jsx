@@ -1,9 +1,11 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import toast from 'react-hot-toast'
 
 const AuthContext = createContext({})
 
 const INACTIVITY_TIMEOUT = 30 * 60 * 1000
+const WARN_BEFORE_LOGOUT = 5 * 60 * 1000
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(null)
@@ -11,6 +13,7 @@ export function AuthProvider({ children }) {
   const [org, setOrg]         = useState(null)
   const [loading, setLoading] = useState(true)
   const inactivityTimer  = useRef(null)
+  const warningTimer     = useRef(null)
   const profileLoading   = useRef(false)
 
   async function fetchProfile(userId) {
@@ -34,10 +37,10 @@ export function AuthProvider({ children }) {
       if (profileData.org_id) {
         const { data: orgData, error: orgError } = await supabase
           .from('organizations')
-          .select('id, name, slug, city, logo_url')
+          .select('id, name, logo_url')
           .eq('id', profileData.org_id)
           .single()
-        if (orgError) console.error('Org fetch error (check RLS on organizations table):', orgError.message, orgError.code)
+        if (orgError) console.error('Org fetch error:', orgError.message, orgError.code, orgError.details)
         setOrg(orgData || null)
       } else {
         setOrg(null)
@@ -52,6 +55,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     clearTimeout(inactivityTimer.current)
+    clearTimeout(warningTimer.current)
     setProfile(null)
     setOrg(null)
     setUser(null)
@@ -60,7 +64,16 @@ export function AuthProvider({ children }) {
 
   const resetTimer = useCallback(() => {
     clearTimeout(inactivityTimer.current)
+    clearTimeout(warningTimer.current)
+    warningTimer.current = setTimeout(() => {
+      toast('You will be signed out in 5 minutes due to inactivity. Move the mouse to stay signed in.', {
+        duration: 8000,
+        icon: '⏱️',
+        id: 'inactivity-warning',
+      })
+    }, INACTIVITY_TIMEOUT - WARN_BEFORE_LOGOUT)
     inactivityTimer.current = setTimeout(() => {
+      toast.dismiss('inactivity-warning')
       signOut()
       sessionStorage.setItem('cmr_auto_logout', '1')
     }, INACTIVITY_TIMEOUT)

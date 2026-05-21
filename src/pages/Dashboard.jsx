@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Download, RefreshCw, Building2, AlertTriangle, LogIn, LogOut, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
 import toast from 'react-hot-toast'
-import * as XLSX from 'xlsx'
 
 function useCountUp(target, duration = 900) {
   const [value, setValue] = useState(0)
@@ -208,9 +207,10 @@ export default function Dashboard() {
   async function downloadMasterExcel() {
     const tid = toast.loading('Preparing…')
     try {
+      const { utils: XLSXutils, writeFile: XLSXwriteFile } = await import('xlsx')
       const monthEnd = new Date(parseInt(month.slice(0,4)), parseInt(month.slice(5,7)), 0).getDate()
       const monthEndStr = `${month}-${String(monthEnd).padStart(2,'0')}`
-      const wb = XLSX.utils.book_new()
+      const wb = XLSXutils.book_new()
       const [
         { data: collections }, { data: expenses }, { data: salaries },
         { data: ownerRents }, { data: utilityBills }, { data: buildings },
@@ -226,16 +226,16 @@ export default function Dashboard() {
         supabase.from('tenants').select('full_name,phone,move_out_date,notes,building_id').eq('status','vacated').gte('move_out_date',`${month}-01`).lte('move_out_date', monthEndStr),
       ])
       const bMap = {}; (buildings||[]).forEach(b=>{ bMap[b.id]=b.name })
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((collections||[]).map(c=>({ Building:c.building?.name, Tenant:c.tenant?.full_name, Phone:c.tenant?.phone, Amount:c.amount, Mode:c.payment_mode, Month:month }))), 'Rent Collections')
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((expenses||[]).map(e=>({ Date:e.expense_date, Category:e.category, Description:e.description, Building:e.building?.name||'General', Amount:e.amount }))), 'Expenses')
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((salaries||[]).map(s=>({ Staff:s.staff?.full_name, Gross:s.gross_salary, Net:s.net_salary||s.net_amount, Date:s.payment_date }))), 'Staff Salary')
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((utilityBills||[]).map(u=>({ Building:u.building?.name, Type:u.utility_type, Amount:u.amount, Month:u.for_month }))), 'Utility Bills')
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(buildingPnl.map(b=>({ Building:b.name, Rent:b.income, 'Owner Rent':b.ownerRent, Expenses:b.expenses, Utility:b.util, Net:b.net }))), 'Building P&L')
+      XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet((collections||[]).map(c=>({ Building:c.building?.name, Tenant:c.tenant?.full_name, Phone:c.tenant?.phone, Amount:c.amount, Mode:c.payment_mode, Month:month }))), 'Rent Collections')
+      XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet((expenses||[]).map(e=>({ Date:e.expense_date, Category:e.category, Description:e.description, Building:e.building?.name||'General', Amount:e.amount }))), 'Expenses')
+      XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet((salaries||[]).map(s=>({ Staff:s.staff?.full_name, Gross:s.gross_salary, Net:s.net_salary||s.net_amount, Date:s.payment_date }))), 'Staff Salary')
+      XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet((utilityBills||[]).map(u=>({ Building:u.building?.name, Type:u.utility_type, Amount:u.amount, Month:u.for_month }))), 'Utility Bills')
+      XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet(buildingPnl.map(b=>({ Building:b.name, Rent:b.income, 'Owner Rent':b.ownerRent, Expenses:b.expenses, Utility:b.util, Net:b.net }))), 'Building P&L')
       const orgLabel = org?.name || 'CashMyRent'
-      if (pnl) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[`${orgLabel} P&L`,month],['Powered by CashMyRent',''],[''],['Rent Collected',pnl.income],['Utility Billed',pnl.utilCharged],['TOTAL INCOME',pnl.income+pnl.utilCharged],[''],['Owner Rent',pnl.ownerRentTotal],['Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal],['TOTAL EXPENSES',pnl.totalExpenses],[''],['NET PROFIT',pnl.grossProfit],['MARGIN',pnl.margin+'%']]), 'P&L Summary')
-      if (ciData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(ciData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, Phone:t.phone, 'Move In':t.move_in_date, Rent:t.monthly_rent, Deposit:t.security_deposit_paid||0 }))), 'Check-Ins')
-      if (coData?.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(coData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, 'Exit Date':t.move_out_date, Type:t.notes?.includes('RUNAWAY')?'Runaway':'Normal' }))), 'Check-Outs')
-      XLSX.writeFile(wb, `${orgLabel}_${month}.xlsx`)
+      if (pnl) XLSXutils.book_append_sheet(wb, XLSXutils.aoa_to_sheet([[`${orgLabel} P&L`,month],['Powered by CashMyRent',''],[''],['Rent Collected',pnl.income],['Utility Billed',pnl.utilCharged],['TOTAL INCOME',pnl.income+pnl.utilCharged],[''],['Owner Rent',pnl.ownerRentTotal],['Expenses',pnl.expTotal],['Utility Paid',pnl.utilPaid],['Staff Salary',pnl.salaryTotal],['TOTAL EXPENSES',pnl.totalExpenses],[''],['NET PROFIT',pnl.grossProfit],['MARGIN',pnl.margin+'%']]), 'P&L Summary')
+      if (ciData?.length) XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet(ciData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, Phone:t.phone, 'Move In':t.move_in_date, Rent:t.monthly_rent, Deposit:t.security_deposit_paid||0 }))), 'Check-Ins')
+      if (coData?.length) XLSXutils.book_append_sheet(wb, XLSXutils.json_to_sheet(coData.map(t=>({ Building:bMap[t.building_id]||'—', Tenant:t.full_name, 'Exit Date':t.move_out_date, Type:t.notes?.includes('RUNAWAY')?'Runaway':'Normal' }))), 'Check-Outs')
+      XLSXwriteFile(wb, `${orgLabel}_${month}.xlsx`)
       toast.dismiss(tid); toast.success('Downloaded ✓')
     } catch(e) {
       toast.dismiss(tid)

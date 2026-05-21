@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Modal, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
 import { Home, Plus, Edit2, Trash2, Phone, Mail, Building2, Banknote } from 'lucide-react'
@@ -15,6 +15,7 @@ const defaultForm = () => ({ name: '', phone: '', email: '', address: '', bank_n
 
 export default function Owners() {
   const { profile } = useAuth()
+  const channelRef = useRef(null)
   const [owners, setOwners] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -24,7 +25,15 @@ export default function Owners() {
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    if (channelRef.current) supabase.removeChannel(channelRef.current)
+    channelRef.current = supabase.channel('owners-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'owners' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buildings' }, () => load())
+      .subscribe()
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
+  }, [])
 
   async function load() {
     setLoading(true)

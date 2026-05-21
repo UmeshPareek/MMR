@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate } from '@/utils/helpers'
-import { Modal, Spinner, EmptyState } from '@/components/ui'
+import { Modal, Spinner, EmptyState, ConfirmDialog } from '@/components/ui'
 import { LogOut, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
@@ -34,6 +34,21 @@ export default function CheckOut() {
   const [loadingOutstanding, setLoadingOutstanding] = useState(false)
   const [filterBuilding, setFilterBuilding] = useState('')
   const [buildings, setBuildings] = useState([])
+  const [confirmDialog, setConfirmDialog] = useState(null)
+  const [orgContact, setOrgContact] = useState({ phone: '—', email: '—', website: '—' })
+
+  useEffect(() => {
+    supabase.from('master_settings')
+      .select('setting_key, setting_value')
+      .in('setting_key', ['org_phone', 'org_email', 'org_website'])
+      .then(({ data }) => {
+        if (data?.length) {
+          const m = {}
+          data.forEach(r => { m[r.setting_key] = r.setting_value })
+          setOrgContact({ phone: m.org_phone || '—', email: m.org_email || '—', website: m.org_website || '—' })
+        }
+      })
+  }, [])
 
   useEffect(() => {
     loadAll()
@@ -90,30 +105,43 @@ export default function CheckOut() {
     setLoading(false)
   }
 
-  async function deleteExit(t) {
-    if (!window.confirm(`Delete exit record for ${t.full_name}? This will restore them as active and mark their flat as occupied again.`)) return
-    const { error } = await supabase.from('tenants').update({ status:'active', move_out_date: null, notes: null }).eq('id', t.id)
-    if (error) return toast.error(error.message)
-    if (t.flat_id) {
-      // Only restore flat if it hasn't been re-assigned to another tenant
-      const { data: currentFlat } = await supabase.from('flats').select('current_tenant_id, status').eq('id', t.flat_id).single()
-      if (currentFlat && (currentFlat.status === 'vacant' || currentFlat.current_tenant_id === null)) {
-        await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', t.flat_id)
-      } else {
-        toast.error('Flat has already been re-assigned — please update manually')
+  function deleteExit(t) {
+    setConfirmDialog({
+      title: 'Undo Exit?',
+      message: `Restore ${t.full_name} as active tenant? Their flat will be marked occupied again.`,
+      danger: false,
+      onConfirm: async () => {
+        const { error } = await supabase.from('tenants').update({ status:'active', move_out_date: null, notes: null }).eq('id', t.id)
+        if (error) { toast.error(error.message); return }
+        if (t.flat_id) {
+          const { data: currentFlat } = await supabase.from('flats').select('current_tenant_id, status').eq('id', t.flat_id).single()
+          if (currentFlat && (currentFlat.status === 'vacant' || currentFlat.current_tenant_id === null)) {
+            await supabase.from('flats').update({ status:'occupied', current_tenant_id: t.id }).eq('id', t.flat_id)
+          } else {
+            toast.error('Flat has already been re-assigned — please update manually')
+          }
+        }
+        toast.success('Exit reversed — tenant restored as active ✓')
+        setConfirmDialog(null)
+        loadAll()
       }
-    }
-    toast.success('Exit reversed — tenant restored as active ✓')
-    loadAll()
+    })
   }
 
-  async function deleteCheckin(t) {
-    if (!window.confirm(`Permanently delete ${t.full_name}'s check-in record? This cannot be undone.`)) return
-    const { error } = await supabase.from('tenants').delete().eq('id', t.id)
-    if (error) return toast.error(error.message)
-    if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
-    toast.success('Tenant record deleted ✓')
-    loadAll()
+  function deleteCheckin(t) {
+    setConfirmDialog({
+      title: 'Delete Record?',
+      message: `Permanently delete ${t.full_name}'s record? Their flat will be restored to vacant. This cannot be undone.`,
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+        if (error) { toast.error(error.message); return }
+        if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+        toast.success('Tenant record deleted ✓')
+        setConfirmDialog(null)
+        loadAll()
+      }
+    })
   }
 
   async function fetchOutstandingRent(tenantId) {
@@ -217,7 +245,7 @@ FAILURE TO COMPLY WILL RESULT IN:
 This notice is issued without prejudice to all legal rights and remedies available.
 
 CashMyRent Property Management
-Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
+Phone: ${orgContact.phone} | Email: ${orgContact.email} | ${orgContact.website}`
     doc.text(doc.splitTextToSize(body, 182), 14, 70)
     doc.save(`LegalNotice_${t.full_name.replace(/ /g,'_')}.pdf`)
     toast.success('Legal notice PDF downloaded')
@@ -366,7 +394,7 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
             <table className="data-table">
               <thead><tr><th>Tenant</th><th>Building</th><th>Flat</th><th>Exit Date</th><th>Exit Type</th></tr></thead>
               <tbody>
-                {recentExits.map(t=>(
+                {recentExits.filter(t => t.move_out_date?.slice(0,7) === filterMonth).map(t=>(
                   <tr key={t.id}>
                     <td><p className="font-medium">{t.full_name}</p><p className="text-xs text-surface-400">{t.phone}</p></td>
                     <td className="text-sm text-surface-500">{t.building?.name||'—'}</td>
@@ -389,6 +417,15 @@ Phone: 8217716904 | Email: cashmyrent@gmail.com | cashmyrent.com`
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog?.onConfirm}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        danger={confirmDialog?.danger}
+      />
 
       {/* CHECKOUT MODAL */}
       <Modal open={modal} onClose={()=>setModal(false)} title={`Check Out — ${selected?.full_name}`} size="lg">

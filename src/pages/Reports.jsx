@@ -3,9 +3,6 @@ import { supabase } from '../lib/supabase'
 import { formatCurrency, lastNMonths, fmtMonth } from '../utils/helpers'
 import toast from 'react-hot-toast'
 import { Download, RefreshCw, Building2, CheckCircle2, XCircle, AlertCircle, Filter, FileSpreadsheet, FileText } from 'lucide-react'
-import ExcelJS from 'exceljs'
-import jsPDF from 'jspdf'
-import autoTable from 'jspdf-autotable'
 
 export default function Reports() {
   const months = lastNMonths(6)
@@ -20,7 +17,7 @@ export default function Reports() {
   useEffect(() => { loadReport() }, [selectedMonth, selectedBuilding])
 
   async function loadBuildings() {
-    const { data } = await supabase.from('buildings').select('id, name').order('name')
+    const { data } = await supabase.from('buildings').select('id, name').eq('is_active', true).order('name')
     setBuildings(data || [])
   }
 
@@ -96,6 +93,7 @@ export default function Reports() {
   async function handleExcelExport() {
     if (!rows.length) return toast.error('No data to export')
     try {
+      const ExcelJS = (await import('exceljs')).default
       const wb = new ExcelJS.Workbook()
       wb.creator = 'CashMyRent'
       wb.created = new Date()
@@ -238,9 +236,11 @@ export default function Reports() {
     }
   }
 
-  function handlePdfExport() {
+  async function handlePdfExport() {
     if (!rows.length) return toast.error('No data to export')
     try {
+      const { default: jsPDF } = await import('jspdf')
+      const { default: autoTable } = await import('jspdf-autotable')
       const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
       const pageW = doc.internal.pageSize.getWidth()
 

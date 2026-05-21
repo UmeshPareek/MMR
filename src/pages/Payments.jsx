@@ -7,8 +7,9 @@ import jsPDF from 'jspdf';
 import {
   Download, Camera, Upload, X, CheckCircle2,
   Clock, XCircle, Building2, ChevronDown, ChevronRight,
-  Phone, Lock, Trash2, Eye, ImageIcon, RefreshCw, Receipt, Pencil
+  Phone, Lock, Trash2, Eye, ImageIcon, RefreshCw, Receipt, Pencil, AlertTriangle
 } from 'lucide-react';
+import { ConfirmDialog } from '../components/ui';
 
 function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mode, payment_date, for_month, transaction_ref }) {
   const doc = new jsPDF({ format: 'a5', unit: 'mm', orientation: 'portrait' })
@@ -163,6 +164,7 @@ export default function Payments() {
   const [saving, setSaving] = useState(false);
   const [viewProofs, setViewProofs] = useState(null);
   const [viewMode, setViewMode] = useState('log');
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const channelRef = useRef(null);
 
   useEffect(() => {
@@ -313,11 +315,98 @@ export default function Payments() {
     }
   }
 
-  async function handleDelete(id) {
-    if (!confirm('Delete this payment entry?')) return;
-    const { error } = await supabase.from('rent_collections').delete().eq('id', id);
+  function handleDelete(id) {
+    setConfirmDelete(id);
+  }
+
+  async function doDelete() {
+    const { error } = await supabase.from('rent_collections').delete().eq('id', confirmDelete);
     if (error) toast.error(error.message);
     else { toast.success('Deleted'); loadAll(); }
+    setConfirmDelete(null);
+  }
+
+  function generateStatement(flat) {
+    const bName = buildings.find(x => x.id === flat.building_id)?.name || '—';
+    const tenant = flat.tenant;
+    const doc = new jsPDF({ format: 'a5', unit: 'mm', orientation: 'portrait' });
+    const W = 148, pad = 12;
+
+    // Header
+    doc.setFillColor(13, 148, 136);
+    doc.rect(0, 0, W, 28, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+    doc.text('RENT STATEMENT', W / 2, 11, { align: 'center' });
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text(`CashMyRent · ${selectedMonth}`, W / 2, 20, { align: 'center' });
+
+    // Tenant info block
+    doc.setFillColor(248, 250, 252);
+    doc.rect(pad, 32, W - pad * 2, 30, 'F');
+    doc.setTextColor(100, 116, 139); doc.setFontSize(8); doc.setFont('helvetica', 'normal');
+    doc.text('TENANT', pad + 3, 39);
+    doc.setTextColor(30, 41, 59); doc.setFontSize(10); doc.setFont('helvetica', 'bold');
+    doc.text(tenant?.full_name || '—', pad + 3, 46);
+    doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139);
+    doc.text(`${flat.door_number} · ${bName}`, pad + 3, 53);
+    doc.text(`Phone: ${tenant?.phone || '—'}`, pad + 3, 59);
+
+    // Summary row
+    const summaryY = 68;
+    const boxes = [
+      { label: 'Expected', value: formatCurrency(flat.expected), color: [30, 41, 59] },
+      { label: 'Paid', value: formatCurrency(flat.paid), color: [5, 150, 105] },
+      { label: 'Balance', value: formatCurrency(Math.max(flat.balance, 0)), color: flat.balance > 0 ? [220, 38, 38] : [100, 116, 139] },
+    ];
+    const boxW = (W - pad * 2) / 3;
+    boxes.forEach((b, i) => {
+      const bx = pad + i * boxW;
+      doc.setFillColor(i === 1 ? 240 : i === 2 && flat.balance > 0 ? 254 : 248, i === 1 ? 253 : i === 2 && flat.balance > 0 ? 226 : 250, i === 1 ? 250 : i === 2 && flat.balance > 0 ? 226 : 252);
+      doc.roundedRect(bx, summaryY, boxW - 2, 18, 2, 2, 'F');
+      doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 116, 139);
+      doc.text(b.label, bx + (boxW - 2) / 2, summaryY + 6, { align: 'center' });
+      doc.setFontSize(9); doc.setFont('helvetica', 'bold'); doc.setTextColor(...b.color);
+      doc.text(b.value, bx + (boxW - 2) / 2, summaryY + 13, { align: 'center' });
+    });
+
+    // Payment rows
+    let y = summaryY + 26;
+    doc.setFontSize(8); doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 41, 59);
+    doc.text('PAYMENT DETAILS', pad, y); y += 6;
+    doc.setDrawColor(226, 232, 240); doc.line(pad, y, W - pad, y); y += 4;
+
+    if (flat.colls.length === 0) {
+      doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(148, 163, 184);
+      doc.text('No payments recorded for this month.', pad, y + 4);
+    } else {
+      flat.colls.forEach((c, i) => {
+        if (i % 2 === 0) {
+          doc.setFillColor(248, 250, 252);
+          doc.rect(pad, y - 1, W - pad * 2, 10, 'F');
+        }
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.setTextColor(30, 41, 59);
+        doc.text(c.payment_date || '—', pad + 2, y + 5);
+        doc.text(String(c.payment_mode || '').toUpperCase(), pad + 32, y + 5);
+        doc.text(c.transaction_ref || '—', pad + 62, y + 5, { maxWidth: 30 });
+        doc.setFont('helvetica', 'bold'); doc.setTextColor(5, 150, 105);
+        doc.text(formatCurrency(c.amount), W - pad - 2, y + 5, { align: 'right' });
+        y += 11;
+      });
+      doc.setDrawColor(226, 232, 240); doc.line(pad, y, W - pad, y); y += 4;
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(30, 41, 59);
+      doc.text('TOTAL PAID', pad + 2, y + 5);
+      doc.setTextColor(5, 150, 105);
+      doc.text(formatCurrency(flat.paid), W - pad - 2, y + 5, { align: 'right' });
+    }
+
+    // Footer
+    const fY = 200;
+    doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(148, 163, 184);
+    doc.text('This is a computer-generated statement.', W / 2, fY, { align: 'center' });
+    doc.text(`Generated on ${new Date().toLocaleDateString('en-IN')}`, W / 2, fY + 5, { align: 'center' });
+    doc.save(`Statement_${flat.door_number}_${selectedMonth}.pdf`);
+    toast.success('Statement downloaded');
   }
 
   function handleExport() {
@@ -461,6 +550,13 @@ export default function Payments() {
                               </div>
                             )}
 
+                            {/* Statement button for flats that have payments */}
+                            {flat.colls.length > 0 && (
+                              <button onClick={() => generateStatement(flat)}
+                                className="p-1.5 text-surface-300 hover:text-brand-600 transition-colors" title="Download statement">
+                                <Download className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                             {/* Always show + Pay for tenants — allows additional / part payments */}
                             {flat.tenant && (
                               <button
@@ -725,6 +821,15 @@ export default function Payments() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={doDelete}
+        title="Delete Payment?"
+        message="This payment entry will be permanently removed. This action cannot be undone."
+        danger
+      />
 
       {/* Cash proof viewer */}
       {viewProofs && (

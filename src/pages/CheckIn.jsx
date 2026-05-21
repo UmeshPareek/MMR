@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate } from '@/utils/helpers'
-import { Modal, Spinner, EmptyState } from '@/components/ui'
+import { Modal, Spinner, EmptyState, ConfirmDialog } from '@/components/ui'
 import { LogIn, Home } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
@@ -28,6 +28,7 @@ export default function CheckIn() {
   const [form, setForm] = useState(EMPTY())
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [confirmDialog, setConfirmDialog] = useState(null)
 
   useEffect(() => {
     loadAll()
@@ -58,13 +59,20 @@ export default function CheckIn() {
     setLoading(false)
   }
 
-  async function deleteCheckin(t) {
-    if (!window.confirm(`Delete check-in for ${t.full_name}? Flat will be restored to vacant.`)) return
-    const { error } = await supabase.from('tenants').delete().eq('id', t.id)
-    if (error) return toast.error(error.message)
-    if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
-    toast.success('Check-in deleted ✓')
-    loadAll()
+  function deleteCheckin(t) {
+    setConfirmDialog({
+      title: 'Delete Check-in?',
+      message: `Delete ${t.full_name}'s check-in record? Their flat will be restored to vacant. This cannot be undone.`,
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+        if (error) { toast.error(error.message); return }
+        if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+        toast.success('Check-in deleted ✓')
+        setConfirmDialog(null)
+        loadAll()
+      }
+    })
   }
 
   async function loadVacantFlats(buildingId) {
@@ -161,6 +169,15 @@ export default function CheckIn() {
             </table>
           )}
       </div>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog?.onConfirm}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        danger={confirmDialog?.danger}
+      />
 
       <Modal open={modal} onClose={() => { setModal(false); setForm(EMPTY()); setVacantFlats([]) }} title="New Tenant Check In" size="lg">
         <div className="p-6 grid sm:grid-cols-2 gap-4">

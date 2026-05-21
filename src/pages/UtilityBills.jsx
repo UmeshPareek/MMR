@@ -5,7 +5,6 @@ import { Modal, Spinner, EmptyState } from '@/components/ui'
 import { Zap, Droplets, Plus, Download, Edit2, Trash2, TrendingUp, TrendingDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
-import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 
 export default function UtilityBills() {
@@ -137,23 +136,22 @@ export default function UtilityBills() {
     toast.success('Deleted'); setDeleteConfirm(null); loadAll()
   }
 
-  function downloadExcel() {
-    const wb = XLSX.utils.book_new()
-    // Readings sheet
+  async function downloadExcel() {
+    const { utils, writeFile } = await import('xlsx')
+    const wb = utils.book_new()
     const rRows = readings.map(r => ({
       Building: r.building?.name, Flat: r.is_common_area ? 'Common Area' : r.flat?.door_number,
       Type: r.reading_type, Month: r.for_month, Date: r.reading_date,
       'Previous Reading': r.previous_reading, 'Current Reading': r.reading_value,
       'Units Consumed': r.units_consumed, 'Rate/Unit': r.rate_per_unit, 'Amount (₹)': r.amount_charged
     }))
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rRows), 'Meter Readings')
-    // Bills sheet
+    utils.book_append_sheet(wb, utils.json_to_sheet(rRows), 'Meter Readings')
     const bRows = bills.map(b => ({
       Building: b.building?.name, Type: b.utility_type, 'Amount Paid (₹)': b.amount,
       Mode: b.payment_mode, Month: b.for_month, Vendor: b.vendor || '—', 'Bill No': b.bill_number || '—'
     }))
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(bRows), 'Bills Paid')
-    XLSX.writeFile(wb, `Utility_${filterMonth}.xlsx`)
+    utils.book_append_sheet(wb, utils.json_to_sheet(bRows), 'Bills Paid')
+    writeFile(wb, `Utility_${filterMonth}.xlsx`)
     toast.success('Downloaded')
   }
 

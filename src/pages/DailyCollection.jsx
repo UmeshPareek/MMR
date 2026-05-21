@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
@@ -22,8 +22,17 @@ export default function DailyCollection() {
   const [loading, setLoading] = useState(false);
   const [expandedBuildings, setExpandedBuildings] = useState({});
   const [filterStatus, setFilterStatus] = useState('all'); // all | unpaid | partial | paid
+  const channelRef = useRef(null);
 
-  useEffect(() => { load(); }, [selectedMonth, filterStatus]);
+  useEffect(() => {
+    load();
+    if (channelRef.current) supabase.removeChannel(channelRef.current);
+    channelRef.current = supabase.channel('daily-collection-rt')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rent_collections' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'flat_utilities' }, () => load())
+      .subscribe();
+    return () => { if (channelRef.current) supabase.removeChannel(channelRef.current); };
+  }, [selectedMonth, filterStatus]);
 
   async function load() {
     setLoading(true);
