@@ -15,6 +15,7 @@ export function AuthProvider({ children }) {
   const inactivityTimer  = useRef(null)
   const warningTimer     = useRef(null)
   const profileLoading   = useRef(false)
+  const pollTimer        = useRef(null)
 
   async function fetchProfile(userId) {
     profileLoading.current = true
@@ -95,6 +96,10 @@ export function AuthProvider({ children }) {
             filter: `id=eq.${session.user.id}`,
           }, () => fetchProfile(session.user.id))
           .subscribe()
+
+        // Polling fallback — catches role changes if realtime misses them
+        clearInterval(pollTimer.current)
+        pollTimer.current = setInterval(() => fetchProfile(session.user.id), 30_000)
       } else {
         setLoading(false)
       }
@@ -112,6 +117,7 @@ export function AuthProvider({ children }) {
     return () => {
       clearTimeout(timeout)
       clearTimeout(inactivityTimer.current)
+      clearInterval(pollTimer.current)
       subscription.unsubscribe()
       if (profileChannel) supabase.removeChannel(profileChannel)
       events.forEach(e => window.removeEventListener(e, resetTimer))
