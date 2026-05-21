@@ -81,11 +81,23 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const timeout = setTimeout(() => setLoading(false), 8000)
+    let profileChannel = null
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)
-      if (session?.user) { fetchProfile(session.user.id); resetTimer() }
-      else setLoading(false)
+      if (session?.user) {
+        fetchProfile(session.user.id)
+        resetTimer()
+        // Watch for role/org changes made by an admin
+        profileChannel = supabase.channel('profile-changes')
+          .on('postgres_changes', {
+            event: 'UPDATE', schema: 'public', table: 'profiles',
+            filter: `id=eq.${session.user.id}`,
+          }, () => fetchProfile(session.user.id))
+          .subscribe()
+      } else {
+        setLoading(false)
+      }
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -101,6 +113,7 @@ export function AuthProvider({ children }) {
       clearTimeout(timeout)
       clearTimeout(inactivityTimer.current)
       subscription.unsubscribe()
+      if (profileChannel) supabase.removeChannel(profileChannel)
       events.forEach(e => window.removeEventListener(e, resetTimer))
     }
   }, [resetTimer])
