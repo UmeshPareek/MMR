@@ -3,7 +3,6 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
 import toast from 'react-hot-toast';
-import jsPDF from 'jspdf';
 import {
   Download, Camera, Upload, X, CheckCircle2,
   Clock, XCircle, Building2, ChevronDown, ChevronRight,
@@ -11,7 +10,8 @@ import {
 } from 'lucide-react';
 import { ConfirmDialog } from '../components/ui';
 
-function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mode, payment_date, for_month, transaction_ref }) {
+async function printReceipt({ tenantName, flatNumber, buildingName, amount, payment_mode, payment_date, for_month, transaction_ref }) {
+  const { default: jsPDF } = await import('jspdf')
   const doc = new jsPDF({ format: 'a5', unit: 'mm', orientation: 'portrait' })
   const W = 148, pad = 12
 

@@ -1,11 +1,12 @@
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, debounce } from '@/utils/helpers'
+import { cached, invalidate } from '@/lib/cache'
 import { Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { Download, RefreshCw, Building2, AlertTriangle, LogIn, LogOut, Users, ArrowUpRight, ArrowDownRight } from 'lucide-react'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid, Legend, PieChart, Pie, Cell } from 'recharts'
 import toast from 'react-hot-toast'
+const DashboardCharts = lazy(() => import('@/components/DashboardCharts'))
 
 function useCountUp(target, duration = 900) {
   const [value, setValue] = useState(0)
@@ -182,20 +183,23 @@ export default function Dashboard() {
 
       setPnl({ income, expTotal, salaryTotal, ownerRentTotal, utilPaid, utilCharged, totalExpenses, grossProfit, margin })
 
-      // Trend — last 6 available months, using 2 queries per month max
+      // Trend — last 6 months cached for 2 min (historical data changes slowly)
       const trendMonths = availableMonths.slice(0, 6).reverse()
-      const trendData = await Promise.all(trendMonths.map(async m => {
-        const me = new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7)), 0).getDate()
-        const [{ data: mc }, { data: me2 }] = await Promise.all([
-          supabase.from('rent_collections').select('amount').eq('for_month', m),
-          supabase.from('expenses').select('amount').gte('expense_date',`${m}-01`).lte('expense_date',`${m}-${String(me).padStart(2,'0')}`),
-        ])
-        return {
-          month: new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'short'}),
-          revenue: (mc||[]).reduce((s,r)=>s+Number(r.amount),0),
-          expenses: (me2||[]).reduce((s,r)=>s+Number(r.amount),0),
-        }
-      }))
+      const trendData = await cached(`trend-${month}`, () =>
+        Promise.all(trendMonths.map(async m => {
+          const me = new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7)), 0).getDate()
+          const [{ data: mc }, { data: me2 }] = await Promise.all([
+            supabase.from('rent_collections').select('amount').eq('for_month', m),
+            supabase.from('expenses').select('amount').gte('expense_date',`${m}-01`).lte('expense_date',`${m}-${String(me).padStart(2,'0')}`),
+          ])
+          return {
+            month: new Date(parseInt(m.slice(0,4)), parseInt(m.slice(5,7))-1, 1).toLocaleString('en-IN',{month:'short'}),
+            revenue: (mc||[]).reduce((s,r)=>s+Number(r.amount),0),
+            expenses: (me2||[]).reduce((s,r)=>s+Number(r.amount),0),
+          }
+        })),
+        120_000
+      )
       setTrend(trendData)
     } catch(e) {
       console.error('Dashboard load failed:', e)
@@ -456,47 +460,9 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="card p-5 lg:col-span-2">
-              <h3 className="font-semibold text-surface-800 mb-4">Revenue vs Expenses</h3>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={trend} barSize={20}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
-                  <XAxis dataKey="month" tick={{fontSize:11, fill:'#94a3b8'}} axisLine={false} tickLine={false}/>
-                  <YAxis tick={{fontSize:11, fill:'#94a3b8'}} tickFormatter={v=>`₹${(v/100000).toFixed(0)}L`} axisLine={false} tickLine={false}/>
-                  <Tooltip formatter={v=>formatCurrency(v)} contentStyle={{borderRadius:8,border:'1px solid #e2e8f0',boxShadow:'0 4px 12px rgba(0,0,0,.08)'}}/>
-                  <Legend wrapperStyle={{fontSize:12}}/>
-                  <Bar dataKey="revenue" name="Revenue" fill="#0D9488" radius={[4,4,0,0]}/>
-                  <Bar dataKey="expenses" name="Expenses" fill="#f87171" radius={[4,4,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
-
-              {expenseBreakdown.length > 0 && (
-                <div className="mt-4 pt-4 border-t border-surface-100 grid grid-cols-2 gap-4 items-center">
-                  <div>
-                    <p className="text-xs font-semibold text-surface-500 uppercase tracking-wider mb-3">Expense Breakdown</p>
-                    <div className="space-y-2">
-                      {expenseBreakdown.map(e=>(
-                        <div key={e.name} className="flex items-center justify-between text-xs">
-                          <div className="flex items-center gap-2">
-                            <div className="w-2 h-2 rounded-full" style={{background:e.color}}/>
-                            <span className="text-surface-600">{e.name}</span>
-                          </div>
-                          <span className="font-mono font-semibold text-surface-700">{formatCurrency(e.value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <ResponsiveContainer width="100%" height={100}>
-                    <PieChart>
-                      <Pie data={expenseBreakdown} cx="50%" cy="50%" innerRadius={28} outerRadius={46} dataKey="value" paddingAngle={3}>
-                        {expenseBreakdown.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                      </Pie>
-                      <Tooltip formatter={v=>formatCurrency(v)} contentStyle={{borderRadius:8,fontSize:11}}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
+            <Suspense fallback={<div className="card p-5 lg:col-span-2 h-[248px] flex items-center justify-center"><div className="w-6 h-6 border-2 border-brand-400 border-t-transparent rounded-full animate-spin"/></div>}>
+              <DashboardCharts trend={trend} expenseBreakdown={expenseBreakdown} />
+            </Suspense>
           </div>
         ) : (
           <div className="card overflow-hidden">
