@@ -62,6 +62,7 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPass, setShowPass] = useState(false)
+  const [showContact, setShowContact] = useState(false)
 
   async function handleSubmit(e) {
     e.preventDefault()
@@ -237,31 +238,61 @@ export default function Login() {
             </button>
           </form>
 
-          <div style={{
-            marginTop: 24,
-            padding: '14px 18px',
-            background: 'rgba(13,148,136,0.06)',
-            border: '1px solid rgba(13,148,136,0.18)',
-            borderRadius: 12,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
-          }}>
+          <div style={{ marginTop: 24, textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => setShowContact(v => !v)}
+              style={{
+                fontSize: 13, color: '#999', background: 'none', border: 'none',
+                cursor: 'pointer', fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                transition: 'color .15s',
+              }}
+              onMouseOver={e => e.currentTarget.style.color = '#0D9488'}
+              onMouseOut={e => e.currentTarget.style.color = '#999'}
+            >
+              Need access?
+              <span style={{
+                display: 'inline-block',
+                transform: showContact ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform .2s',
+                fontSize: 10,
+              }}>▾</span>
+            </button>
+
             <div style={{
-              width: 34, height: 34, flexShrink: 0,
-              background: 'rgba(13,148,136,0.12)',
-              borderRadius: 9,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 16,
-            }}>🔐</div>
-            <div>
-              <p style={{ fontSize: 12, fontWeight: 600, color: '#0D9488', marginBottom: 3 }}>Need access?</p>
-              <p style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>
-                Contact your administrator —{' '}
-                <a href="mailto:cashmyrent@gmail.com" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>cashmyrent@gmail.com</a>
-                {' '}or{' '}
-                <a href="tel:8217716904" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>+91 82177 16904</a>
-              </p>
+              overflow: 'hidden',
+              maxHeight: showContact ? 120 : 0,
+              opacity: showContact ? 1 : 0,
+              transition: 'max-height .25s ease, opacity .2s ease',
+              marginTop: showContact ? 10 : 0,
+            }}>
+              <div style={{
+                padding: '14px 18px',
+                background: 'rgba(13,148,136,0.06)',
+                border: '1px solid rgba(13,148,136,0.18)',
+                borderRadius: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                textAlign: 'left',
+              }}>
+                <div style={{
+                  width: 34, height: 34, flexShrink: 0,
+                  background: 'rgba(13,148,136,0.12)',
+                  borderRadius: 9,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 16,
+                }}>🔐</div>
+                <div>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: '#0D9488', marginBottom: 3 }}>Contact your administrator</p>
+                  <p style={{ fontSize: 12, color: '#555', lineHeight: 1.6 }}>
+                    <a href="mailto:cashmyrent@gmail.com" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>cashmyrent@gmail.com</a>
+                    {' · '}
+                    <a href="tel:8217716904" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>+91 82177 16904</a>
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </div>
