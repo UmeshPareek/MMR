@@ -62,36 +62,46 @@ export default function SuperAdmin() {
     if (!wizardData.company_name || !wizardData.admin_email || !wizardData.admin_password) return toast.error('Fill all required fields')
     setSaving(true)
     try {
-      // Create org
+      // 1. Create org
       const slug = wizardData.company_name.toLowerCase().replace(/[^a-z0-9]/g,'-').replace(/-+/g,'-')
       const { data: org, error: orgErr } = await supabase.from('organizations').insert({
         name: wizardData.company_name, slug,
-        contact_name: wizardData.contact_name, contact_email: wizardData.email,
-        contact_phone: wizardData.phone, city: wizardData.city,
+        contact_name: wizardData.contact_name || null,
+        contact_email: wizardData.email || null,
+        contact_phone: wizardData.phone || null,
+        city: wizardData.city || null,
+        website: wizardData.website || null,
         logo_url: wizardData.logo_url || null,
         plan_id: wizardData.plan_id,
         custom_price: wizardData.custom_price ? parseInt(wizardData.custom_price) : null,
-        status: 'active', onboarded_at: new Date().toISOString(),
+        status: 'active',
+        onboarded_at: new Date().toISOString(),
       }).select().single()
       if (orgErr) throw orgErr
 
-      // Create admin user
-      const { data: user, error: userErr } = await supabase.auth.admin.createUser({
-        email: wizardData.admin_email, password: wizardData.admin_password,
-        email_confirm: true, user_metadata: { full_name: wizardData.admin_name }
+      // 2. Create admin user via server-side API (has service role key)
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/create-user', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
+        body: JSON.stringify({
+          email: wizardData.admin_email,
+          password: wizardData.admin_password,
+          full_name: wizardData.admin_name,
+          role: 'super_admin',
+          org_id: org.id,
+        }),
       })
-      if (userErr) throw userErr
-
-      await supabase.from('profiles').upsert({
-        id: user.user.id, email: wizardData.admin_email,
-        full_name: wizardData.admin_name, role: 'super_admin',
-        org_id: org.id,
-      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Failed to create user')
 
       toast.success(`✓ ${wizardData.company_name} is live on CashMyRent!`)
       setWizardOpen(false)
       setStep(0)
-      setWizardData({ company_name:'', contact_name:'', email:'', phone:'', city:'', website:'', plan_id:'growth', custom_price:'', admin_email:'', admin_password:'', admin_name:'' })
+      setWizardData({ company_name:'', contact_name:'', email:'', phone:'', city:'', website:'', logo_url:'', plan_id:'growth', custom_price:'', admin_email:'', admin_password:'', admin_name:'' })
       loadAll()
     } catch(e) { toast.error(e.message) }
     setSaving(false)

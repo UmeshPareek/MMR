@@ -58,7 +58,7 @@ export default function Owners() {
     setSaving(true)
     const { error } = editOwner
       ? await supabase.from('owners').update({ ...form, updated_at: new Date() }).eq('id', editOwner.id)
-      : await supabase.from('owners').insert({ ...form, created_by: profile?.id })
+      : await supabase.from('owners').insert({ ...form, created_by: profile?.id, org_id: profile?.org_id })
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success(editOwner ? 'Owner updated' : 'Owner added')

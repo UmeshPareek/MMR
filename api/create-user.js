@@ -23,7 +23,7 @@ export default async function handler(req, res) {
     return res.status(403).json({ error: 'Insufficient permissions' })
   }
 
-  const { email, password, full_name, role } = req.body
+  const { email, password, full_name, role, org_id } = req.body
   if (!email || !password) return res.status(400).json({ error: 'Email and password required' })
 
   // Block non-platform-admins from creating super_admin accounts
@@ -45,12 +45,20 @@ export default async function handler(req, res) {
   })
   if (error) return res.status(400).json({ error: error.message })
 
+  // Resolve org_id: use provided value, else inherit from caller's profile
+  let resolvedOrgId = org_id || null
+  if (!resolvedOrgId) {
+    const { data: cp } = await adminClient.from('profiles').select('org_id').eq('id', caller.id).single()
+    resolvedOrgId = cp?.org_id || null
+  }
+
   // Insert profile
   const { error: profileError } = await adminClient.from('profiles').upsert({
     id: data.user.id,
     email,
     full_name: full_name || '',
     role: role || 'team',
+    org_id: resolvedOrgId,
   })
   if (profileError) return res.status(500).json({ error: profileError.message })
 

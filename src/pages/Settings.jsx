@@ -34,7 +34,7 @@ export default function Settings() {
   async function loadAll() {
     setLoading(true)
     const [{ data: s }, { data: b }, { data: g }, { data: u }] = await Promise.all([
-      supabase.from('master_settings').select('*'),
+      supabase.from('master_settings').select('*').eq('org_id', profile.org_id),
       supabase.from('buildings').select('id, name, is_active, electricity_reading_enabled, water_reading_enabled').order('name'),
       supabase.from('expense_groups').select('*').eq('is_active', true).order('name'),
       profile?.org_id
@@ -67,6 +67,7 @@ export default function Settings() {
           password: uForm.password,
           full_name: uForm.full_name,
           role: uForm.role,
+          org_id: profile.org_id,
         }),
       })
       const result = await res.json()
@@ -98,7 +99,7 @@ export default function Settings() {
 
   async function saveSetting(key, value) {
     const { error } = await supabase.from('master_settings')
-      .upsert({ setting_key: key, setting_value: String(value), updated_by: profile?.id, updated_at: new Date().toISOString() }, { onConflict: 'setting_key' })
+      .upsert({ org_id: profile.org_id, setting_key: key, setting_value: String(value), updated_by: profile?.id, updated_at: new Date().toISOString() }, { onConflict: 'org_id,setting_key' })
     if (error) return toast.error(error.message)
     toast.success('Setting saved ✓')
     setSettings(p => ({ ...p, [key]: String(value) }))
