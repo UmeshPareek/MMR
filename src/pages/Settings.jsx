@@ -116,7 +116,7 @@ export default function Settings() {
   async function saveGroup() {
     if (!groupForm.name) return toast.error('Name required')
     setSaving(true)
-    const payload = { ...groupForm, created_by: profile?.id }
+    const payload = { ...groupForm, created_by: profile?.id, org_id: profile?.org_id }
     const { error } = editGroup
       ? await supabase.from('expense_groups').update(payload).eq('id', editGroup.id)
       : await supabase.from('expense_groups').insert(payload)

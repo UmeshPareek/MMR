@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, FLAT_STATUSES } from '@/utils/helpers'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog, SearchInput } from '@/components/ui'
 import { Building2, Plus, ChevronDown, ChevronRight, Edit2, Trash2, Home, Upload, Download, Lock, AlertTriangle, ExternalLink } from 'lucide-react'
-import * as XLSX from 'xlsx'
+// xlsx loaded dynamically in downloadBulkTemplate and handleBulkFile
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 import { checkBuildingLimit } from '@/utils/orgLimits'
@@ -141,6 +141,7 @@ export default function Buildings() {
       lease_start_date: bForm.lease_start_date || null,
       lease_end_date: bForm.lease_end_date || null,
       created_by: profile?.id,
+      org_id: profile?.org_id,
     }
     if (!payload.owner_id) delete payload.owner_id
 
@@ -213,7 +214,8 @@ export default function Buildings() {
   }
 
 
-  function downloadBulkTemplate() {
+  async function downloadBulkTemplate() {
+    const XLSX = await import('xlsx')
     const ws = XLSX.utils.json_to_sheet([
       { building_name: 'Green Valley', building_address: '12 MG Road, Bangalore', area: 'Koramangala', door_number: 'A-101', floor_number: 1, flat_type: '1BHK', monthly_rent: 12000, status: 'vacant' },
       { building_name: 'Green Valley', building_address: '12 MG Road, Bangalore', area: 'Koramangala', door_number: 'A-102', floor_number: 1, flat_type: '2BHK', monthly_rent: 18000, status: 'vacant' },
@@ -228,6 +230,7 @@ export default function Buildings() {
     const file = e.target.files?.[0]
     if (!file) return
     try {
+      const XLSX = await import('xlsx')
       const reader = new FileReader()
       reader.onload = (ev) => {
         const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array' })
@@ -272,7 +275,7 @@ export default function Buildings() {
           buildingId = existing.id
         } else {
           const { data: nb, error } = await supabase.from('buildings')
-            .insert({ name, address: bData.address, area: bData.area, city: 'Bangalore', created_by: profile?.id })
+            .insert({ name, address: bData.address, area: bData.area, city: 'Bangalore', created_by: profile?.id, org_id: profile?.org_id })
             .select().single()
           if (error) throw error
           buildingId = nb.id
