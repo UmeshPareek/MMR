@@ -237,10 +237,33 @@ export default function Login() {
             </button>
           </form>
 
-          <p style={{ marginTop: 24, textAlign: 'center', fontSize: 13, color: '#AAA' }}>
-            Need access?{' '}
-            <span style={{color:'#0D9488',fontWeight:500}}>cashmyrent@gmail.com</span> · <a href="tel:8217716904" style={{color:'#0D9488',fontWeight:500,textDecoration:'none'}}>8217716904</a>
-          </p>
+          <div style={{
+            marginTop: 24,
+            padding: '14px 18px',
+            background: 'rgba(13,148,136,0.06)',
+            border: '1px solid rgba(13,148,136,0.18)',
+            borderRadius: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <div style={{
+              width: 34, height: 34, flexShrink: 0,
+              background: 'rgba(13,148,136,0.12)',
+              borderRadius: 9,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 16,
+            }}>🔐</div>
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 600, color: '#0D9488', marginBottom: 3 }}>Need access?</p>
+              <p style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>
+                Contact your administrator —{' '}
+                <a href="mailto:cashmyrent@gmail.com" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>cashmyrent@gmail.com</a>
+                {' '}or{' '}
+                <a href="tel:8217716904" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>+91 82177 16904</a>
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
