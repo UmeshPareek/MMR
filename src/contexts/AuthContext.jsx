@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import { invalidate } from '@/lib/cache'
 import toast from 'react-hot-toast'
 
 const AuthContext = createContext({})
@@ -27,7 +28,6 @@ export function AuthProvider({ children }) {
         .single()
 
       if (error || !profileData) {
-        console.error('Profile fetch error:', error)
         setLoading(false)
         profileLoading.current = false
         return
@@ -41,13 +41,13 @@ export function AuthProvider({ children }) {
           .select('id, name, logo_url')
           .eq('id', profileData.org_id)
           .single()
-        if (orgError) console.error('Org fetch error:', orgError.message, orgError.code, orgError.details)
+        if (orgError) { /* org load failed — UI shows null state */ }
         setOrg(orgData || null)
       } else {
         setOrg(null)
       }
-    } catch (e) {
-      console.error('fetchProfile exception:', e)
+    } catch {
+      // silently handled — auth state reverts to null
     } finally {
       profileLoading.current = false
       setLoading(false)
@@ -57,6 +57,7 @@ export function AuthProvider({ children }) {
   const signOut = useCallback(async () => {
     clearTimeout(inactivityTimer.current)
     clearTimeout(warningTimer.current)
+    invalidate()
     setProfile(null)
     setOrg(null)
     setUser(null)

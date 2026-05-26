@@ -89,7 +89,7 @@ export default function SecurityDeposits() {
       .order('deposit_date', { ascending: false });
     if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
     const { data, error } = await q;
-    if (error) console.error(error);
+    if (error) toast.error('Failed to load deposits');
     setTenantDeposits(data || []);
   }
 
@@ -101,7 +101,7 @@ export default function SecurityDeposits() {
       .order('payment_date', { ascending: false });
     if (selectedBuilding !== 'all') q = q.eq('building_id', selectedBuilding);
     const { data, error } = await q;
-    if (error) console.error(error);
+    if (error) toast.error('Failed to load owner payments');
     setOwnerDeposits(data || []);
   }
 
@@ -134,6 +134,7 @@ export default function SecurityDeposits() {
         transaction_ref: tForm.transaction_ref || null,
         notes: tForm.notes || null,
         collected_by: profile?.id,
+        org_id: profile?.org_id,
       });
       if (error) throw error;
 
@@ -170,6 +171,7 @@ export default function SecurityDeposits() {
         transaction_ref: oForm.transaction_ref || null,
         notes: oForm.notes || null,
         paid_by: profile?.id,
+        org_id: profile?.org_id,
       });
       if (error) throw error;
       // Update building security deposit field

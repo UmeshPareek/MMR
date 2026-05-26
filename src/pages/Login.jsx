@@ -287,9 +287,7 @@ export default function Login() {
                 <div>
                   <p style={{ fontSize: 12, fontWeight: 600, color: '#0D9488', marginBottom: 3 }}>Contact your administrator</p>
                   <p style={{ fontSize: 12, color: '#555', lineHeight: 1.6 }}>
-                    <a href="mailto:cashmyrent@gmail.com" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>cashmyrent@gmail.com</a>
-                    {' · '}
-                    <a href="tel:8217716904" style={{ color: '#0D9488', fontWeight: 500, textDecoration: 'none' }}>+91 82177 16904</a>
+                    Ask your property manager to reset your access.
                   </p>
                 </div>
               </div>

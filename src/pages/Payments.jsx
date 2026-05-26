@@ -280,6 +280,7 @@ export default function Payments() {
         cash_photo_url: form.cash_photo_url || null,
         payer_photo_url: form.payer_photo_url || null,
         collected_by: profile?.id,
+        org_id: profile?.org_id,
       });
       if (error) throw error;
       toast.success(`Payment logged — ${activeFlat.tenant.full_name}`);

@@ -63,7 +63,7 @@ export default function Tenants() {
     let q = supabase.from('tenants').select('*').order('full_name')
     if (statusFilter !== 'all') q = q.eq('status', statusFilter)
     const { data, error } = await q
-    if (error) { console.error('Tenants error:', error); setLoading(false); return }
+    if (error) { toast.error('Failed to load tenants'); setLoading(false); return }
 
     const flatIds = [...new Set((data || []).map(t => t.flat_id).filter(Boolean))]
     const buildingIds = [...new Set((data || []).map(t => t.building_id).filter(Boolean))]
@@ -108,7 +108,7 @@ export default function Tenants() {
   async function save() {
     if (!form.full_name || !form.phone) return toast.error('Name and phone are required')
     setSaving(true)
-    const payload = { ...form, monthly_rent: parseFloat(form.monthly_rent) || 0, security_deposit_paid: parseFloat(form.security_deposit_paid) || 0, security_deposit_months: parseInt(form.security_deposit_months) || 2, created_by: profile?.id }
+    const payload = { ...form, monthly_rent: parseFloat(form.monthly_rent) || 0, security_deposit_paid: parseFloat(form.security_deposit_paid) || 0, security_deposit_months: parseInt(form.security_deposit_months) || 2, created_by: profile?.id, org_id: profile?.org_id }
     if (!payload.flat_id) delete payload.flat_id
     if (!payload.building_id) delete payload.building_id
 
@@ -129,6 +129,7 @@ export default function Tenants() {
             amount_expected: parseFloat(form.security_deposit_paid), amount_paid: parseFloat(form.security_deposit_paid),
             payment_date: form.move_in_date || new Date().toISOString().slice(0, 10),
             status: 'collected', notes: 'Auto-created from tenant onboarding',
+            org_id: profile?.org_id,
           }).then(({ error: de }) => { if (!de) toast.success('Security deposit record created automatically') })
         }
       }

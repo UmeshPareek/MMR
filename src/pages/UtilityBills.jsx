@@ -105,7 +105,8 @@ export default function UtilityBills() {
       is_common_area: rForm.is_common_area,
       notes: rForm.notes,
       payment_collected: rForm.payment_collected,
-      created_by: profile?.id
+      created_by: profile?.id,
+      org_id: profile?.org_id,
     }
     const { error } = editReading
       ? await supabase.from('meter_readings').update(payload).eq('id', editReading.id)
@@ -121,7 +122,7 @@ export default function UtilityBills() {
   async function saveBill() {
     if (!bForm.building_id || !bForm.amount) return toast.error('Building and amount required')
     setSaving(true)
-    const { error } = await supabase.from('utility_bills').insert({ ...bForm, amount: parseFloat(bForm.amount), paid_by: profile?.id })
+    const { error } = await supabase.from('utility_bills').insert({ ...bForm, amount: parseFloat(bForm.amount), paid_by: profile?.id, org_id: profile?.org_id })
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Bill recorded ✓')

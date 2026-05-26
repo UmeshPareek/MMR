@@ -98,8 +98,7 @@ export default function CheckOut() {
         runaways: runaways.length,
         depositHeld: depositTotal,
       })
-    } catch(e) {
-      console.error('CheckOut loadAll error:', e)
+    } catch {
       toast.error('Failed to load tenants')
     }
     setLoading(false)
@@ -130,14 +129,17 @@ export default function CheckOut() {
 
   function deleteCheckin(t) {
     setConfirmDialog({
-      title: 'Delete Record?',
-      message: `Permanently delete ${t.full_name}'s record? Their flat will be restored to vacant. This cannot be undone.`,
+      title: 'Remove Tenant Record?',
+      message: `Mark ${t.full_name} as vacated? Their flat will be restored to vacant. The record is preserved for audit.`,
       danger: true,
       onConfirm: async () => {
-        const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+        const today = new Date().toISOString().slice(0, 10)
+        const { error } = await supabase.from('tenants')
+          .update({ status: 'vacated', move_out_date: today, notes: 'Removed via checkout page' })
+          .eq('id', t.id)
         if (error) { toast.error(error.message); return }
-        if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
-        toast.success('Tenant record deleted ✓')
+        if (t.flat_id) await supabase.from('flats').update({ status: 'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+        toast.success('Tenant marked vacated — record preserved for audit ✓')
         setConfirmDialog(null)
         loadAll()
       }
@@ -202,6 +204,7 @@ export default function CheckOut() {
       deposit_type: 'refund',
       notes: `EXIT SETTLEMENT | Deposit held: ₹${(selected.security_deposit_paid||0).toLocaleString('en-IN')} | Deductions: ₹${deductions.toLocaleString('en-IN')} | Net: ${netRefund >= 0 ? 'Refund' : 'Loss'} ₹${Math.abs(netRefund).toLocaleString('en-IN')} | ${form.notes || ''}`.trim(),
       collected_by: null,
+      org_id: selected.org_id,
     })
 
     setSaving(false)

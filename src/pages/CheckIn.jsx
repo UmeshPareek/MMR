@@ -55,20 +55,23 @@ export default function CheckIn() {
       ;(allBuildings||[]).forEach(b => { buildingMap[b.id] = b })
       setBuildings(b || [])
       setActiveTenants((t||[]).map(t => ({ ...t, flat: flatMap[t.flat_id]||null, building: buildingMap[t.building_id]||null })))
-    } catch(e) { console.error(e) }
+    } catch { /* load failed silently */ }
     setLoading(false)
   }
 
   function deleteCheckin(t) {
     setConfirmDialog({
-      title: 'Delete Check-in?',
-      message: `Delete ${t.full_name}'s check-in record? Their flat will be restored to vacant. This cannot be undone.`,
+      title: 'Cancel Check-in?',
+      message: `Cancel ${t.full_name}'s check-in? Their flat will be restored to vacant. The tenant record is kept for audit purposes.`,
       danger: true,
       onConfirm: async () => {
-        const { error } = await supabase.from('tenants').delete().eq('id', t.id)
+        const today = new Date().toISOString().slice(0, 10)
+        const { error } = await supabase.from('tenants')
+          .update({ status: 'vacated', move_out_date: today, notes: 'Check-in cancelled' })
+          .eq('id', t.id)
         if (error) { toast.error(error.message); return }
-        if (t.flat_id) await supabase.from('flats').update({ status:'vacant', current_tenant_id: null }).eq('id', t.flat_id)
-        toast.success('Check-in deleted ✓')
+        if (t.flat_id) await supabase.from('flats').update({ status: 'vacant', current_tenant_id: null }).eq('id', t.flat_id)
+        toast.success('Check-in cancelled — record preserved for audit ✓')
         setConfirmDialog(null)
         loadAll()
       }
@@ -99,6 +102,7 @@ export default function CheckIn() {
       security_deposit_paid: parseFloat(form.security_deposit_paid) || 0,
       security_deposit_months: 2,
       status: 'active',
+      org_id: profile?.org_id,
     }
     if (form.email) payload.email = form.email
     if (form.id_type) payload.id_type = form.id_type
@@ -114,9 +118,10 @@ export default function CheckIn() {
         amount: parseFloat(form.security_deposit_paid),
         deposit_type: 'collection',
         deposit_date: form.move_in_date,
-        notes: `Check-in ${form.move_in_date}`
+        notes: `Check-in ${form.move_in_date}`,
+        org_id: profile?.org_id,
       })
-      if (sdError) console.error('Security deposit record failed:', sdError.message)
+      if (sdError) toast.error('Security deposit record failed — contact support')
     }
     setSaving(false)
     toast.success(`${form.full_name} checked in ✓`)

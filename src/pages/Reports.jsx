@@ -83,8 +83,7 @@ export default function Reports() {
       result.sort((a, b) => a.building.localeCompare(b.building) || a.doorNo.localeCompare(b.doorNo))
       setRows(result)
     } catch (e) {
-      console.error('Report error:', e)
-      setError(String(e.message || 'Failed to load'))
+      setError('Failed to load report data')
     } finally {
       setLoading(false)
     }
@@ -230,8 +229,7 @@ export default function Reports() {
       a.href = url; a.download = `rent-report-${selectedMonth}.xlsx`; a.click()
       URL.revokeObjectURL(url)
       toast.success('Excel exported!')
-    } catch (e) {
-      console.error(e)
+    } catch {
       toast.error('Excel export failed')
     }
   }
@@ -378,8 +376,7 @@ export default function Reports() {
 
       doc.save(`rent-report-${selectedMonth}.pdf`)
       toast.success('PDF exported!')
-    } catch (e) {
-      console.error(e)
+    } catch {
       toast.error('PDF export failed')
     }
   }

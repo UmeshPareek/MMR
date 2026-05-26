@@ -11,7 +11,7 @@ const PAYMENT_MODES = ['cash', 'upi', 'bank_transfer', 'other']
 const defaultStaffForm = () => ({ full_name: '', phone: '', email: '', role: '', assigned_building_id: '', monthly_salary: '', join_date: '', id_type: '', id_number: '', bank_name: '', bank_account: '', bank_ifsc: '', status: 'active', notes: '' })
 
 export default function Staff() {
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const [staff, setStaff] = useState([])
   const [buildings, setBuildings] = useState([])
   const [salaries, setSalaries] = useState([])
@@ -44,6 +44,7 @@ export default function Staff() {
   const [reimbursements, setReimbursements] = useState([])
   const [reimbModal, setReimbModal] = useState(false)
   const [rForm, setRForm] = useState({ staff_id:'', amount:'', description:'', date: new Date().toISOString().slice(0,10), payment_mode:'cash' })
+  const [confirmDialog, setConfirmDialog] = useState(null)
   const [quickModal, setQuickModal] = useState(false)
   const [quickForm, setQuickForm] = useState({full_name:'',phone:'',role:'',monthly_salary:'',assigned_building_id:''})
   const channelRef = useRef(null)
@@ -108,7 +109,8 @@ export default function Staff() {
       staff_id: rForm.staff_id, amount: parseFloat(rForm.amount),
       advance_date: rForm.date, advance_type: 'reimbursement',
       notes: rForm.description, recovered: true,
-      payment_mode: rForm.payment_mode
+      payment_mode: rForm.payment_mode,
+      org_id: profile?.org_id,
     })
     setSaving(false)
     if (error) return toast.error(error.message)
@@ -162,7 +164,7 @@ export default function Staff() {
   async function saveQuickStaff() {
     if (!quickForm.full_name || !quickForm.monthly_salary) return toast.error('Name and salary required')
     setSaving(true)
-    const payload = {...quickForm, status:'active', monthly_salary: parseFloat(quickForm.monthly_salary)||0, created_by: profile?.id}
+    const payload = {...quickForm, status:'active', monthly_salary: parseFloat(quickForm.monthly_salary)||0, created_by: profile?.id, org_id: profile?.org_id}
     if (!payload.assigned_building_id) delete payload.assigned_building_id
     const { error } = await supabase.from('staff').insert(payload)
     setSaving(false)
@@ -176,7 +178,7 @@ export default function Staff() {
   async function saveStaff() {
     if (!staffForm.full_name) return toast.error('Name is required')
     setSaving(true)
-    const payload = { ...staffForm, monthly_salary: parseFloat(staffForm.monthly_salary) || 0, created_by: profile?.id }
+    const payload = { ...staffForm, monthly_salary: parseFloat(staffForm.monthly_salary) || 0, created_by: profile?.id, org_id: profile?.org_id }
     if (!payload.assigned_building_id) delete payload.assigned_building_id
     const { error } = editStaff ? await supabase.from('staff').update(payload).eq('id', editStaff.id) : await supabase.from('staff').insert(payload)
     setSaving(false)
@@ -201,6 +203,7 @@ export default function Staff() {
       payment_mode: salaryForm.payment_mode,
       notes: salaryForm.notes || null,
       paid_by: profile?.id,
+      org_id: profile?.org_id,
     })
     // Mark advances as recovered
     if (!error && advDeduction > 0) {
@@ -216,6 +219,7 @@ export default function Staff() {
   }
 
   async function deleteStaff(id) {
+    if (!isAdmin) return toast.error('Admin access required')
     const { error } = await supabase.from('staff').delete().eq('id', id)
     if (error) return toast.error(error.message)
     toast.success('Staff permanently deleted ✓'); setDeleteStaffId(null); loadStaff()
@@ -292,26 +296,42 @@ export default function Staff() {
     setEditAdvanceModal(false); setEditAdvanceRecord(null); loadAdvances(); loadIncentives(); loadReimbursements(); if (tab === 'payroll') loadAll()
   }
 
-  async function deleteSalary(id) {
-    if (!window.confirm('Delete this salary record?')) return
-    const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
-    if (error) return toast.error(error.message)
-    toast.success('Salary record deleted')
-    loadSalaries()
+  function deleteSalary(id) {
+    if (!isAdmin) return toast.error('Admin access required')
+    setConfirmDialog({
+      title: 'Delete Salary Record?',
+      message: 'Delete this salary record? This cannot be undone.',
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
+        if (error) { toast.error(error.message); return }
+        toast.success('Salary record deleted')
+        setConfirmDialog(null)
+        loadSalaries()
+      },
+    })
   }
 
-  async function deleteAdvance(id) {
-    if (!window.confirm('Delete this advance?')) return
-    const { error } = await supabase.from('staff_advances').delete().eq('id', id)
-    if (error) return toast.error(error.message)
-    toast.success('Advance deleted')
-    loadAdvances()
+  function deleteAdvance(id) {
+    if (!isAdmin) return toast.error('Admin access required')
+    setConfirmDialog({
+      title: 'Delete Advance Record?',
+      message: 'Delete this advance/reimbursement record? This cannot be undone.',
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('staff_advances').delete().eq('id', id)
+        if (error) { toast.error(error.message); return }
+        toast.success('Record deleted')
+        setConfirmDialog(null)
+        loadAdvances()
+      },
+    })
   }
 
   async function saveAdvance() {
     if (!advanceForm.staff_id || !advanceForm.amount) return toast.error('Fill required fields')
     setSaving(true)
-    const { error } = await supabase.from('staff_advances').insert({ ...advanceForm, amount: parseFloat(advanceForm.amount), recovered: false })
+    const { error } = await supabase.from('staff_advances').insert({ ...advanceForm, amount: parseFloat(advanceForm.amount), recovered: false, org_id: profile?.org_id })
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Advance recorded ✓')
@@ -1113,6 +1133,15 @@ export default function Staff() {
           <button className="btn-primary" onClick={saveEditAdvance}>Save Changes</button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog?.onConfirm}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        danger={confirmDialog?.danger}
+      />
 
       {/* DELETE STAFF CONFIRM */}
       {deleteStaffId && (

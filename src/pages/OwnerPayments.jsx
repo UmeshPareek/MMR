@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, fmtMonth, currentMonth, exportToExcel } from '@/utils/helpers'
-import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge } from '@/components/ui'
+import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, ConfirmDialog } from '@/components/ui'
 import { Banknote, Plus, Download, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
@@ -21,7 +21,7 @@ const defaultForm = () => ({
 })
 
 export default function OwnerPayments() {
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const channelRef = useRef(null)
   const [payments, setPayments] = useState([])
   const [owners, setOwners] = useState([])
@@ -33,6 +33,7 @@ export default function OwnerPayments() {
   const [editItem, setEditItem] = useState(null)
   const [form, setForm] = useState(defaultForm())
   const [saving, setSaving] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState(null)
 
   useEffect(() => {
     load(); loadOwners(); loadBuildings()
@@ -94,7 +95,7 @@ export default function OwnerPayments() {
   async function save() {
     if (!form.building_id || !form.amount) return toast.error('Building and amount are required')
     setSaving(true)
-    const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id }
+    const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id, org_id: profile?.org_id }
     if (!payload.owner_id) delete payload.owner_id
     const { error } = editItem
       ? await supabase.from('owner_payments').update(payload).eq('id', editItem.id)
@@ -105,12 +106,20 @@ export default function OwnerPayments() {
     setModal(false); load()
   }
 
-  async function deletePayment(p) {
-    if (!window.confirm(`Delete payment of ${formatCurrency(p.amount)} to ${p.owner?.name || 'owner'}?`)) return
-    const { error } = await supabase.from('owner_payments').delete().eq('id', p.id)
-    if (error) return toast.error(error.message)
-    toast.success('Deleted')
-    load()
+  function deletePayment(p) {
+    if (!isAdmin) return toast.error('Admin access required')
+    setConfirmDialog({
+      title: 'Delete Owner Payment?',
+      message: `Delete payment of ${formatCurrency(p.amount)} to ${p.owner?.name || 'owner'}? This cannot be undone.`,
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('owner_payments').delete().eq('id', p.id)
+        if (error) { toast.error(error.message); return }
+        toast.success('Deleted')
+        setConfirmDialog(null)
+        load()
+      },
+    })
   }
 
   function handleExport() {
@@ -248,6 +257,15 @@ export default function OwnerPayments() {
           <button className="btn-primary" onClick={save} disabled={saving}>{saving ? <Spinner size={16} /> : editItem ? 'Update Payment' : 'Record Payment'}</button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog?.onConfirm}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        danger={confirmDialog?.danger}
+      />
     </div>
   )
 }

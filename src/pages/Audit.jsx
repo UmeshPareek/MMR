@@ -799,7 +799,7 @@ export default function Audit() {
         totalCollected: tenantRentStatus.reduce((s,t)=>s+t.paid,0),
         totalVacantLoss: vacantFlats.reduce((s,f)=>s+Number(f.monthly_rent||0),0),
       })
-    } catch(e) { console.error(e) }
+    } catch { /* audit load failed silently */ }
     finally { setLoadingProp(false) }
   }
 

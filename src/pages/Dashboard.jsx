@@ -81,7 +81,7 @@ export default function Dashboard() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'owner_payments' }, debouncedLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tenants' }, debouncedLoad)
       .subscribe((status, err) => {
-        if (status === 'CHANNEL_ERROR') console.error('Dashboard channel error:', err)
+        if (status === 'CHANNEL_ERROR') { /* realtime error — polling fallback still works */ }
       })
     return () => { if (channelRef.current) supabase.removeChannel(channelRef.current) }
   }, [month]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -124,7 +124,6 @@ export default function Dashboard() {
 
       const errors = [e1,e2,e3,e4,e5,e6,e7,e8,e9,e10,e11,e12].filter(Boolean)
       if (errors.length > 0) {
-        console.error('Dashboard load errors:', errors)
         toast.error('Some data failed to load — refresh to retry')
       }
 
@@ -202,8 +201,7 @@ export default function Dashboard() {
       )
       setTrend(trendData)
     } catch(e) {
-      console.error('Dashboard load failed:', e)
-      toast.error('Dashboard failed to load: ' + (e.message || 'Unknown error'))
+      toast.error('Dashboard failed to load — please refresh')
     }
     setLoading(false)
   }

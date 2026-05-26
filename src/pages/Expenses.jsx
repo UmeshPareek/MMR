@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth, exportToExcel } from '@/utils/helpers'
-import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, SearchInput } from '@/components/ui'
+import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, SearchInput, ConfirmDialog } from '@/components/ui'
 import { TrendingDown, Plus, Download, Filter, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
@@ -32,7 +32,7 @@ const defaultForm = () => ({ category:'misc', description:'', amount:'', payment
 const defaultUForm = () => ({ building_id:'', utility_type:'electricity', vendor:'', bill_number:'', amount:'', payment_mode:'online', bill_date:'', payment_date:new Date().toISOString().split('T')[0], for_month:currentMonth(), transaction_ref:'', notes:'' })
 
 export default function Expenses() {
-  const { profile } = useAuth()
+  const { profile, isAdmin } = useAuth()
   const channelRef = useRef(null)
   const [expenses, setExpenses] = useState([])
   const [utilityBills, setUtilityBills] = useState([])
@@ -53,6 +53,7 @@ export default function Expenses() {
   const [saving, setSaving] = useState(false)
   const [chartData, setChartData] = useState([])
   const [quickRow, setQuickRow] = useState({ category:'misc', description:'', amount:'', mode:'upi', building_id:'', date:new Date().toISOString().slice(0,10) })
+  const [confirmDialog, setConfirmDialog] = useState(null)
 
   useEffect(() => {
     loadExpenses(); loadBuildings()
@@ -103,7 +104,7 @@ export default function Expenses() {
   async function save() {
     if (!form.description || !form.amount) return toast.error('Description and amount required')
     setSaving(true)
-    const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id }
+    const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id, org_id: profile?.org_id }
     if (!payload.building_id) delete payload.building_id
     const { error } = editItem
       ? await supabase.from('expenses').update(payload).eq('id', editItem.id)
@@ -114,18 +115,26 @@ export default function Expenses() {
     setModal(false); loadExpenses()
   }
 
-  async function deleteExpense(e) {
-    if (!window.confirm(`Delete expense "${e.description}" of ${formatCurrency(e.amount)}?`)) return
-    const { error } = await supabase.from('expenses').delete().eq('id', e.id)
-    if (error) return toast.error(error.message)
-    toast.success('Deleted')
-    loadExpenses()
+  function deleteExpense(e) {
+    if (!isAdmin) return toast.error('Admin access required')
+    setConfirmDialog({
+      title: 'Delete Expense?',
+      message: `Delete "${e.description}" of ${formatCurrency(e.amount)}? This cannot be undone.`,
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('expenses').delete().eq('id', e.id)
+        if (error) { toast.error(error.message); return }
+        toast.success('Deleted')
+        setConfirmDialog(null)
+        loadExpenses()
+      },
+    })
   }
 
   async function saveUtility() {
     if (!uForm.building_id || !uForm.amount) return toast.error('Building and amount required')
     setSaving(true)
-    const payload = { ...uForm, amount: parseFloat(uForm.amount), paid_by: profile?.id }
+    const payload = { ...uForm, amount: parseFloat(uForm.amount), paid_by: profile?.id, org_id: profile?.org_id }
     const { error } = editUtilItem
       ? await supabase.from('utility_bills').update(payload).eq('id', editUtilItem.id)
       : await supabase.from('utility_bills').insert(payload)
@@ -135,17 +144,25 @@ export default function Expenses() {
     setUtilityModal(false); loadExpenses()
   }
 
-  async function deleteUtility(e) {
-    if (!window.confirm(`Delete utility bill for ${e.building?.name} of ${formatCurrency(e.amount)}?`)) return
-    const { error } = await supabase.from('utility_bills').delete().eq('id', e.id)
-    if (error) return toast.error(error.message)
-    toast.success('Deleted')
-    loadExpenses()
+  function deleteUtility(e) {
+    if (!isAdmin) return toast.error('Admin access required')
+    setConfirmDialog({
+      title: 'Delete Utility Bill?',
+      message: `Delete utility bill for ${e.building?.name || 'this building'} of ${formatCurrency(e.amount)}? This cannot be undone.`,
+      danger: true,
+      onConfirm: async () => {
+        const { error } = await supabase.from('utility_bills').delete().eq('id', e.id)
+        if (error) { toast.error(error.message); return }
+        toast.success('Deleted')
+        setConfirmDialog(null)
+        loadExpenses()
+      },
+    })
   }
 
   async function quickSave(row) {
     if (!row.description || !row.amount) return toast.error('Description and amount required')
-    const { error } = await supabase.from('expenses').insert({ category:row.category, description:row.description, amount:parseFloat(row.amount), payment_mode:row.mode, expense_date:row.date||new Date().toISOString().slice(0,10), building_id:row.building_id||null, paid_by:profile?.id })
+    const { error } = await supabase.from('expenses').insert({ category:row.category, description:row.description, amount:parseFloat(row.amount), payment_mode:row.mode, expense_date:row.date||new Date().toISOString().slice(0,10), building_id:row.building_id||null, paid_by:profile?.id, org_id:profile?.org_id })
     if (error) return toast.error(error.message)
     toast.success('Added ✓')
     setQuickRow({ category:'misc', description:'', amount:'', mode:'upi', building_id:'', date:new Date().toISOString().slice(0,10) })
@@ -155,7 +172,7 @@ export default function Expenses() {
   async function bulkSaveUtility() {
     if (!bulkForm.building_id || !bulkForm.amount) return toast.error('Building and amount required')
     setSaving(true)
-    const { error } = await supabase.from('utility_bills').insert({ ...bulkForm, amount:parseFloat(bulkForm.amount), for_month:bulkForm.for_month||new Date().toISOString().slice(0,7), payment_date:new Date().toISOString().slice(0,10), paid_by:profile?.id })
+    const { error } = await supabase.from('utility_bills').insert({ ...bulkForm, amount:parseFloat(bulkForm.amount), for_month:bulkForm.for_month||new Date().toISOString().slice(0,7), payment_date:new Date().toISOString().slice(0,10), paid_by:profile?.id, org_id:profile?.org_id })
     setSaving(false)
     if (error) return toast.error(error.message)
     toast.success('Utility bill recorded ✓')
@@ -467,6 +484,15 @@ export default function Expenses() {
           <button className="btn-primary" onClick={bulkSaveUtility} disabled={saving}>{saving ? <Spinner size={16}/> : 'Record Bill'}</button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={confirmDialog?.onConfirm}
+        title={confirmDialog?.title || ''}
+        message={confirmDialog?.message || ''}
+        danger={confirmDialog?.danger}
+      />
     </div>
   )
 }

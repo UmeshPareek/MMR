@@ -86,8 +86,8 @@ export default function DailyReconciliation() {
           .eq('date', selectedDate);
         setConfirmations(confs || []);
       }
-    } catch (e) {
-      console.error(e);
+    } catch {
+      toast.error('Failed to load — please refresh')
     } finally {
       setLoading(false);
     }
