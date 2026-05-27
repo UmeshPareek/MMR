@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import toast from 'react-hot-toast'
 
@@ -238,7 +238,16 @@ export default function Login() {
             </button>
           </form>
 
-          <div style={{ marginTop: 24, textAlign: 'center' }}>
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <p style={{ fontSize: 13, color: '#888' }}>
+              New to CashMyRent?{' '}
+              <Link to="/signup" style={{ color: '#0D9488', fontWeight: 600, textDecoration: 'none' }}>
+                Start free trial
+              </Link>
+            </p>
+          </div>
+
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
             <button
               type="button"
               onClick={() => setShowContact(v => !v)}

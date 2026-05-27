@@ -10,6 +10,7 @@ import Layout from '@/components/layout/Layout'
 
 // Lazy-load every page — each becomes its own JS chunk
 const Login              = lazy(() => import('@/pages/Login'))
+const Signup             = lazy(() => import('@/pages/Signup'))
 const Dashboard          = lazy(() => import('@/pages/Dashboard'))
 const TeamHome           = lazy(() => import('@/pages/TeamHome'))
 const Buildings          = lazy(() => import('@/pages/Buildings'))
@@ -62,6 +63,9 @@ function AppRoutes() {
       <Routes>
         <Route path="/login" element={
           user ? <Navigate to="/" replace /> : <Login />
+        } />
+        <Route path="/signup" element={
+          user ? <Navigate to="/" replace /> : <Signup />
         } />
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
-import { Menu, Search } from 'lucide-react'
+import { Outlet, useLocation, Link } from 'react-router-dom'
+import { Menu, Search, Zap } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import Sidebar from './Sidebar'
 import BottomNav from './BottomNav'
 import CommandPalette from '@/components/CommandPalette'
+import { useAuth } from '@/contexts/AuthContext'
 
 const TITLES = {
   '/':                    'Dashboard',
@@ -28,11 +29,43 @@ const TITLES = {
   '/settings':            'Settings',
 }
 
+function TrialBanner({ org }) {
+  if (!org || org.status !== 'trial' || !org.trial_ends_at) return null
+  const daysLeft = Math.ceil((new Date(org.trial_ends_at) - new Date()) / 86400000)
+  if (daysLeft < 0) {
+    return (
+      <div className="bg-red-600 text-white text-xs font-medium px-4 py-2 flex items-center justify-between gap-3 shrink-0">
+        <span>Your trial has expired. Upgrade to continue using CashMyRent.</span>
+        <Link to="/settings" className="bg-white text-red-600 rounded-md px-2.5 py-1 text-xs font-semibold hover:bg-red-50 shrink-0">
+          Upgrade now
+        </Link>
+      </div>
+    )
+  }
+  if (daysLeft > 7) return null
+  return (
+    <div className={`text-white text-xs font-medium px-4 py-2 flex items-center justify-between gap-3 shrink-0 ${daysLeft <= 3 ? 'bg-red-500' : 'bg-amber-500'}`}>
+      <span className="flex items-center gap-1.5">
+        <Zap size={12} />
+        {daysLeft === 0 ? 'Trial expires today' : `Trial expires in ${daysLeft} day${daysLeft === 1 ? '' : 's'}`} — upgrade to keep all your data.
+      </span>
+      <Link to="/settings" className="bg-white/20 hover:bg-white/30 rounded-md px-2.5 py-1 text-xs font-semibold shrink-0">
+        Upgrade
+      </Link>
+    </div>
+  )
+}
+
 export default function Layout() {
+  const { org } = useAuth()
   const [open, setOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(() => {
+  // `pinned` = user explicitly collapsed the sidebar (persisted)
+  // `hoverExpanded` = sidebar is temporarily expanded because the mouse is over it
+  const [pinned, setPinned] = useState(() => {
     try { return localStorage.getItem('cmr_sidebar_collapsed') === 'true' } catch { return false }
   })
+  const [hoverExpanded, setHoverExpanded] = useState(false)
+  const collapsed = pinned && !hoverExpanded   // visual state fed to Sidebar
   const [cmdK, setCmdK] = useState(false)
   const location = useLocation()
 
@@ -40,9 +73,10 @@ export default function Layout() {
   useEffect(() => { setOpen(false) }, [location.pathname])
 
   function toggleCollapse() {
-    setCollapsed(c => {
-      const next = !c
+    setPinned(p => {
+      const next = !p
       try { localStorage.setItem('cmr_sidebar_collapsed', String(next)) } catch {}
+      if (!next) setHoverExpanded(false)   // unpinning → always open, clear hover state
       return next
     })
   }
@@ -63,15 +97,22 @@ export default function Layout() {
 
   return (
     <div className="flex h-[100dvh] overflow-hidden bg-surface-50 dark:bg-surface-950">
+      {/* Desktop spacer — reserves the sidebar's width so content doesn't shift on hover-expand */}
+      <div className={`hidden lg:block shrink-0 transition-all duration-250 ease-in-out ${pinned ? 'w-[58px]' : 'w-[220px]'}`} />
       <Sidebar
         open={open}
         onClose={() => setOpen(false)}
         collapsed={collapsed}
+        pinned={pinned}
+        hoverExpanded={hoverExpanded}
         onToggleCollapse={toggleCollapse}
         onOpenCmdK={() => setCmdK(true)}
+        onMouseEnter={() => { if (pinned) setHoverExpanded(true) }}
+        onMouseLeave={() => setHoverExpanded(false)}
       />
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <TrialBanner org={org} />
         {/* Top header */}
         <header className="h-14 flex items-center justify-between px-4 sm:px-5 bg-white dark:bg-surface-900 border-b border-surface-200 dark:border-white/5 shrink-0">
           <div className="flex items-center gap-3">

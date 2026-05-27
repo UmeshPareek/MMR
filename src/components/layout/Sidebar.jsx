@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import { initials } from '@/utils/helpers'
 
-export default function Sidebar({ open, onClose, collapsed, onToggleCollapse, onOpenCmdK }) {
+export default function Sidebar({ open, onClose, collapsed, pinned, hoverExpanded, onToggleCollapse, onOpenCmdK, onMouseEnter, onMouseLeave }) {
   const { profile, org, signOut, isSuperAdmin, isAdmin } = useAuth()
   const { dark, toggle: toggleDark } = useTheme()
   const isTeam = profile?.role === 'team'
@@ -59,15 +59,20 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse, on
       {open && (
         <div className="fixed inset-0 bg-black/40 z-30 lg:hidden backdrop-blur-sm" onClick={onClose} />
       )}
-      <aside className={`
-        fixed top-0 left-0 h-full z-40 flex flex-col
-        bg-white dark:bg-surface-900
-        border-r border-surface-200 dark:border-white/5
-        transition-all duration-250 ease-in-out
-        ${open ? 'translate-x-0' : '-translate-x-full'}
-        lg:translate-x-0 lg:static lg:z-auto
-        ${collapsed ? 'w-[58px]' : 'w-[220px]'}
-      `}>
+      <aside
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+        className={`
+          fixed top-0 left-0 h-full flex flex-col
+          bg-white dark:bg-surface-900
+          border-r border-surface-200 dark:border-white/5
+          transition-all duration-250 ease-in-out
+          ${open ? 'translate-x-0' : '-translate-x-full'}
+          lg:translate-x-0
+          ${collapsed ? 'w-[58px]' : 'w-[220px]'}
+          ${pinned && hoverExpanded ? 'z-50 shadow-[4px_0_24px_rgba(0,0,0,0.10)] dark:shadow-[4px_0_24px_rgba(0,0,0,0.40)]' : 'z-40'}
+        `}
+      >
 
         {/* Brand — org-aware */}
         <div className={`flex items-center h-14 px-3 border-b border-surface-200 dark:border-white/5 shrink-0 ${collapsed ? 'justify-center' : 'justify-between'}`}>
@@ -179,14 +184,14 @@ export default function Sidebar({ open, onClose, collapsed, onToggleCollapse, on
           {/* Collapse (desktop only) */}
           <button
             onClick={onToggleCollapse}
-            title={collapsed ? 'Expand' : 'Collapse'}
+            title={pinned ? 'Pin sidebar open' : 'Collapse sidebar'}
             className={`hidden lg:flex w-full items-center gap-2.5 px-3 py-2 rounded-md text-[13px] font-medium
               text-surface-400 hover:text-surface-700 hover:bg-surface-100
               dark:text-surface-500 dark:hover:text-surface-300 dark:hover:bg-white/5
               transition-all duration-150 ${collapsed ? 'justify-center' : ''}`}
           >
-            {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-            {!collapsed && 'Collapse'}
+            {pinned ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+            {!collapsed && (pinned ? 'Pin open' : 'Collapse')}
           </button>
 
           {/* User row */}

@@ -23,6 +23,11 @@ export default function Settings() {
   const [dangerConfirmText, setDangerConfirmText] = useState('')
   const [dangerRunning, setDangerRunning] = useState(false)
 
+  // Reminders tab
+  const [overdueTenants, setOverdueTenants] = useState([])
+  const [overdueLoading, setOverdueLoading] = useState(false)
+  const [reminderSending, setReminderSending] = useState(false)
+
   // Expense group modals
   const [groupModal, setGroupModal] = useState(false)
   const [groupForm, setGroupForm] = useState({ name: '', icon: '📌', color: '#94a3b8' })
@@ -48,6 +53,43 @@ export default function Settings() {
     setExpGroups(g || [])
     setUsers(u || [])
     setLoading(false)
+  }
+
+  async function loadOverdue() {
+    setOverdueLoading(true)
+    const currentMonth = new Date().toISOString().slice(0, 7)
+    const { data: tenants } = await supabase
+      .from('tenants')
+      .select('id, full_name, phone, monthly_rent, buildings(name), flats(door_number)')
+      .eq('status', 'active')
+      .eq('org_id', profile.org_id)
+    const { data: paid } = await supabase
+      .from('rent_collections')
+      .select('tenant_id')
+      .eq('org_id', profile.org_id)
+      .eq('for_month', currentMonth)
+    const paidSet = new Set((paid || []).map(p => p.tenant_id))
+    setOverdueTenants((tenants || []).filter(t => !paidSet.has(t.id)))
+    setOverdueLoading(false)
+  }
+
+  async function sendReminders() {
+    setReminderSending(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/send-reminders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+        body: JSON.stringify({ org_id: profile.org_id }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Failed to send'); return }
+      toast.success(data.sent === 0 ? 'No overdue tenants — all paid!' : `Reminder sent — ${overdueTenants.length} tenants overdue`)
+    } catch {
+      toast.error('Failed to send reminder')
+    } finally {
+      setReminderSending(false)
+    }
   }
 
   async function createUser() {
@@ -183,7 +225,7 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200 overflow-x-auto">
-        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
+        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['reminders','Rent Reminders'],...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
           <button key={k} className={`tab whitespace-nowrap ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
         ))}
       </div>
@@ -388,6 +430,74 @@ export default function Settings() {
               </div>
             </div>
           </Modal>
+        </div>
+      )}
+
+      {/* REMINDERS TAB */}
+      {tab === 'reminders' && (
+        <div className="space-y-5 max-w-2xl">
+          <div className="card p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="font-semibold text-surface-800">Overdue Rent — {new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })}</p>
+                <p className="text-sm text-surface-500 mt-1">Tenants who have not paid rent for this month</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={loadOverdue} disabled={overdueLoading} className="btn-secondary btn-sm">
+                  {overdueLoading ? <Spinner size={14}/> : 'Refresh'}
+                </button>
+                {isAdmin && (
+                  <button onClick={sendReminders} disabled={reminderSending || overdueTenants.length === 0} className="btn-primary btn-sm flex items-center gap-1.5">
+                    {reminderSending ? <Spinner size={14}/> : '📧 Send summary email'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {overdueTenants.length === 0 && !overdueLoading ? (
+              <div className="mt-6 text-center py-8 bg-surface-50 rounded-xl">
+                <p className="text-2xl mb-2">🎉</p>
+                <p className="text-sm font-medium text-surface-700">
+                  {overdueTenants.length === 0 && !overdueLoading
+                    ? 'Click Refresh to load overdue tenants'
+                    : 'All tenants have paid this month!'}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-4">
+                <table className="data-table">
+                  <thead><tr><th>Tenant</th><th>Building / Flat</th><th>Phone</th><th className="text-right">Monthly Rent</th></tr></thead>
+                  <tbody>
+                    {overdueTenants.map(t => (
+                      <tr key={t.id}>
+                        <td className="font-medium text-surface-800">{t.full_name}</td>
+                        <td className="text-sm text-surface-500">{t.buildings?.name || '—'} · {t.flats?.door_number || '—'}</td>
+                        <td className="text-sm text-surface-500">{t.phone || '—'}</td>
+                        <td className="text-right font-mono font-semibold text-red-600">₹{(t.monthly_rent || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} className="text-sm font-semibold text-surface-700">Total outstanding</td>
+                      <td className="text-right font-mono font-bold text-red-600">
+                        ₹{overdueTenants.reduce((s, t) => s + (t.monthly_rent || 0), 0).toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="card p-5">
+            <p className="font-semibold text-surface-800 mb-1">Automatic reminders</p>
+            <p className="text-sm text-surface-500 mb-4">A summary email is automatically sent to you on the 5th of every month listing overdue tenants.</p>
+            <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg text-sm text-brand-700">
+              To receive emails, add <strong>RESEND_API_KEY</strong> to your Vercel environment variables and set your domain in Resend.
+              The cron runs at <strong>9:00 AM on the 5th of every month</strong>.
+            </div>
+          </div>
         </div>
       )}
 
