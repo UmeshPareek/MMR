@@ -255,6 +255,18 @@ export default function Payments() {
     });
   }
 
+  function logActivity(action, entity, entityId, summary) {
+    supabase.from('team_activity_log').insert({
+      org_id: profile?.org_id,
+      user_id: profile?.id,
+      action,
+      entity,
+      entity_id: entityId,
+      summary,
+      for_month: new Date().toISOString().slice(0, 7),
+    }).then(() => {}) // fire-and-forget — never block the UI
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     if (!activeFlat?.tenant) return toast.error('No active tenant for this flat');
@@ -266,7 +278,7 @@ export default function Payments() {
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from('rent_collections').insert({
+      const { data, error } = await supabase.from('rent_collections').insert({
         flat_id: activeFlat.id,
         tenant_id: activeFlat.tenant.id,
         building_id: activeFlat.building_id,
@@ -281,8 +293,9 @@ export default function Payments() {
         payer_photo_url: form.payer_photo_url || null,
         collected_by: profile?.id,
         org_id: profile?.org_id,
-      });
+      }).select('id').single();
       if (error) throw error;
+      logActivity('created', 'payment', data?.id, `Rent ₹${Number(form.amount).toLocaleString('en-IN')} — ${activeFlat.tenant.full_name} (${selectedMonth})`)
       toast.success(`Payment logged — ${activeFlat.tenant.full_name}`);
       setActiveFlat(null);
       loadAll();
@@ -306,6 +319,7 @@ export default function Payments() {
         notes: editForm.notes || null,
       }).eq('id', editPayment.id);
       if (error) throw error;
+      logActivity('edited', 'payment', editPayment.id, `Edited rent ₹${Number(editForm.amount).toLocaleString('en-IN')} — ${editPayment.tenant?.full_name || editPayment.tenant_id}`)
       toast.success('Payment updated');
       setEditPayment(null);
       loadAll();
@@ -589,15 +603,13 @@ export default function Payments() {
                                 })} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Print receipt">
                                   <Receipt className="w-3.5 h-3.5" />
                                 </button>
+                                <button onClick={() => openEditPayment(c)} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Edit payment">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
                                 {(isAdmin || isSuperAdmin) && (
-                                  <>
-                                    <button onClick={() => openEditPayment(c)} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Edit payment">
-                                      <Pencil className="w-3.5 h-3.5" />
-                                    </button>
-                                    <button onClick={() => handleDelete(c.id)} className="p-1 text-surface-300 hover:text-red-500 transition-colors" title="Delete">
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                  </>
+                                  <button onClick={() => handleDelete(c.id)} className="p-1 text-surface-300 hover:text-red-500 transition-colors" title="Delete">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 )}
                               </div>
                             ))}
@@ -730,17 +742,13 @@ export default function Payments() {
                           })} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Print receipt">
                             <Receipt className="w-3.5 h-3.5" />
                           </button>
-                          {(isAdmin || isSuperAdmin) ? (
-                            <>
-                              <button onClick={() => openEditPayment(c)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500" title="Delete">
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          ) : (
-                            <Lock className="w-3.5 h-3.5 text-surface-300" />
+                          <button onClick={() => openEditPayment(c)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          {(isAdmin || isSuperAdmin) && (
+                            <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500" title="Delete">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
                           )}
                         </div>
                       </td>

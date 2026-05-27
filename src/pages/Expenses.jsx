@@ -101,16 +101,26 @@ export default function Expenses() {
     setUtilityModal(true)
   }
 
+  function logActivity(action, entity, entityId, summary) {
+    supabase.from('team_activity_log').insert({
+      org_id: profile?.org_id, user_id: profile?.id,
+      action, entity, entity_id: entityId, summary,
+      for_month: new Date().toISOString().slice(0, 7),
+    }).then(() => {})
+  }
+
   async function save() {
     if (!form.description || !form.amount) return toast.error('Description and amount required')
     setSaving(true)
     const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id, org_id: profile?.org_id }
     if (!payload.building_id) delete payload.building_id
-    const { error } = editItem
-      ? await supabase.from('expenses').update(payload).eq('id', editItem.id)
-      : await supabase.from('expenses').insert(payload)
+    const { data, error } = editItem
+      ? await supabase.from('expenses').update(payload).eq('id', editItem.id).select('id').single()
+      : await supabase.from('expenses').insert(payload).select('id').single()
     setSaving(false)
     if (error) return toast.error(error.message)
+    logActivity(editItem ? 'edited' : 'created', 'expense', data?.id || editItem?.id,
+      `${editItem ? 'Edited' : 'Added'} expense: ${form.description} ₹${parseFloat(form.amount).toLocaleString('en-IN')}`)
     toast.success(editItem ? 'Expense updated ✓' : 'Expense recorded ✓')
     setModal(false); loadExpenses()
   }

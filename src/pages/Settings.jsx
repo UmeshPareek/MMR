@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/utils/helpers'
 import { Modal, Spinner } from '@/components/ui'
-import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star, AlertTriangle, Phone, Mail, Globe } from 'lucide-react'
+import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star, AlertTriangle, Phone, Mail, Globe, Clock, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -27,6 +27,11 @@ export default function Settings() {
   const [overdueTenants, setOverdueTenants] = useState([])
   const [overdueLoading, setOverdueLoading] = useState(false)
   const [reminderSending, setReminderSending] = useState(false)
+
+  // Activity tab
+  const [activity, setActivity] = useState([])
+  const [activityLoading, setActivityLoading] = useState(false)
+  const [activityMonth, setActivityMonth] = useState(new Date().toISOString().slice(0, 7))
 
   // Expense group modals
   const [groupModal, setGroupModal] = useState(false)
@@ -90,6 +95,17 @@ export default function Settings() {
     } finally {
       setReminderSending(false)
     }
+  }
+
+  async function loadActivity(month = activityMonth) {
+    setActivityLoading(true)
+    const { data } = await supabase
+      .from('team_activity_log')
+      .select('*, user:profiles(full_name, role)')
+      .eq('for_month', month)
+      .order('created_at', { ascending: false })
+    setActivity(data || [])
+    setActivityLoading(false)
   }
 
   async function createUser() {
@@ -225,8 +241,8 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200 overflow-x-auto">
-        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['reminders','Rent Reminders'],...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
-          <button key={k} className={`tab whitespace-nowrap ${tab===k?'active':''}`} onClick={() => setTab(k)}>{l}</button>
+        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['reminders','Rent Reminders'],...(isAdmin ? [['activity','Team Activity']] : []),...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
+          <button key={k} className={`tab whitespace-nowrap ${tab===k?'active':''}`} onClick={() => { setTab(k); if (k === 'activity') loadActivity() }}>{l}</button>
         ))}
       </div>
 
@@ -497,6 +513,103 @@ export default function Settings() {
               To receive emails, add <strong>RESEND_API_KEY</strong> to your Vercel environment variables and set your domain in Resend.
               The cron runs at <strong>9:00 AM on the 5th of every month</strong>.
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* TEAM ACTIVITY TAB — admin+ only */}
+      {tab === 'activity' && isAdmin && (
+        <div className="space-y-4">
+          {/* Header row */}
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-surface-800 dark:text-surface-200">Team Activity</h3>
+              <p className="text-xs text-surface-500 mt-0.5">Every entry created or edited by your team this month.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="month"
+                value={activityMonth}
+                onChange={e => { setActivityMonth(e.target.value); loadActivity(e.target.value) }}
+                className="input text-sm py-1.5 w-40"
+              />
+              <button onClick={() => loadActivity(activityMonth)} className="btn-secondary flex items-center gap-1.5 text-sm py-1.5">
+                <Clock size={13} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* Stats row */}
+          {activity.length > 0 && (
+            <div className="flex gap-3 flex-wrap">
+              <div className="card px-4 py-2.5 flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                <span className="text-sm font-semibold text-surface-800 dark:text-surface-200">{activity.filter(a=>a.action==='created').length}</span>
+                <span className="text-xs text-surface-500">Created</span>
+              </div>
+              <div className="card px-4 py-2.5 flex items-center gap-2">
+                <Edit2 size={14} className="text-brand-500" />
+                <span className="text-sm font-semibold text-surface-800 dark:text-surface-200">{activity.filter(a=>a.action==='edited').length}</span>
+                <span className="text-xs text-surface-500">Edited</span>
+              </div>
+              <div className="card px-4 py-2.5 flex items-center gap-2">
+                <Users size={14} className="text-violet-500" />
+                <span className="text-sm font-semibold text-surface-800 dark:text-surface-200">{new Set(activity.map(a=>a.user_id)).size}</span>
+                <span className="text-xs text-surface-500">Team members</span>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="card overflow-hidden">
+            {activityLoading ? (
+              <div className="flex justify-center py-10"><Spinner /></div>
+            ) : activity.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12 text-surface-400">
+                <Clock size={28} className="opacity-30" />
+                <p className="text-sm">No activity recorded for {activityMonth}</p>
+                <p className="text-xs text-surface-400">Activity is logged automatically when team members create or edit entries.</p>
+              </div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Team Member</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.map(a => (
+                    <tr key={a.id}>
+                      <td className="text-xs text-surface-500 whitespace-nowrap">
+                        {new Date(a.created_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short' })}{' '}
+                        <span className="text-surface-400">{new Date(a.created_at).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true })}</span>
+                      </td>
+                      <td>
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center text-white font-semibold text-[10px] shrink-0">
+                            {(a.user?.full_name || '?').slice(0,1).toUpperCase()}
+                          </div>
+                          <span className="text-sm font-medium text-surface-700 dark:text-surface-300">{a.user?.full_name || '—'}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium capitalize ${a.user?.role === 'admin' || a.user?.role === 'super_admin' ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' : 'bg-surface-100 dark:bg-dark-600 text-surface-500'}`}>
+                            {a.user?.role?.replace('_',' ') || 'team'}
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${a.action === 'created' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' : 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400'}`}>
+                          {a.action === 'created' ? <CheckCircle2 size={10} /> : <Edit2 size={10} />}
+                          {a.action}
+                        </span>
+                      </td>
+                      <td className="text-sm text-surface-600 dark:text-surface-400 max-w-xs truncate" title={a.summary}>{a.summary}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}

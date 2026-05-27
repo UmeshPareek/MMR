@@ -187,12 +187,20 @@ export default function Staff() {
     setStaffModal(false); loadStaff()
   }
 
+  function logActivity(action, entity, entityId, summary) {
+    supabase.from('team_activity_log').insert({
+      org_id: profile?.org_id, user_id: profile?.id,
+      action, entity, entity_id: entityId, summary,
+      for_month: new Date().toISOString().slice(0, 7),
+    }).then(() => {})
+  }
+
   async function saveSalary() {
     if (!salaryForm.staff_id || !salaryForm.gross_salary) return toast.error('Fill required fields')
     const net = netPayable(salaryForm)
     const advDeduction = parseFloat(salaryForm.advance_deduction) || 0
     setSaving(true)
-    const { error } = await supabase.from('staff_salaries').insert({
+    const { data: salData, error } = await supabase.from('staff_salaries').insert({
       staff_id: salaryForm.staff_id,
       for_month: salaryForm.for_month,
       gross_salary: parseFloat(salaryForm.gross_salary),
@@ -204,7 +212,7 @@ export default function Staff() {
       notes: salaryForm.notes || null,
       paid_by: profile?.id,
       org_id: profile?.org_id,
-    })
+    }).select('id').single()
     // Mark advances as recovered
     if (!error && advDeduction > 0) {
       const staffAdvances = advances.filter(a => a.staff_id === salaryForm.staff_id)
@@ -214,6 +222,8 @@ export default function Staff() {
     }
     setSaving(false)
     if (error) return toast.error(error.message)
+    const staffMember = staff.find(s => s.id === salaryForm.staff_id)
+    logActivity('created', 'salary', salData?.id, `Salary ₹${net.toLocaleString('en-IN')} paid${staffMember ? ` — ${staffMember.full_name}` : ''} (${salaryForm.for_month})`)
     toast.success('Salary paid — advances marked recovered ✓')
     setSalaryModal(false); loadSalaries(); loadAdvances(); if (tab === 'payroll') { loadSalaries() }
   }

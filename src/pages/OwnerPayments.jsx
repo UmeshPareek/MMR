@@ -92,16 +92,27 @@ export default function OwnerPayments() {
     setForm(p => ({ ...p, building_id: buildingId, amount: form.payment_type === 'rent' ? (b?.monthly_rent_to_owner || '') : p.amount }))
   }
 
+  function logActivity(action, entity, entityId, summary) {
+    supabase.from('team_activity_log').insert({
+      org_id: profile?.org_id, user_id: profile?.id,
+      action, entity, entity_id: entityId, summary,
+      for_month: new Date().toISOString().slice(0, 7),
+    }).then(() => {})
+  }
+
   async function save() {
     if (!form.building_id || !form.amount) return toast.error('Building and amount are required')
     setSaving(true)
     const payload = { ...form, amount: parseFloat(form.amount), paid_by: profile?.id, org_id: profile?.org_id }
     if (!payload.owner_id) delete payload.owner_id
-    const { error } = editItem
-      ? await supabase.from('owner_payments').update(payload).eq('id', editItem.id)
-      : await supabase.from('owner_payments').insert(payload)
+    const { data, error } = editItem
+      ? await supabase.from('owner_payments').update(payload).eq('id', editItem.id).select('id').single()
+      : await supabase.from('owner_payments').insert(payload).select('id').single()
     setSaving(false)
     if (error) return toast.error(error.message)
+    const bldg = buildings?.find(b => b.id === form.building_id)
+    logActivity(editItem ? 'edited' : 'created', 'owner_payment', data?.id || editItem?.id,
+      `${editItem ? 'Edited' : 'Recorded'} owner payment ₹${parseFloat(form.amount).toLocaleString('en-IN')}${bldg ? ` — ${bldg.name}` : ''}`)
     toast.success(editItem ? 'Payment updated ✓' : 'Owner payment recorded ✓')
     setModal(false); load()
   }
