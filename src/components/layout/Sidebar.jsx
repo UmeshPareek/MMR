@@ -141,10 +141,15 @@ export default function Sidebar({ open, onClose, collapsed, pinned, hoverExpande
             <Item to="/security-deposits"    icon={Wallet}        label="Security Deposits" />
           </Section>
 
+          <Section label="Tenants">
+            <Item to="/checkin"  icon={LogIn}  label="Check In" />
+            <Item to="/checkout" icon={LogOut} label="Check Out" />
+            <Item to="/tenants"  icon={Users}  label="All Tenants" />
+          </Section>
+
           <Section label="Manage">
             <Item to="/buildings"      icon={Building2}    label="Buildings & Flats" />
             <Item to="/owners"         icon={Home}         label="Building Owners" />
-            <Item to="/tenants"        icon={Users}        label="Tenants" />
             <Item to="/owner-payments" icon={Banknote}     label="Owner Payments" />
             <Item to="/expenses"       icon={TrendingDown} label="Expenses" />
             <Item to="/staff"          icon={UserCog}      label="Staff & Salary" />
@@ -157,8 +162,6 @@ export default function Sidebar({ open, onClose, collapsed, pinned, hoverExpande
           {(isSuperAdmin || isAdmin) && (
             <Section label="Admin">
               {isSuperAdmin && <Item to="/audit"   icon={ShieldCheck} label="Audit" />}
-              <Item to="/checkin"  icon={LogIn}    label="Check In" />
-              <Item to="/checkout" icon={LogOut}   label="Check Out" />
               <Item to="/settings" icon={Settings} label="Settings" />
             </Section>
           )}

@@ -83,8 +83,8 @@ function AppRoutes() {
           <Route path="/utility-bills" element={<UtilityBills />} />
           <Route path="/security-deposits" element={<SecurityDeposits />} />
           <Route path="/daily-collection" element={<DailyCollection />} />
-          <Route path="/checkin" element={<ProtectedRoute adminOnly><CheckIn /></ProtectedRoute>} />
-          <Route path="/checkout" element={<ProtectedRoute adminOnly><CheckOut /></ProtectedRoute>} />
+          <Route path="/checkin" element={<ProtectedRoute><CheckIn /></ProtectedRoute>} />
+          <Route path="/checkout" element={<ProtectedRoute><CheckOut /></ProtectedRoute>} />
           <Route path="/daily-reconciliation" element={<ProtectedRoute adminOnly><DailyReconciliation /></ProtectedRoute>} />
           <Route path="/audit" element={<ProtectedRoute superOnly><Audit /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
