@@ -6,6 +6,7 @@ import { LogOut, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 import jsPDF from 'jspdf'
+import autoTable from 'jspdf-autotable'
 
 function getFloor(doorNumber) {
   if (!doorNumber) return 'Ground / Other'
@@ -17,7 +18,7 @@ function getFloor(doorNumber) {
 }
 
 export default function CheckOut() {
-  const { profile } = useAuth()
+  const { profile, org } = useAuth()
   const channelRef = useRef(null)
   const [tenants, setTenants] = useState([])
   const [recentExits, setRecentExits] = useState([])
@@ -212,46 +213,326 @@ export default function CheckOut() {
       ? `Checkout done ✓ — Refund ₹${netRefund.toLocaleString('en-IN')} to tenant`
       : `Checkout done ✓ — Net loss ₹${Math.abs(netRefund).toLocaleString('en-IN')} (deposit forfeited)`
     toast.success(msg)
-    if (coType === 'bad') generateLegalNotice(selected, deductions, netRefund)
+    if (coType === 'bad') generateLegalNotice(
+      {
+        ...selected,
+        outstanding_rent:  form.outstanding_rent,
+        cleaning_charge:   form.cleaning,
+        repair_charge:     form.painting,
+        other_charge:      form.other,
+      },
+      deductions,
+      netRefund
+    )
     setModal(false); setSelected(null); loadAll()
   }
 
   function generateLegalNotice(t, totalDue, netRefund) {
-    const doc = new jsPDF()
-    const today = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' })
-    doc.setFillColor(13,148,136); doc.rect(0,0,210,18,'F')
-    doc.setTextColor(255,255,255); doc.setFontSize(14); doc.setFont('helvetica','bold')
-    doc.text('LEGAL NOTICE', 105, 12, { align:'center' })
-    doc.setTextColor(0,0,0); doc.setFontSize(10); doc.setFont('helvetica','normal')
-    doc.text(`Date: ${today}`, 14, 30)
-    doc.text(`To,\n${t.full_name}\nFlat ${t.flat?.door_number||'—'}, ${t.building?.name||'—'}\nPhone: ${t.phone}`, 14, 40)
-    const body = `Subject: Legal Notice — Outstanding Dues & Unauthorized Vacation
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+    const W = 210, H = 297
+    const margin = 16
+    const orgName = org?.name || 'Rent N Stay'
+    const today = new Date()
+    const dateStr = today.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })
+    const refNum = `LN-${today.getFullYear()}${String(today.getMonth()+1).padStart(2,'0')}${String(today.getDate()).padStart(2,'0')}-${Math.floor(1000+Math.random()*9000)}`
+    const deposit = parseFloat(t.security_deposit_paid) || 0
 
-This legal notice is issued on behalf of CashMyRent Property Management.
+    // ── Colours ────────────────────────────────────────────────────
+    const NAVY   = [15, 40, 80]
+    const CRIMSON= [180, 20, 20]
+    const LGRAY  = [245, 246, 248]
+    const MGRAY  = [200, 205, 215]
+    const DKGRAY = [60, 65, 75]
 
-You have vacated the premises at Flat ${t.flat?.door_number}, ${t.building?.name} WITHOUT clearing your dues.
+    // ── HEADER BAND ────────────────────────────────────────────────
+    doc.setFillColor(...NAVY)
+    doc.rect(0, 0, W, 30, 'F')
 
-FINANCIAL STATEMENT:
-Security Deposit Held : ₹${(t.security_deposit_paid||0).toLocaleString('en-IN')}
-Total Dues Pending    : ₹${totalDue.toLocaleString('en-IN')}
-Net Amount Payable    : ₹${Math.abs(netRefund).toLocaleString('en-IN')}
+    // Thin gold accent line under header
+    doc.setFillColor(180, 140, 40)
+    doc.rect(0, 30, W, 1.2, 'F')
 
-NOTICE:
-You are hereby directed to pay ₹${Math.abs(netRefund).toLocaleString('en-IN')} within FIFTEEN (15) DAYS of receiving this notice.
+    // "LEGAL NOTICE" text
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(22)
+    doc.text('LEGAL NOTICE', W / 2, 16, { align: 'center' })
 
-FAILURE TO COMPLY WILL RESULT IN:
-1. Filing of an FIR/police complaint for cheating, fraud and breach of contract
-2. Civil suit for recovery of dues with interest and legal costs
-3. Reporting to credit bureaus and rental property networks
-4. Further legal action as deemed appropriate under Indian law
+    // Subtitle
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(180, 200, 230)
+    doc.text('NOTICE OF OUTSTANDING DUES AND DEMAND FOR PAYMENT', W / 2, 24, { align: 'center' })
 
-This notice is issued without prejudice to all legal rights and remedies available.
+    // ── ORG BRAND BLOCK (top-right inside header) ──────────────────
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    // (already centred — org name goes in the meta block below)
 
-CashMyRent Property Management
-Phone: ${orgContact.phone} | Email: ${orgContact.email} | ${orgContact.website}`
-    doc.text(doc.splitTextToSize(body, 182), 14, 70)
-    doc.save(`LegalNotice_${t.full_name.replace(/ /g,'_')}.pdf`)
-    toast.success('Legal notice PDF downloaded')
+    // ── META ROW (ref + date) ──────────────────────────────────────
+    let y = 40
+    doc.setFillColor(...LGRAY)
+    doc.rect(margin, y, W - margin * 2, 14, 'F')
+    doc.setDrawColor(...MGRAY)
+    doc.rect(margin, y, W - margin * 2, 14, 'S')
+
+    doc.setTextColor(...DKGRAY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.text(`REF NO: ${refNum}`, margin + 4, y + 5.5)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Date of Issue: ${dateStr}`, margin + 4, y + 11)
+
+    doc.setFont('helvetica', 'bold')
+    doc.text('Mode of Service: Registered Post / WhatsApp', W - margin - 4, y + 5.5, { align: 'right' })
+    doc.setFont('helvetica', 'normal')
+    doc.text(`Property: Flat ${t.flat?.door_number || '—'}, ${t.building?.name || '—'}`, W - margin - 4, y + 11, { align: 'right' })
+
+    y += 22
+
+    // ── FROM / TO COLUMNS ──────────────────────────────────────────
+    const colW = (W - margin * 2 - 8) / 2
+
+    // FROM box
+    doc.setFillColor(...NAVY)
+    doc.roundedRect(margin, y, colW, 6, 1, 1, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text('FROM (SENDER)', margin + 4, y + 4.2)
+
+    doc.setFillColor(250, 251, 253)
+    doc.setDrawColor(...MGRAY)
+    doc.roundedRect(margin, y + 6, colW, 30, 1, 1, 'FD')
+    doc.setTextColor(...DKGRAY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(orgName, margin + 4, y + 13)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.text('Property Management Services', margin + 4, y + 19)
+    if (orgContact.phone !== '—') doc.text(`Ph: ${orgContact.phone}`, margin + 4, y + 25)
+    if (orgContact.email !== '—') doc.text(`E: ${orgContact.email}`, margin + 4, y + 31)
+    if (orgContact.website !== '—' && orgContact.website !== orgName) doc.text(`W: ${orgContact.website}`, margin + 4, y + 37)
+
+    // TO box
+    const col2X = margin + colW + 8
+    doc.setFillColor(...CRIMSON)
+    doc.roundedRect(col2X, y, colW, 6, 1, 1, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text('TO (RECIPIENT)', col2X + 4, y + 4.2)
+
+    doc.setFillColor(255, 250, 250)
+    doc.setDrawColor(220, 150, 150)
+    doc.roundedRect(col2X, y + 6, colW, 30, 1, 1, 'FD')
+    doc.setTextColor(...DKGRAY)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.text(t.full_name, col2X + 4, y + 13)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.text(`Flat ${t.flat?.door_number || '—'}, ${t.building?.name || '—'}`, col2X + 4, y + 19)
+    if (t.phone) doc.text(`Ph: ${t.phone}`, col2X + 4, y + 25)
+    if (t.email) doc.text(`E: ${t.email}`, col2X + 4, y + 31)
+
+    y += 44
+
+    // ── SUBJECT LINE ───────────────────────────────────────────────
+    doc.setFillColor(255, 243, 205)
+    doc.setDrawColor(200, 160, 40)
+    doc.roundedRect(margin, y, W - margin * 2, 10, 1, 1, 'FD')
+    doc.setTextColor(100, 60, 0)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9.5)
+    doc.text(
+      `SUBJECT: Outstanding Dues & Unauthorized Vacation — Flat ${t.flat?.door_number || '—'}, ${t.building?.name || '—'}`,
+      margin + 4, y + 6.8
+    )
+
+    y += 17
+
+    // ── OPENING BODY ───────────────────────────────────────────────
+    doc.setTextColor(...DKGRAY)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9.5)
+    const openPara = [
+      `This legal notice is issued by ${orgName} (hereinafter referred to as "the Management") on`,
+      `behalf of the landlord/property owner of the above-mentioned premises.`,
+      ``,
+      `It is hereby brought to your notice that you, ${t.full_name}, a former tenant at Flat`,
+      `${t.flat?.door_number || '—'}, ${t.building?.name || '—'}, have VACATED the said premises WITHOUT PROPER`,
+      `NOTICE and WITHOUT CLEARING the outstanding dues as detailed below.`,
+    ]
+    openPara.forEach(line => {
+      doc.text(line, margin, y)
+      y += 5.5
+    })
+
+    y += 4
+
+    // ── FINANCIAL STATEMENT TABLE ──────────────────────────────────
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(...NAVY)
+    doc.text('FINANCIAL STATEMENT OF DUES', margin, y)
+    y += 3
+
+    const tableRows = [
+      ['Security Deposit Received', `₹${deposit.toLocaleString('en-IN')}`, 'Amount held by Management'],
+      ['Outstanding Rent', `₹${(parseFloat(t.outstanding_rent || 0)).toLocaleString('en-IN')}`, 'Unpaid rent dues'],
+      ['Cleaning / Maintenance', `₹${(parseFloat(t.cleaning_charge || 0)).toLocaleString('en-IN')}`, 'Property cleaning post-vacation'],
+      ['Painting & Repairs', `₹${(parseFloat(t.repair_charge || 0)).toLocaleString('en-IN')}`, 'Damage restoration'],
+      ['Other Deductions', `₹${(parseFloat(t.other_charge || 0)).toLocaleString('en-IN')}`, 'Miscellaneous dues'],
+    ]
+
+    autoTable(doc, {
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Description', 'Amount (INR)', 'Remarks']],
+      body: tableRows,
+      foot: [[
+        { content: `NET AMOUNT PAYABLE BY YOU`, styles: { fontStyle: 'bold', textColor: [180, 20, 20] } },
+        { content: `₹${Math.abs(netRefund).toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', textColor: [180, 20, 20] } },
+        { content: 'To be paid within 15 days', styles: { fontStyle: 'bold', textColor: [180, 20, 20] } },
+      ]],
+      headStyles: {
+        fillColor: NAVY,
+        textColor: [255, 255, 255],
+        fontStyle: 'bold',
+        fontSize: 8.5,
+      },
+      bodyStyles: { fontSize: 8.5, textColor: DKGRAY },
+      footStyles: {
+        fillColor: [255, 235, 235],
+        fontSize: 9,
+        fontStyle: 'bold',
+      },
+      alternateRowStyles: { fillColor: LGRAY },
+      columnStyles: {
+        0: { cellWidth: 70 },
+        1: { cellWidth: 38, halign: 'right' },
+        2: { cellWidth: 'auto' },
+      },
+      tableLineColor: MGRAY,
+      tableLineWidth: 0.3,
+    })
+
+    y = doc.lastAutoTable.finalY + 8
+
+    // ── DEMAND NOTICE BOX ──────────────────────────────────────────
+    doc.setFillColor(255, 240, 240)
+    doc.setDrawColor(...CRIMSON)
+    doc.roundedRect(margin, y, W - margin * 2, 20, 2, 2, 'FD')
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...CRIMSON)
+    doc.text('DEMAND NOTICE', margin + 4, y + 7)
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(80, 20, 20)
+    const demandText = `You are hereby legally directed to pay ₹${Math.abs(netRefund).toLocaleString('en-IN')} (Rupees ${numberToWords(Math.abs(netRefund))} Only) to ${orgName} within FIFTEEN (15) DAYS from the date of receipt of this notice.`
+    const demandLines = doc.splitTextToSize(demandText, W - margin * 2 - 8)
+    doc.text(demandLines, margin + 4, y + 14)
+    y += demandLines.length * 5 + 18
+
+    // ── CONSEQUENCES ───────────────────────────────────────────────
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(...NAVY)
+    doc.text('CONSEQUENCES OF NON-COMPLIANCE', margin, y)
+    y += 5
+
+    const consequences = [
+      'Filing of a First Information Report (FIR) for cheating, fraud and breach of rental contract under applicable IPC sections.',
+      'Institution of civil proceedings for recovery of dues along with 18% per annum interest and full legal costs.',
+      'Reporting to CIBIL, credit bureaus and national tenant-blacklist databases maintained by rental networks.',
+      'Issuance of notice to your employer, guarantors and emergency contacts as applicable.',
+      'Further legal action including attachment of assets as deemed appropriate under Indian law.',
+    ]
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.8)
+    doc.setTextColor(...DKGRAY)
+    consequences.forEach((c, i) => {
+      const lines = doc.splitTextToSize(`${i+1}.  ${c}`, W - margin * 2 - 6)
+      doc.text(lines, margin + 4, y)
+      y += lines.length * 5 + 1.5
+    })
+
+    y += 4
+
+    // ── WITHOUT PREJUDICE FOOTER LINE ─────────────────────────────
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8)
+    doc.setTextColor(120, 120, 130)
+    const woPara = `This notice is issued strictly without prejudice to all legal rights and remedies available to ${orgName} and the property owner under applicable laws of India. If payment or a satisfactory response is not received within the stipulated period, further legal action will be initiated without any further notice.`
+    const woLines = doc.splitTextToSize(woPara, W - margin * 2)
+    doc.text(woLines, margin, y)
+    y += woLines.length * 4.5 + 6
+
+    // ── SIGNATURE BLOCK ────────────────────────────────────────────
+    doc.setDrawColor(...MGRAY)
+    doc.line(margin, y, W - margin, y)
+    y += 6
+
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(9)
+    doc.setTextColor(...DKGRAY)
+    doc.text('Yours faithfully,', margin, y)
+    y += 12
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(10)
+    doc.setTextColor(...NAVY)
+    doc.text(`For ${orgName}`, margin, y)
+    y += 5
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...DKGRAY)
+    doc.text('Authorised Signatory / Property Manager', margin, y)
+    y += 4
+    if (orgContact.phone !== '—') doc.text(`Ph: ${orgContact.phone}  |  E: ${orgContact.email}`, margin, y)
+
+    // ── FOOTER BAND ────────────────────────────────────────────────
+    doc.setFillColor(...NAVY)
+    doc.rect(0, H - 14, W, 14, 'F')
+    doc.setTextColor(160, 180, 210)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7.5)
+    doc.text(`${orgName}  ·  Legal Notice  ·  Ref: ${refNum}  ·  Generated: ${dateStr}`, W / 2, H - 5.5, { align: 'center' })
+
+    // ── "LEGAL NOTICE" DIAGONAL WATERMARK ─────────────────────────
+    doc.setTextColor(225, 230, 240)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(54)
+    doc.setGState(doc.GState({ opacity: 0.06 }))
+    doc.text('LEGAL NOTICE', W / 2, H / 2 + 20, { align: 'center', angle: 45 })
+    doc.setGState(doc.GState({ opacity: 1 }))
+
+    doc.save(`LegalNotice_${refNum}_${t.full_name.replace(/\s+/g,'_')}.pdf`)
+    toast.success('Legal notice PDF generated ✓')
+  }
+
+  // ── Helper: number to words (Indian) ──────────────────────────
+  function numberToWords(num) {
+    if (!num || isNaN(num)) return 'Zero'
+    const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine',
+      'Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen']
+    const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety']
+    function convert(n) {
+      if (n < 20) return ones[n]
+      if (n < 100) return tens[Math.floor(n/10)] + (n%10?' '+ones[n%10]:'')
+      if (n < 1000) return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'')
+      if (n < 100000) return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'')
+      if (n < 10000000) return convert(Math.floor(n/100000))+' Lakh'+(n%100000?' '+convert(n%100000):'')
+      return convert(Math.floor(n/10000000))+' Crore'+(n%10000000?' '+convert(n%10000000):'')
+    }
+    const n = Math.floor(num)
+    const paise = Math.round((num - n) * 100)
+    return convert(n) + (paise > 0 ? ` and ${convert(paise)} Paise` : '')
   }
 
   const totalDed = ['cleaning','painting','repair','other','outstanding_rent'].reduce((s,k)=>s+(parseFloat(form[k])||0),0)
