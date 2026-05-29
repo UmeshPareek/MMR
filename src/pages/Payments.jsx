@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency, lastNMonths, exportMultiSheet } from '../utils/helpers';
+import { logDelete } from '../utils/deleteLog';
 import toast from 'react-hot-toast';
 import {
   Download, Camera, Upload, X, CheckCircle2,
@@ -335,10 +336,17 @@ export default function Payments() {
   }
 
   async function doDelete() {
+    // Capture record before deleting for audit log
+    const rec = allFlats.flatMap(f => f.collections || []).find(c => c.id === confirmDelete)
     const { error } = await supabase.from('rent_collections').delete().eq('id', confirmDelete);
-    if (error) toast.error(error.message);
-    else { toast.success('Deleted'); loadAll(); }
-    setConfirmDelete(null);
+    if (error) { toast.error(error.message); setConfirmDelete(null); return; }
+    await logDelete(profile, 'rent_collections', confirmDelete, {
+      tenant: rec?.tenant_name,
+      flat:   rec?.flat_number,
+      amount: rec?.amount,
+      month:  rec?.for_month,
+    })
+    toast.success('Deleted'); loadAll(); setConfirmDelete(null);
   }
 
   function generateStatement(flat) {
@@ -606,11 +614,9 @@ export default function Payments() {
                                 <button onClick={() => openEditPayment(c)} className="p-1 text-surface-300 hover:text-brand-600 transition-colors" title="Edit payment">
                                   <Pencil className="w-3.5 h-3.5" />
                                 </button>
-                                {(isAdmin || isSuperAdmin) && (
-                                  <button onClick={() => handleDelete(c.id)} className="p-1 text-surface-300 hover:text-red-500 transition-colors" title="Delete">
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
+                                <button onClick={() => handleDelete(c.id)} className="p-1 text-surface-300 hover:text-red-500 transition-colors" title="Delete">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -745,11 +751,9 @@ export default function Payments() {
                           <button onClick={() => openEditPayment(c)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-brand-600" title="Edit">
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
-                          {(isAdmin || isSuperAdmin) && (
-                            <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500" title="Delete">
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+                          <button onClick={() => handleDelete(c.id)} className="btn-ghost btn-sm p-1.5 text-surface-400 hover:text-red-500" title="Delete">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </td>
                     </tr>

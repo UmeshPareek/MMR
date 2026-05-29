@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency } from '@/utils/helpers'
 import { Modal, Spinner } from '@/components/ui'
-import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star, AlertTriangle, Phone, Mail, Globe, Clock, CheckCircle2 } from 'lucide-react'
+import { Settings as SettingsIcon, Plus, Edit2, Trash2, Save, Zap, Droplets, Users, Building2, Star, AlertTriangle, Phone, Mail, Globe, Clock, CheckCircle2, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -32,6 +32,10 @@ export default function Settings() {
   const [activity, setActivity] = useState([])
   const [activityLoading, setActivityLoading] = useState(false)
   const [activityMonth, setActivityMonth] = useState(new Date().toISOString().slice(0, 7))
+
+  // Delete logs tab
+  const [deleteLogs, setDeleteLogs] = useState([])
+  const [deleteLogsLoading, setDeleteLogsLoading] = useState(false)
 
   // Expense group modals
   const [groupModal, setGroupModal] = useState(false)
@@ -106,6 +110,18 @@ export default function Settings() {
       .order('created_at', { ascending: false })
     setActivity(data || [])
     setActivityLoading(false)
+  }
+
+  async function loadDeleteLogs() {
+    setDeleteLogsLoading(true)
+    const { data } = await supabase
+      .from('audit_log')
+      .select('*, actor:profiles!changed_by(full_name, role)')
+      .eq('action', 'delete')
+      .order('changed_at', { ascending: false })
+      .limit(200)
+    setDeleteLogs(data || [])
+    setDeleteLogsLoading(false)
   }
 
   async function createUser() {
@@ -241,8 +257,8 @@ export default function Settings() {
       </div>
 
       <div className="flex border-b border-surface-200 overflow-x-auto">
-        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['reminders','Rent Reminders'],...(isAdmin ? [['activity','Team Activity']] : []),...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
-          <button key={k} className={`tab whitespace-nowrap ${tab===k?'active':''}`} onClick={() => { setTab(k); if (k === 'activity') loadActivity() }}>{l}</button>
+        {[['rates','Rates & Incentives'],['contact','Org Contact'],['buildings','Building Config'],['groups','Expense Groups'],['users','User Management'],['reminders','Rent Reminders'],...(isAdmin ? [['activity','Team Activity'],['deletelogs','🗑 Delete Logs']] : []),...(isSuperAdmin ? [['danger','⚠️ Danger Zone']] : [])].map(([k,l]) => (
+          <button key={k} className={`tab whitespace-nowrap ${tab===k?'active':''}`} onClick={() => { setTab(k); if (k === 'activity') loadActivity(); if (k === 'deletelogs') loadDeleteLogs() }}>{l}</button>
         ))}
       </div>
 
@@ -607,6 +623,124 @@ export default function Settings() {
                       <td className="text-sm text-surface-600 dark:text-surface-400 max-w-xs truncate" title={a.summary}>{a.summary}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* DELETE LOGS TAB — admin only */}
+      {tab === 'deletelogs' && isAdmin && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <h3 className="font-semibold text-surface-800 dark:text-surface-200">Delete History</h3>
+              <p className="text-xs text-surface-500 mt-0.5">Every record deleted by your team — who deleted it, when, and what it contained.</p>
+            </div>
+            <button onClick={loadDeleteLogs} className="btn-secondary flex items-center gap-1.5 text-sm py-1.5">
+              <RefreshCw size={13} /> Refresh
+            </button>
+          </div>
+
+          {deleteLogs.length > 0 && (
+            <div className="flex gap-3 flex-wrap">
+              {[
+                ['rent_collections','Payments'],
+                ['expenses','Expenses'],
+                ['utility_bills','Utility Bills'],
+                ['owner_payments','Owner Payments'],
+                ['staff','Staff'],
+                ['staff_salaries','Salaries'],
+                ['staff_advances','Advances'],
+              ].map(([tbl, label]) => {
+                const count = deleteLogs.filter(l => l.table_name === tbl).length
+                if (!count) return null
+                return (
+                  <div key={tbl} className="card px-4 py-2.5 flex items-center gap-2">
+                    <span className="text-sm font-semibold text-red-600 dark:text-red-400">{count}</span>
+                    <span className="text-xs text-surface-500">{label} deleted</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="card overflow-hidden">
+            {deleteLogsLoading ? (
+              <div className="flex justify-center py-10"><Spinner /></div>
+            ) : deleteLogs.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-12 text-surface-400">
+                <CheckCircle2 size={28} className="opacity-30 text-green-500" />
+                <p className="text-sm">No deletions recorded yet</p>
+                <p className="text-xs">All delete actions will appear here so admins can review them.</p>
+              </div>
+            ) : (
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>Deleted By</th>
+                    <th>Table</th>
+                    <th>What Was Deleted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deleteLogs.map(log => {
+                    const d = log.old_data || {}
+                    const summary = [
+                      d.tenant && `Tenant: ${d.tenant}`,
+                      d.flat && `Flat: ${d.flat}`,
+                      d.name && `Name: ${d.name}`,
+                      d.description && `"${d.description}"`,
+                      d.amount && `₹${Number(d.amount).toLocaleString('en-IN')}`,
+                      d.month && `Month: ${d.month}`,
+                      d.building && `Building: ${d.building}`,
+                      d.owner && `Owner: ${d.owner}`,
+                    ].filter(Boolean).join(' · ')
+
+                    const tableLabel = {
+                      rent_collections: 'Payment',
+                      expenses: 'Expense',
+                      utility_bills: 'Utility Bill',
+                      owner_payments: 'Owner Payment',
+                      staff: 'Staff Member',
+                      staff_salaries: 'Salary Record',
+                      staff_advances: 'Advance Record',
+                    }[log.table_name] || log.table_name
+
+                    return (
+                      <tr key={log.id}>
+                        <td className="text-xs text-surface-500 whitespace-nowrap">
+                          {new Date(log.changed_at).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'2-digit' })}{' '}
+                          <span className="text-surface-400">{new Date(log.changed_at).toLocaleTimeString('en-IN', { hour:'2-digit', minute:'2-digit', hour12:true })}</span>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-700 dark:text-red-400 font-semibold text-[10px] shrink-0">
+                              {(d._deleted_by_name || log.actor?.full_name || '?').slice(0,1).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-surface-700 dark:text-surface-300 leading-none">
+                                {d._deleted_by_name || log.actor?.full_name || '—'}
+                              </p>
+                              <p className="text-[10px] text-surface-400 capitalize mt-0.5">
+                                {d._deleted_by_role || log.actor?.role?.replace('_',' ') || 'team'}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 font-medium border border-red-200 dark:border-red-800">
+                            {tableLabel}
+                          </span>
+                        </td>
+                        <td className="text-sm text-surface-600 dark:text-surface-400 max-w-xs">
+                          {summary || <span className="text-surface-400 italic">No details captured</span>}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             )}

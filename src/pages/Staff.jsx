@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, fmtMonth, lastNMonths } from '@/utils/helpers'
+import { logDelete } from '@/utils/deleteLog'
 import { Modal, Badge, EmptyState, Spinner, ConfirmDialog } from '@/components/ui'
 import { UserCog, Plus, Edit2, Wallet, CreditCard, AlertCircle, CheckCircle2, TrendingDown, Users, RefreshCw } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -229,9 +230,10 @@ export default function Staff() {
   }
 
   async function deleteStaff(id) {
-    if (!isAdmin) return toast.error('Admin access required')
+    const staffMember = staffList.find(s => s.id === id)
     const { error } = await supabase.from('staff').delete().eq('id', id)
     if (error) return toast.error(error.message)
+    await logDelete(profile, 'staff', id, { name: staffMember?.full_name, role: staffMember?.role, building: staffMember?.building?.name })
     toast.success('Staff permanently deleted ✓'); setDeleteStaffId(null); loadStaff()
   }
 
@@ -307,7 +309,6 @@ export default function Staff() {
   }
 
   function deleteSalary(id) {
-    if (!isAdmin) return toast.error('Admin access required')
     setConfirmDialog({
       title: 'Delete Salary Record?',
       message: 'Delete this salary record? This cannot be undone.',
@@ -315,6 +316,7 @@ export default function Staff() {
       onConfirm: async () => {
         const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
         if (error) { toast.error(error.message); return }
+        await logDelete(profile, 'staff_salaries', id, { deleted: true })
         toast.success('Salary record deleted')
         setConfirmDialog(null)
         loadSalaries()
@@ -323,7 +325,6 @@ export default function Staff() {
   }
 
   function deleteAdvance(id) {
-    if (!isAdmin) return toast.error('Admin access required')
     setConfirmDialog({
       title: 'Delete Advance Record?',
       message: 'Delete this advance/reimbursement record? This cannot be undone.',
@@ -331,6 +332,7 @@ export default function Staff() {
       onConfirm: async () => {
         const { error } = await supabase.from('staff_advances').delete().eq('id', id)
         if (error) { toast.error(error.message); return }
+        await logDelete(profile, 'staff_advances', id, { deleted: true })
         toast.success('Record deleted')
         setConfirmDialog(null)
         loadAdvances()

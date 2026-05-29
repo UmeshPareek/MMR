@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, fmtMonth, currentMonth, exportToExcel } from '@/utils/helpers'
+import { logDelete } from '@/utils/deleteLog'
 import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, ConfirmDialog } from '@/components/ui'
 import { Banknote, Plus, Download, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -118,7 +119,6 @@ export default function OwnerPayments() {
   }
 
   function deletePayment(p) {
-    if (!isAdmin) return toast.error('Admin access required')
     setConfirmDialog({
       title: 'Delete Owner Payment?',
       message: `Delete payment of ${formatCurrency(p.amount)} to ${p.owner?.name || 'owner'}? This cannot be undone.`,
@@ -126,6 +126,7 @@ export default function OwnerPayments() {
       onConfirm: async () => {
         const { error } = await supabase.from('owner_payments').delete().eq('id', p.id)
         if (error) { toast.error(error.message); return }
+        await logDelete(profile, 'owner_payments', p.id, { owner: p.owner?.name, amount: p.amount, month: p.month })
         toast.success('Deleted')
         setConfirmDialog(null)
         load()

@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { formatCurrency, fmtDate, currentMonth, exportToExcel } from '@/utils/helpers'
+import { logDelete } from '@/utils/deleteLog'
 import { Modal, Badge, EmptyState, Spinner, PaymentModeBadge, SearchInput, ConfirmDialog } from '@/components/ui'
 import { TrendingDown, Plus, Download, Filter, Edit2, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -126,7 +127,6 @@ export default function Expenses() {
   }
 
   function deleteExpense(e) {
-    if (!isAdmin) return toast.error('Admin access required')
     setConfirmDialog({
       title: 'Delete Expense?',
       message: `Delete "${e.description}" of ${formatCurrency(e.amount)}? This cannot be undone.`,
@@ -134,6 +134,7 @@ export default function Expenses() {
       onConfirm: async () => {
         const { error } = await supabase.from('expenses').delete().eq('id', e.id)
         if (error) { toast.error(error.message); return }
+        await logDelete(profile, 'expenses', e.id, { description: e.description, amount: e.amount, date: e.expense_date })
         toast.success('Deleted')
         setConfirmDialog(null)
         loadExpenses()
@@ -155,7 +156,6 @@ export default function Expenses() {
   }
 
   function deleteUtility(e) {
-    if (!isAdmin) return toast.error('Admin access required')
     setConfirmDialog({
       title: 'Delete Utility Bill?',
       message: `Delete utility bill for ${e.building?.name || 'this building'} of ${formatCurrency(e.amount)}? This cannot be undone.`,
@@ -163,6 +163,7 @@ export default function Expenses() {
       onConfirm: async () => {
         const { error } = await supabase.from('utility_bills').delete().eq('id', e.id)
         if (error) { toast.error(error.message); return }
+        await logDelete(profile, 'utility_bills', e.id, { building: e.building?.name, amount: e.amount, month: e.month })
         toast.success('Deleted')
         setConfirmDialog(null)
         loadExpenses()
