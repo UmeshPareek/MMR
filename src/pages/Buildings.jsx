@@ -218,7 +218,7 @@ export default function Buildings() {
       title: 'Delete Flat?',
       message: isOccupied
         ? `Flat ${flat.door_number} currently has a tenant. Check them out first before deleting.`
-        : `Permanently delete Flat ${flat.door_number}? Historical records (payments, deposits) will be preserved but unlinked from this flat.`,
+        : `Permanently delete Flat ${flat.door_number}? Any payment records for this flat will also be deleted. Tenant and deposit records will be preserved.`,
       danger: !isOccupied,
       onConfirm: isOccupied ? null : async () => {
         // Use server-side API — service role bypasses RLS so all FK references
