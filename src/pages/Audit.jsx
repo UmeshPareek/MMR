@@ -229,7 +229,7 @@ async function processTeamResponse(file, tenantStatus, selectedMonth, profile, l
       if (existing) {
         await supabase.from('audit_notes').update({team_note:note, status:'explained', responded_by:profile?.id, responded_at:new Date().toISOString()}).eq('id',existing.id);
       } else {
-        await supabase.from('audit_notes').insert({month:selectedMonth, note_type:'unpaid', tenant_id:tenant.tenantId, flag_reason:`Unpaid - ${tenant.name} Room ${tenant.room}`, team_note:note, status:'explained', created_by:profile?.id, responded_by:profile?.id, responded_at:new Date().toISOString()});
+        await supabase.from('audit_notes').insert({month:selectedMonth, note_type:'unpaid', tenant_id:tenant.tenantId, flag_reason:`Unpaid - ${tenant.name} Room ${tenant.room}`, team_note:note, status:'explained', created_by:profile?.id, responded_by:profile?.id, responded_at:new Date().toISOString(), org_id:profile?.org_id});
       }
       updated++;
     }
@@ -918,7 +918,7 @@ export default function Audit() {
       if (noteModal.noteId) {
         await supabase.from('audit_notes').update({team_note:noteText,status:noteStatus,responded_by:profile?.id,responded_at:new Date().toISOString()}).eq('id',noteModal.noteId);
       } else {
-        await supabase.from('audit_notes').insert({month:selectedMonth,note_type:noteModal.type,tenant_id:noteModal.tenantId||null,flag_reason:noteModal.reason,bank_narration:noteModal.bankNarration||null,bank_amount:noteModal.bankAmount||null,team_note:noteText,status:noteStatus,created_by:profile?.id,responded_by:profile?.id,responded_at:new Date().toISOString()});
+        await supabase.from('audit_notes').insert({month:selectedMonth,note_type:noteModal.type,tenant_id:noteModal.tenantId||null,flag_reason:noteModal.reason,bank_narration:noteModal.bankNarration||null,bank_amount:noteModal.bankAmount||null,team_note:noteText,status:noteStatus,created_by:profile?.id,responded_by:profile?.id,responded_at:new Date().toISOString(),org_id:profile?.org_id});
       }
       toast.success('Note saved');
       setNoteModal(null);setNoteText('');setNoteStatus('explained');

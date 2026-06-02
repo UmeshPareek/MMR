@@ -176,7 +176,14 @@ export default function Buildings() {
     }
 
     setSaving(true)
-    const payload = { ...fForm, building_id: flatModal.buildingId, monthly_rent: parseFloat(fForm.monthly_rent) || 0, area_sqft: parseFloat(fForm.area_sqft) || null, floor_number: parseInt(fForm.floor_number) || null }
+    const payload = {
+      ...fForm,
+      building_id:  flatModal.buildingId,
+      monthly_rent: parseFloat(fForm.monthly_rent) || 0,
+      area_sqft:    parseFloat(fForm.area_sqft) || null,
+      floor_number: parseInt(fForm.floor_number) || null,
+      org_id:       profile?.org_id,   // ← required by RLS INSERT policy
+    }
 
     const { error } = editFlat
       ? await supabase.from('flats').update(payload).eq('id', editFlat.id)
@@ -203,6 +210,26 @@ export default function Buildings() {
     // Refresh counts immediately
     const { data: bList } = await supabase.from('buildings').select('id').eq('is_active', true)
     loadCounts(bList || [])
+  }
+
+  function confirmDeleteFlat(flat) {
+    const isOccupied = flat.status === 'occupied' || flat.current_tenant_id
+    setDeleteConfirm({
+      title: 'Delete Flat?',
+      message: isOccupied
+        ? `Flat ${flat.door_number} currently has a tenant. You must check them out first before deleting.`
+        : `Permanently delete Flat ${flat.door_number}? This cannot be undone.`,
+      danger: true,
+      onConfirm: isOccupied ? null : async () => {
+        const { error } = await supabase.from('flats').delete().eq('id', flat.id)
+        if (error) { toast.error(error.message); return }
+        toast.success(`Flat ${flat.door_number} deleted`)
+        setDeleteConfirm(null)
+        loadFlats(flat.building_id)
+        const { data: bList } = await supabase.from('buildings').select('id').eq('is_active', true)
+        loadCounts(bList || [])
+      },
+    })
   }
 
   async function deleteBuilding(id) {
@@ -374,7 +401,7 @@ export default function Buildings() {
                 </div>
                 <div className="flex items-center gap-2 ml-2">
                   <button className="btn-ghost btn-sm" onClick={e => { e.stopPropagation(); openEditBuilding(building) }}><Edit2 size={14} /></button>
-                  <button className="btn-ghost btn-sm text-expense hover:text-expense" onClick={e => { e.stopPropagation(); setDeleteConfirm({ id: building.id, name: building.name }) }}><Trash2 size={14} /></button>
+                  <button className="btn-ghost btn-sm text-expense hover:text-expense" onClick={e => { e.stopPropagation(); setDeleteConfirm({ title: 'Remove Building', message: `Remove "${building.name}"? This won't delete tenant or payment data.`, danger: true, onConfirm: async () => { await deleteBuilding(building.id) } }) }}><Trash2 size={14} /></button>
                   {expandedBuilding === building.id ? <ChevronDown size={16} className="text-surface-500" /> : <ChevronRight size={16} className="text-surface-500" />}
                 </div>
               </div>
@@ -454,7 +481,13 @@ export default function Buildings() {
                                         <Plus size={11} /> Tenant
                                       </button>
                                     )}
-                                    <button className="btn-ghost btn-sm" onClick={() => openEditFlat(flat)}><Edit2 size={13} /></button>
+                                    <button className="btn-ghost btn-sm" onClick={() => openEditFlat(flat)} title="Edit flat"><Edit2 size={13} /></button>
+                                    <button
+                                      className="btn-ghost btn-sm text-surface-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                      onClick={() => confirmDeleteFlat(flat)}
+                                      title="Delete flat">
+                                      <Trash2 size={13} />
+                                    </button>
                                   </div>
                                 </td>
                               </tr>
@@ -645,7 +678,14 @@ export default function Buildings() {
         </div>
       )}
 
-            <ConfirmDialog open={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={() => deleteBuilding(deleteConfirm?.id)} title="Remove Building" message={`Remove "${deleteConfirm?.name}"? This won't delete tenant or payment data.`} danger />
+            <ConfirmDialog
+              open={!!deleteConfirm}
+              onClose={() => setDeleteConfirm(null)}
+              onConfirm={deleteConfirm?.onConfirm || null}
+              title={deleteConfirm?.title || 'Confirm'}
+              message={deleteConfirm?.message || ''}
+              danger={deleteConfirm?.danger}
+            />
     </div>
 
   )
