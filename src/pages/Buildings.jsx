@@ -218,22 +218,20 @@ export default function Buildings() {
       title: 'Delete Flat?',
       message: isOccupied
         ? `Flat ${flat.door_number} currently has a tenant. Check them out first before deleting.`
-        : `Permanently delete Flat ${flat.door_number}? Past tenant records linked to this flat will have their flat reference cleared.`,
+        : `Permanently delete Flat ${flat.door_number}? Historical records (payments, deposits) will be preserved but unlinked from this flat.`,
       danger: !isOccupied,
       onConfirm: isOccupied ? null : async () => {
-        // 1. Null out flat_id on all tenant records (active + vacated) referencing this flat
-        //    to avoid FK constraint "tenants_flat_id_fkey"
-        await supabase.from('tenants').update({ flat_id: null }).eq('flat_id', flat.id)
-
-        // 2. Null out flat_id on security_deposits referencing this flat
-        await supabase.from('security_deposits').update({ flat_id: null }).eq('flat_id', flat.id)
-
-        // 3. Null out flat_id on rent_collections referencing this flat
-        await supabase.from('rent_collections').update({ flat_id: null }).eq('flat_id', flat.id)
-
-        // 4. Now safe to delete the flat
-        const { error } = await supabase.from('flats').delete().eq('id', flat.id)
-        if (error) { toast.error(error.message); return }
+        // Use server-side API — service role bypasses RLS so all FK references
+        // (tenants, rent_collections, security_deposits, meter_readings etc.)
+        // are safely nulled before the flat is deleted.
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch('/api/delete-flat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+          body: JSON.stringify({ flatId: flat.id }),
+        })
+        const result = await res.json()
+        if (!res.ok) { toast.error(result.error || 'Delete failed'); return }
 
         toast.success(`Flat ${flat.door_number} deleted`)
         setDeleteConfirm(null)
