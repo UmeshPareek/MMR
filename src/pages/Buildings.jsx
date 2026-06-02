@@ -217,12 +217,24 @@ export default function Buildings() {
     setDeleteConfirm({
       title: 'Delete Flat?',
       message: isOccupied
-        ? `Flat ${flat.door_number} currently has a tenant. You must check them out first before deleting.`
-        : `Permanently delete Flat ${flat.door_number}? This cannot be undone.`,
-      danger: true,
+        ? `Flat ${flat.door_number} currently has a tenant. Check them out first before deleting.`
+        : `Permanently delete Flat ${flat.door_number}? Past tenant records linked to this flat will have their flat reference cleared.`,
+      danger: !isOccupied,
       onConfirm: isOccupied ? null : async () => {
+        // 1. Null out flat_id on all tenant records (active + vacated) referencing this flat
+        //    to avoid FK constraint "tenants_flat_id_fkey"
+        await supabase.from('tenants').update({ flat_id: null }).eq('flat_id', flat.id)
+
+        // 2. Null out flat_id on security_deposits referencing this flat
+        await supabase.from('security_deposits').update({ flat_id: null }).eq('flat_id', flat.id)
+
+        // 3. Null out flat_id on rent_collections referencing this flat
+        await supabase.from('rent_collections').update({ flat_id: null }).eq('flat_id', flat.id)
+
+        // 4. Now safe to delete the flat
         const { error } = await supabase.from('flats').delete().eq('id', flat.id)
         if (error) { toast.error(error.message); return }
+
         toast.success(`Flat ${flat.door_number} deleted`)
         setDeleteConfirm(null)
         loadFlats(flat.building_id)
