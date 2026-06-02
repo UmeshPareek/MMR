@@ -1,12 +1,17 @@
 import { createClient } from '@supabase/supabase-js'
 
-const admin = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL
+const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' })
+
+  // Fail fast with a clear message if env var is missing
+  if (!SERVICE_KEY || !SUPABASE_URL) {
+    return res.status(500).json({ error: 'Server misconfiguration: SUPABASE_SERVICE_ROLE_KEY is not set in Vercel environment variables.' })
+  }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY)
 
   // Authenticate caller
   const token = req.headers.authorization?.replace('Bearer ', '')

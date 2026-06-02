@@ -225,13 +225,20 @@ export default function Buildings() {
         // (tenants, rent_collections, security_deposits, meter_readings etc.)
         // are safely nulled before the flat is deleted.
         const { data: { session } } = await supabase.auth.getSession()
-        const res = await fetch('/api/delete-flat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ flatId: flat.id }),
-        })
-        const result = await res.json()
-        if (!res.ok) { toast.error(result.error || 'Delete failed'); return }
+        let result = {}
+        try {
+          const res = await fetch('/api/delete-flat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token}` },
+            body: JSON.stringify({ flatId: flat.id }),
+          })
+          const text = await res.text()
+          try { result = JSON.parse(text) } catch { result = { error: text || 'Server error' } }
+          if (!res.ok) { toast.error(result.error || 'Delete failed'); return }
+        } catch (e) {
+          toast.error('Could not reach server. Check Vercel env vars.')
+          return
+        }
 
         toast.success(`Flat ${flat.door_number} deleted`)
         setDeleteConfirm(null)
