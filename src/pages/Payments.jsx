@@ -336,10 +336,19 @@ export default function Payments() {
   }
 
   async function doDelete() {
-    // Capture record before deleting for audit log
-    const rec = allFlats.flatMap(f => f.collections || []).find(c => c.id === confirmDelete)
+    // Find the record in buildingData for audit log (correct variable name)
+    let rec = null
+    for (const bData of Object.values(buildingData)) {
+      for (const flat of bData.flats || []) {
+        const found = (flat.colls || []).find(c => c.id === confirmDelete)
+        if (found) { rec = { ...found, flat_number: flat.door_number }; break }
+      }
+      if (rec) break
+    }
+
     const { error } = await supabase.from('rent_collections').delete().eq('id', confirmDelete);
     if (error) { toast.error(error.message); setConfirmDelete(null); return; }
+
     await logDelete(profile, 'rent_collections', confirmDelete, {
       tenant: rec?.tenant_name,
       flat:   rec?.flat_number,
