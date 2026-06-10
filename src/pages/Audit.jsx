@@ -711,6 +711,10 @@ export default function Audit() {
   const [savedSessions, setSavedSessions] = useState([]);
   const [showHistory, setShowHistory] = useState(false);
 
+  // Reconciliation tab filters — must be top-level (Rules of Hooks)
+  const [recoFilter, setRecoFilter] = useState('all');
+  const [bFilter,    setBFilter]    = useState('all');
+
   // Deduplicate across all uploaded files — same date+amount+narration prefix = same txn
   const allTxns = (() => {
     const raw = fileQueue.flatMap(f => f.txns || []);
@@ -1852,10 +1856,6 @@ export default function Audit() {
               XLSX.writeFile(wb, `Reconciliation_BuildingWise_${selectedMonth}.xlsx`);
               toast.success(`${buildings.length} building sheets exported`);
             }
-
-            // ── Filter state (managed as local derived values) ────────
-            const [recoFilter, setRecoFilter] = useState('all');
-            const [bFilter, setBFilter]       = useState('all');
 
             const visible = allRows.filter(t =>
               (recoFilter === 'all' || t.recoStatus === recoFilter) &&
