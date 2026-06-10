@@ -1739,148 +1739,318 @@ export default function Audit() {
 
           {/* ═══ RECONCILIATION TAB ═══ */}
           {activeTab==='reconcile' && (() => {
-            const MODE_LABEL = { upi:'📱 UPI', cash:'💵 Cash', imps:'🏦 IMPS', neft:'🏦 NEFT', rtgs:'🏦 RTGS', bank_transfer:'🏦 Bank', cheque:'📝 Cheque', nach:'🔄 NACH', transfer:'🏦 Transfer', unknown:'—' };
+            const ML = { upi:'📱 UPI', cash:'💵 Cash', imps:'🏦 IMPS', neft:'🏦 NEFT', rtgs:'🏦 RTGS', bank_transfer:'🏦 Bank', cheque:'📝 Cheque', nach:'🔄 NACH', transfer:'🏦 Transfer', unknown:'—', credit:'💳 Credit', rentok:'🔵 RentOK' };
             const RECO = {
-              matched:          { label:'✅ Matched',          cls:'bg-emerald-50 text-emerald-700 border-emerald-300', row:'bg-emerald-50/20' },
-              cash_paid:        { label:'💵 Cash Paid',        cls:'bg-teal-50 text-teal-700 border-teal-300',         row:'' },
-              paid_unconfirmed: { label:'⚠ Paid (unconfirmed)',cls:'bg-blue-50 text-blue-700 border-blue-300',         row:'bg-blue-50/10' },
-              partial:          { label:'🟡 Partial',          cls:'bg-amber-50 text-amber-700 border-amber-300',      row:'bg-amber-50/20' },
-              ghost:            { label:'🔴 Ghost',            cls:'bg-red-100 text-red-700 border-red-400',           row:'bg-red-50/30' },
-              unpaid:           { label:'⛔ Unpaid',           cls:'bg-red-50 text-red-600 border-red-200',            row:'bg-red-50/10' },
+              matched:          { label:'✅ Matched',           short:'Matched',     cls:'bg-emerald-50 text-emerald-700 border-emerald-300', pill:'bg-emerald-600 text-white', row:'' },
+              cash_paid:        { label:'💵 Cash Paid',         short:'Cash Paid',   cls:'bg-teal-50 text-teal-700 border-teal-300',          pill:'bg-teal-600 text-white',    row:'' },
+              paid_unconfirmed: { label:'⚠️ Paid (Unconfirmed)',short:'Unconfirmed', cls:'bg-blue-50 text-blue-700 border-blue-300',           pill:'bg-blue-600 text-white',    row:'bg-blue-50/20' },
+              partial:          { label:'🟡 Partial',           short:'Partial',     cls:'bg-amber-50 text-amber-700 border-amber-300',        pill:'bg-amber-500 text-white',   row:'bg-amber-50/20' },
+              ghost:            { label:'🔴 Ghost Payment',     short:'Ghost',       cls:'bg-red-100 text-red-700 border-red-400',             pill:'bg-red-600 text-white',     row:'bg-red-50/30' },
+              unpaid:           { label:'⛔ Unpaid',            short:'Unpaid',      cls:'bg-red-50 text-red-600 border-red-200',              pill:'bg-red-500 text-white',     row:'bg-red-50/10' },
             };
 
-            const matched         = results.tenantStatus.filter(t=>t.recoStatus==='matched');
-            const cashPaid        = results.tenantStatus.filter(t=>t.recoStatus==='cash_paid');
-            const paidUnconfirmed = results.tenantStatus.filter(t=>t.recoStatus==='paid_unconfirmed');
-            const partial         = results.tenantStatus.filter(t=>t.recoStatus==='partial');
-            const ghost           = results.tenantStatus.filter(t=>t.recoStatus==='ghost');
-            const unpaid          = results.tenantStatus.filter(t=>t.recoStatus==='unpaid');
+            // All tenant rows sorted: building → room
+            const allRows = [...results.tenantStatus].sort((a,b)=>
+              a.building.localeCompare(b.building) || a.room.localeCompare(b.room)
+            );
 
-            const groups = [
-              { key:'matched',          list:matched,         icon:'✅', title:'Matched — Paid in App + Found in Bank' },
-              { key:'cash_paid',        list:cashPaid,        icon:'💵', title:'Cash Paid — App recorded cash (no bank match needed)' },
-              { key:'paid_unconfirmed', list:paidUnconfirmed, icon:'⚠', title:'Paid (Unconfirmed) — App shows paid but bank narration unclear' },
-              { key:'partial',          list:partial,         icon:'🟡', title:'Partial — Incomplete payment' },
-              { key:'ghost',            list:ghost,           icon:'🔴', title:'Ghost Payment — App shows digital payment but NOT in bank' },
-              { key:'unpaid',           list:unpaid,          icon:'⛔', title:'Unpaid — No payment at all' },
-            ];
+            const buildings = [...new Set(allRows.map(t=>t.building))].sort();
+
+            // ── Building-wise Excel download ──────────────────────────
+            function downloadBuildingWise() {
+              const wb = XLSX.utils.book_new();
+              const summaryData = [];
+
+              buildings.forEach(bName => {
+                const bTenants = allRows.filter(t => t.building === bName);
+                const bUnmatched = results.unmatchedBank.filter(tx =>
+                  tx.allHints?.some(h => bName.toLowerCase().includes(h)) || false
+                );
+
+                const rows = [
+                  // Title
+                  [`${bName} — Reconciliation Report — ${selectedMonth}`, '', '', '', '', '', '', '', '', '', ''],
+                  // Headers
+                  ['Room','Tenant','Phone','Expected (₹)','Paid (₹)','Balance (₹)','App Mode','Bank Matched','Bank Amount (₹)','Bank Mode','Reconciliation Status'],
+                  // Data
+                  ...bTenants.map(t => ([
+                    t.room,
+                    t.name,
+                    t.phone||'—',
+                    t.expected,
+                    t.paid,
+                    t.balance > 0 ? t.balance : 0,
+                    t.modes.map(m => ML[m]||m).join(', ')||'—',
+                    t.inBank ? 'Yes' : (t.modes.every(m=>m==='cash') ? 'Cash (Offline)' : 'No'),
+                    t.bankAmount || '—',
+                    t.bankMode ? (ML[t.bankMode]||t.bankMode) : '—',
+                    RECO[t.recoStatus]?.label || t.recoStatus,
+                  ])),
+                  // Totals row
+                  ['TOTAL','','',
+                    bTenants.reduce((s,t)=>s+t.expected,0),
+                    bTenants.reduce((s,t)=>s+t.paid,0),
+                    bTenants.reduce((s,t)=>s+t.balance,0),
+                    '','','','','',
+                  ],
+                ];
+
+                // Add unmatched bank section if any for this building
+                if (bUnmatched.length > 0) {
+                  rows.push([]);
+                  rows.push(['🏦 BANK CREDITS NOT IN APP','Date','Narration','Amount','Mode','','','','','','']);
+                  bUnmatched.forEach(tx => {
+                    rows.push(['',tx.date,tx.narration,tx.credit, ML[tx.mode||'unknown']||'—','','','','','','']);
+                  });
+                }
+
+                const ws = XLSX.utils.aoa_to_sheet(rows);
+                ws['!cols'] = [{wch:8},{wch:22},{wch:13},{wch:13},{wch:11},{wch:11},{wch:14},{wch:14},{wch:14},{wch:12},{wch:22}];
+                ws['!merges'] = [{s:{r:0,c:0},e:{r:0,c:10}}];
+                XLSX.utils.book_append_sheet(wb, ws, bName.slice(0,28));
+
+                // Collect for summary sheet
+                summaryData.push({
+                  Building:   bName,
+                  'Total Tenants': bTenants.length,
+                  '✅ Matched':    bTenants.filter(t=>t.recoStatus==='matched').length,
+                  '💵 Cash Paid':  bTenants.filter(t=>t.recoStatus==='cash_paid').length,
+                  '⚠️ Unconfirmed':bTenants.filter(t=>t.recoStatus==='paid_unconfirmed').length,
+                  '🟡 Partial':    bTenants.filter(t=>t.recoStatus==='partial').length,
+                  '🔴 Ghost':      bTenants.filter(t=>t.recoStatus==='ghost').length,
+                  '⛔ Unpaid':     bTenants.filter(t=>t.recoStatus==='unpaid').length,
+                  'Expected (₹)':  bTenants.reduce((s,t)=>s+t.expected,0),
+                  'Collected (₹)': bTenants.reduce((s,t)=>s+t.paid,0),
+                  'Balance (₹)':   bTenants.reduce((s,t)=>s+t.balance,0),
+                  'Collection %':  bTenants.reduce((s,t)=>s+t.expected,0)>0
+                    ? Math.round(bTenants.reduce((s,t)=>s+t.paid,0)/bTenants.reduce((s,t)=>s+t.expected,0)*100)+'%'
+                    : '—',
+                  'Bank Unmatched': results.unmatchedBank.length,
+                });
+              });
+
+              // Summary sheet (first)
+              const sumWs = XLSX.utils.json_to_sheet(summaryData);
+              sumWs['!cols'] = [{wch:28},{wch:13},{wch:11},{wch:11},{wch:13},{wch:11},{wch:10},{wch:10},{wch:14},{wch:14},{wch:13},{wch:12},{wch:14}];
+              XLSX.utils.book_append_sheet(wb, sumWs, 'Summary');
+              wb.SheetNames = ['Summary', ...wb.SheetNames.filter(n=>n!=='Summary')];
+
+              // Unmatched bank credits sheet
+              if (results.unmatchedBank.length > 0) {
+                const umWs = XLSX.utils.json_to_sheet(results.unmatchedBank.map(tx => ({
+                  Date: tx.date, Bank: tx.bank,
+                  Narration: tx.narration,
+                  'Detected Mode': ML[tx.mode||'unknown']||'—',
+                  'Amount (₹)': tx.credit,
+                  'Team Note': notes.find(n=>n.bank_narration===tx.narration)?.team_note||'No explanation',
+                  Status: notes.find(n=>n.bank_narration===tx.narration)?.status||'UNRESOLVED',
+                })));
+                umWs['!cols'] = [{wch:12},{wch:8},{wch:55},{wch:15},{wch:12},{wch:30},{wch:12}];
+                XLSX.utils.book_append_sheet(wb, umWs, 'Bank Unmatched');
+              }
+
+              XLSX.writeFile(wb, `Reconciliation_BuildingWise_${selectedMonth}.xlsx`);
+              toast.success(`${buildings.length} building sheets exported`);
+            }
+
+            // ── Filter state (managed as local derived values) ────────
+            const [recoFilter, setRecoFilter] = useState('all');
+            const [bFilter, setBFilter]       = useState('all');
+
+            const visible = allRows.filter(t =>
+              (recoFilter === 'all' || t.recoStatus === recoFilter) &&
+              (bFilter    === 'all' || t.building  === bFilter)
+            );
+
+            const counts = Object.fromEntries(
+              Object.keys(RECO).map(k => [k, allRows.filter(t=>t.recoStatus===k).length])
+            );
+            counts.all = allRows.length;
 
             return (
               <div className="space-y-4">
-                {/* Summary cards */}
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                  {groups.map(g => (
-                    <div key={g.key} className={`card p-3 text-center border-t-4 ${g.key==='matched'?'border-t-emerald-500':g.key==='cash_paid'?'border-t-teal-500':g.key==='ghost'||g.key==='unpaid'?'border-t-red-500':'border-t-amber-400'}`}>
-                      <p className={`text-2xl font-bold ${g.key==='matched'||g.key==='cash_paid'?'text-emerald-600':g.key==='unpaid'||g.key==='ghost'?'text-red-600':'text-amber-700'}`}>{g.list.length}</p>
-                      <p className="text-[10px] text-surface-500 mt-0.5 leading-tight">{g.title.split('—')[0].trim()}</p>
+                {/* ── Top bar ── */}
+                <div className="card p-4">
+                  <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+                    <div>
+                      <h3 className="font-semibold text-surface-800">Bank Reconciliation — {selectedMonth}</h3>
+                      <p className="text-xs text-surface-500 mt-0.5">{allRows.length} tenants · {formatCurrency(allRows.reduce((s,t)=>s+t.expected,0))} expected · {formatCurrency(allRows.reduce((s,t)=>s+t.paid,0))} collected</p>
                     </div>
-                  ))}
+                    <div className="flex gap-2 flex-wrap">
+                      <select value={bFilter} onChange={e=>setBFilter(e.target.value)} className="select text-sm py-1.5 w-44">
+                        <option value="all">All Buildings</option>
+                        {buildings.map(b=><option key={b} value={b}>{b}</option>)}
+                      </select>
+                      <button onClick={downloadBuildingWise} className="btn-primary flex items-center gap-1.5 text-sm">
+                        <Download className="w-4 h-4"/> Building-wise Excel
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Status filter pills */}
+                  <div className="flex gap-2 flex-wrap">
+                    {[
+                      {k:'all', label:`All (${counts.all})`},
+                      {k:'matched',          label:`✅ Matched (${counts.matched})`},
+                      {k:'cash_paid',        label:`💵 Cash (${counts.cash_paid})`},
+                      {k:'paid_unconfirmed', label:`⚠️ Unconfirmed (${counts.paid_unconfirmed})`},
+                      {k:'partial',          label:`🟡 Partial (${counts.partial})`},
+                      {k:'ghost',            label:`🔴 Ghost (${counts.ghost})`},
+                      {k:'unpaid',           label:`⛔ Unpaid (${counts.unpaid})`},
+                    ].map(({k, label}) => (
+                      <button key={k} onClick={()=>setRecoFilter(k)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                          recoFilter===k
+                            ? (k==='all'?'bg-surface-800 text-white border-surface-800':k==='matched'||k==='cash_paid'?'bg-emerald-600 text-white border-emerald-600':k==='ghost'||k==='unpaid'?'bg-red-600 text-white border-red-600':'bg-amber-500 text-white border-amber-500')
+                            : 'bg-white text-surface-600 border-surface-200 hover:border-surface-400'
+                        }`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                {/* Unmatched bank credits */}
-                {results.unmatchedBank.length > 0 && (
+                {/* ── Unmatched bank credits (always shown if any) ── */}
+                {results.unmatchedBank.length > 0 && (recoFilter==='all') && (
                   <div className="card border-l-4 border-l-orange-500 overflow-hidden">
                     <div className="px-5 py-3 bg-orange-50 border-b border-orange-200 flex items-center justify-between">
-                      <p className="text-sm font-bold text-orange-800">🏦 {results.unmatchedBank.length} Bank Credits NOT in App — {formatCurrency(results.unmatchedBank.reduce((s,t)=>s+t.credit,0))}</p>
-                      <span className="badge bg-orange-100 text-orange-700 border border-orange-300 text-xs">MISSING FROM APP</span>
-                    </div>
-                    <table className="data-table">
-                      <thead><tr><th>Date</th><th>Bank</th><th>Narration</th><th>Detected Mode</th><th className="text-right">Amount</th><th>Action</th></tr></thead>
-                      <tbody>
-                        {results.unmatchedBank.map((tx,i) => {
-                          const existing = notes.find(n=>n.bank_narration===tx.narration&&n.note_type==='unmatched');
-                          return (
-                            <tr key={i} className="bg-orange-50/20">
-                              <td className="text-xs">{tx.date}</td>
-                              <td><span className="badge bg-surface-100 text-surface-600 border text-xs">{tx.bank}</span></td>
-                              <td className="text-xs text-surface-600 max-w-[220px] truncate" title={tx.narration}>{tx.narration}</td>
-                              <td><span className="text-xs text-surface-500">{MODE_LABEL[tx.mode||'unknown']}</span></td>
-                              <td className="text-right font-mono font-bold text-orange-700">{formatCurrency(tx.credit)}</td>
-                              <td>{existing
-                                ? <button onClick={()=>openNote({type:'unmatched',bankNarration:tx.narration,bankAmount:tx.credit,reason:`Unmatched ₹${tx.credit}`,noteId:existing.id})} className={`badge border text-xs cursor-pointer ${STATUS_CFG[existing.status]?.cls}`}>{existing.status}</button>
-                                : <button onClick={()=>openNote({type:'unmatched',bankNarration:tx.narration,bankAmount:tx.credit,reason:`Unmatched bank credit ₹${tx.credit} on ${tx.date}`})} className="btn-secondary btn-sm flex items-center gap-1 text-xs"><MessageSquare className="w-3 h-3"/>Explain</button>
-                              }</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-
-                {/* Per-group tables */}
-                {groups.map(g => g.list.length === 0 ? null : (
-                  <div key={g.key} className={`card border-l-4 overflow-hidden ${g.key==='matched'?'border-l-emerald-500':g.key==='cash_paid'?'border-l-teal-500':g.key==='ghost'||g.key==='unpaid'?'border-l-red-500':'border-l-amber-400'}`}>
-                    <div className={`px-5 py-3 border-b flex items-center justify-between ${RECO[g.key].row||'bg-surface-50'}`}>
-                      <p className="text-sm font-bold text-surface-800">{g.icon} {g.title} — {g.list.length} tenant{g.list.length!==1?'s':''} · {formatCurrency(g.list.reduce((s,t)=>s+t.paid,0))}</p>
-                      <button onClick={() => {
-                        const wb = XLSX.utils.book_new();
-                        const ws = XLSX.utils.json_to_sheet(g.list.map(t => ({
-                          Building:t.building, Room:t.room, Tenant:t.name, Phone:t.phone,
-                          'Expected (₹)':t.expected, 'Paid (₹)':t.paid, 'Balance (₹)':t.balance,
-                          'App Mode': t.modes.join(', ')||'—',
-                          'Bank Matched': t.inBank?'Yes':'No',
-                          'Bank Amount (₹)': t.bankAmount||'—',
-                          'Bank Mode': t.bankMode||'—',
-                          'Match Score': t.matchScore||'—',
-                          'Bank Narration': t.bankNarration||'—',
-                          'Status': RECO[g.key].label,
-                        })));
-                        XLSX.utils.book_append_sheet(wb, ws, g.key.slice(0,28));
-                        XLSX.writeFile(wb, `Reconciliation_${g.key}_${selectedMonth}.xlsx`);
-                        toast.success(`${g.list.length} rows exported`);
-                      }} className="btn-secondary btn-sm flex items-center gap-1 text-xs flex-shrink-0">
-                        <Download className="w-3 h-3"/> Export
-                      </button>
+                      <div>
+                        <p className="text-sm font-bold text-orange-800">🏦 {results.unmatchedBank.length} Bank Credits Not in App</p>
+                        <p className="text-xs text-orange-600 mt-0.5">Total: {formatCurrency(results.unmatchedBank.reduce((s,t)=>s+t.credit,0))} — money received in bank but no entry in the app</p>
+                      </div>
                     </div>
                     <div className="overflow-x-auto">
                       <table className="data-table">
                         <thead>
-                          <tr>
-                            <th>Building</th><th>Room</th><th>Tenant</th><th>Phone</th>
-                            <th className="text-right">Expected</th><th className="text-right">Paid</th><th className="text-right">Balance</th>
-                            <th>App Mode</th>
-                            {['matched','paid_unconfirmed','ghost'].includes(g.key) && <><th>Bank Match</th><th>Bank Mode</th><th className="text-center">Score</th></>}
-                            <th>Status</th>
-                          </tr>
+                          <tr><th>Date</th><th>Bank</th><th>Narration</th><th>Detected Mode</th><th className="text-right">Amount</th><th>Action</th></tr>
                         </thead>
                         <tbody>
-                          {g.list.map(t => (
-                            <tr key={t.tenantId} className={RECO[g.key].row}>
-                              <td className="text-xs text-surface-500">{t.building}</td>
-                              <td className="font-mono font-semibold">{t.room}</td>
-                              <td className="font-medium text-surface-800">{t.name}</td>
-                              <td className="text-xs text-surface-500">{t.phone||'—'}</td>
-                              <td className="text-right font-mono">{formatCurrency(t.expected)}</td>
-                              <td className="text-right font-mono text-emerald-700">{formatCurrency(t.paid)}</td>
-                              <td className="text-right font-mono" style={{color:t.balance>0?'#dc2626':'#94a3b8'}}>{t.balance>0?formatCurrency(t.balance):'—'}</td>
-                              <td className="text-xs">{t.modes.map(m=>MODE_LABEL[m]||m).join(', ')||'—'}</td>
-                              {['matched','paid_unconfirmed','ghost'].includes(g.key) && (<>
-                                <td className="text-xs max-w-[160px] truncate" title={t.bankNarration}>{t.inBank?<span className="text-emerald-700 font-mono">₹{t.bankAmount.toLocaleString('en-IN')}</span>:<span className="text-red-400">Not found</span>}</td>
-                                <td className="text-xs">{t.bankMode?MODE_LABEL[t.bankMode]||t.bankMode:'—'}</td>
-                                <td className="text-center">
-                                  {t.matchScore > 0 && (
-                                    <span className={`text-xs font-mono font-bold ${t.matchScore>=80?'text-emerald-600':t.matchScore>=60?'text-amber-600':'text-red-500'}`}>{t.matchScore}%</span>
-                                  )}
+                          {results.unmatchedBank.map((tx,i) => {
+                            const existing = notes.find(n=>n.bank_narration===tx.narration&&n.note_type==='unmatched');
+                            return (
+                              <tr key={i} className="bg-orange-50/20">
+                                <td className="text-xs whitespace-nowrap">{tx.date}</td>
+                                <td><span className="badge bg-surface-100 text-surface-600 border text-xs">{tx.bank}</span></td>
+                                <td className="text-xs text-surface-600 max-w-[260px]">
+                                  <p className="truncate" title={tx.narration}>{tx.narration}</p>
+                                  {tx.allHints?.length>0 && <p className="text-[10px] text-surface-400 mt-0.5">Name hints: {tx.allHints.join(', ')}</p>}
                                 </td>
-                              </>)}
-                              <td><span className={`badge border text-xs ${RECO[g.key].cls}`}>{RECO[g.key].label}</span></td>
-                            </tr>
-                          ))}
+                                <td><span className="text-xs text-surface-500">{ML[tx.mode||'unknown']}</span></td>
+                                <td className="text-right font-mono font-bold text-orange-700">{formatCurrency(tx.credit)}</td>
+                                <td>
+                                  {existing
+                                    ? <button onClick={()=>openNote({type:'unmatched',bankNarration:tx.narration,bankAmount:tx.credit,reason:`Unmatched ₹${tx.credit}`,noteId:existing.id})} className={`badge border text-xs cursor-pointer ${STATUS_CFG[existing.status]?.cls}`}>{existing.status}</button>
+                                    : <button onClick={()=>openNote({type:'unmatched',bankNarration:tx.narration,bankAmount:tx.credit,reason:`Unmatched bank credit ₹${tx.credit} on ${tx.date}`})} className="btn-secondary btn-sm flex items-center gap-1 text-xs"><MessageSquare className="w-3 h-3"/>Explain</button>
+                                  }
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
-                        <tfoot>
-                          <tr className="bg-surface-50 border-t">
-                            <td colSpan={4} className="px-4 py-2 text-xs font-semibold text-surface-500">Subtotal</td>
-                            <td className="px-4 py-2 text-right font-mono font-bold">{formatCurrency(g.list.reduce((s,t)=>s+t.expected,0))}</td>
-                            <td className="px-4 py-2 text-right font-mono font-bold text-emerald-700">{formatCurrency(g.list.reduce((s,t)=>s+t.paid,0))}</td>
-                            <td className="px-4 py-2 text-right font-mono font-bold text-red-600">{formatCurrency(g.list.reduce((s,t)=>s+t.balance,0))}</td>
-                            <td colSpan={['matched','paid_unconfirmed','ghost'].includes(g.key)?4:1}/>
-                          </tr>
-                        </tfoot>
                       </table>
                     </div>
                   </div>
-                ))}
+                )}
+
+                {/* ── Main reconciliation table ── */}
+                <div className="card overflow-hidden">
+                  {visible.length === 0 ? (
+                    <div className="p-10 text-center">
+                      <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2"/>
+                      <p className="text-surface-500">No tenants in this filter</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="px-5 py-3 border-b border-surface-100 bg-surface-50 flex items-center justify-between">
+                        <p className="text-sm font-semibold text-surface-700">
+                          {visible.length} tenant{visible.length!==1?'s':''} · Expected {formatCurrency(visible.reduce((s,t)=>s+t.expected,0))} · Collected {formatCurrency(visible.reduce((s,t)=>s+t.paid,0))} · Balance {formatCurrency(visible.reduce((s,t)=>s+t.balance,0))}
+                        </p>
+                        <p className="text-xs text-surface-400">{bFilter!=='all'?bFilter:'All buildings'} · {recoFilter!=='all'?RECO[recoFilter]?.label:'All statuses'}</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="data-table">
+                          <thead>
+                            <tr>
+                              <th>Building</th>
+                              <th>Room</th>
+                              <th>Tenant</th>
+                              <th>Phone</th>
+                              <th className="text-right">Expected</th>
+                              <th className="text-right">Paid</th>
+                              <th className="text-right">Balance</th>
+                              <th>App Mode</th>
+                              <th>Bank Amount</th>
+                              <th>Bank Mode</th>
+                              <th className="text-center">Match%</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              let lastBuilding = null;
+                              return visible.map(t => {
+                                const isNewBuilding = t.building !== lastBuilding;
+                                lastBuilding = t.building;
+                                return (
+                                  <>
+                                    {isNewBuilding && (
+                                      <tr key={`hdr-${t.building}`} className="bg-surface-100 dark:bg-surface-700/50">
+                                        <td colSpan={12} className="px-4 py-2 text-xs font-bold text-surface-600 dark:text-surface-300 uppercase tracking-wider">
+                                          🏢 {t.building} — {visible.filter(x=>x.building===t.building).length} tenants
+                                        </td>
+                                      </tr>
+                                    )}
+                                    <tr key={t.tenantId} className={RECO[t.recoStatus]?.row||''}>
+                                      <td className="text-xs text-surface-400">{t.building}</td>
+                                      <td className="font-mono font-semibold text-surface-800">{t.room}</td>
+                                      <td className="font-medium text-surface-800">{t.name}</td>
+                                      <td className="text-xs text-surface-500">{t.phone||'—'}</td>
+                                      <td className="text-right font-mono text-surface-700">{formatCurrency(t.expected)}</td>
+                                      <td className="text-right font-mono text-emerald-700 font-semibold">{formatCurrency(t.paid)}</td>
+                                      <td className="text-right font-mono font-bold" style={{color:t.balance>0?'#dc2626':'#94a3b8'}}>{t.balance>0?formatCurrency(t.balance):'—'}</td>
+                                      <td className="text-xs">{t.modes.map(m=>ML[m]||m).join(', ')||'—'}</td>
+                                      <td className="text-xs">
+                                        {t.inBank
+                                          ? <span className="text-emerald-700 font-mono font-semibold">₹{t.bankAmount.toLocaleString('en-IN')}</span>
+                                          : t.modes.every(m=>m==='cash')
+                                            ? <span className="text-surface-400">Cash</span>
+                                            : t.status !== 'unpaid'
+                                              ? <span className="text-red-400 text-[10px]">Not found</span>
+                                              : <span className="text-surface-300">—</span>
+                                        }
+                                      </td>
+                                      <td className="text-xs text-surface-500">{t.bankMode?ML[t.bankMode]||t.bankMode:'—'}</td>
+                                      <td className="text-center">
+                                        {t.matchScore > 0
+                                          ? <span className={`text-xs font-mono font-bold ${t.matchScore>=80?'text-emerald-600':t.matchScore>=60?'text-amber-600':'text-orange-500'}`}>{t.matchScore}%</span>
+                                          : <span className="text-surface-300 text-xs">—</span>
+                                        }
+                                      </td>
+                                      <td>
+                                        <span className={`badge border text-[10px] font-semibold ${RECO[t.recoStatus]?.cls||''}`}>
+                                          {RECO[t.recoStatus]?.short||t.recoStatus}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  </>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                          <tfoot>
+                            <tr className="bg-surface-50 dark:bg-surface-700/30 border-t-2 border-surface-200">
+                              <td colSpan={4} className="px-4 py-2.5 text-xs font-bold text-surface-600 uppercase">Total — {visible.length} tenants</td>
+                              <td className="px-4 py-2.5 text-right font-mono font-bold text-surface-800">{formatCurrency(visible.reduce((s,t)=>s+t.expected,0))}</td>
+                              <td className="px-4 py-2.5 text-right font-mono font-bold text-emerald-700">{formatCurrency(visible.reduce((s,t)=>s+t.paid,0))}</td>
+                              <td className="px-4 py-2.5 text-right font-mono font-bold text-red-600">{formatCurrency(visible.reduce((s,t)=>s+t.balance,0))}</td>
+                              <td colSpan={5}/>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })()}
